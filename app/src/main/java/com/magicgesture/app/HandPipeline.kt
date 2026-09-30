@@ -56,8 +56,14 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         val matrix = Matrix().apply { postRotate(sensorRotation.toFloat()); postScale(-1f, 1f) }
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         if (rotated !== bitmap) bitmap.recycle()
-        try { landmarker.detectAsync(BitmapImageBuilder(rotated).build(), now) }
-        finally { /* MediaPipe owns image data until result; avoid recycling the input here. */ }
+        val mpImage = BitmapImageBuilder(rotated).build()
+        try {
+            landmarker.detectAsync(mpImage, now)
+        } finally {
+            // detectAsync acquires its own reference while the graph uses the frame.
+            // Release the caller reference now so completed/dropped frames can be recycled.
+            mpImage.close()
+        }
     }
     override fun close() { if (closed.compareAndSet(false, true)) { engine.stop(); landmarker.close() } }
     private fun yuvToBitmap(image: Image): Bitmap {
