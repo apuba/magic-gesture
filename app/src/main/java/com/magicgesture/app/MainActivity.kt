@@ -124,7 +124,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 24, height = 50))
 
         content.addView(label("手势使用指南", 22f, Color.rgb(31, 31, 55), true))
-        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；触发后有 2 秒保护时间，复位后再开始下一次。", 13f, Color.rgb(104, 102, 126), false).apply {
+        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；触发后进入 2 秒冷却期，期间暂停全部手势判断，结束后重新识别。", 13f, Color.rgb(104, 102, 126), false).apply {
             setPadding(0, dp(6), 0, dp(14))
         })
 

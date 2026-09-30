@@ -114,7 +114,7 @@ class CalibrationActivity : Activity() {
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
 
             addView(title("练习顺序"))
-            addView(body("建议按顺序逐项测试。一次只做一个动作，触发后有 2 秒保护时间；先收起手指或把手移出画面。"))
+            addView(body("建议按顺序逐项测试。一次只做一个动作；触发后进入 2 秒冷却期，期间暂停全部手势判断，结束后重新识别。"))
             addView(practiceCard(R.drawable.gesture_point, "1  光标与点击", "食指移动光标；稳定约 0.2 秒后弯曲食指，再在 1 秒内重新伸直。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_four_fingers_together, "2  方向动作", "水平食指挑动，或将食指、中指、无名指和小指并拢后挥动；拇指不限，四指分开时不触发。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_v, "3  V 字计时", "保持 V 字 2 秒，观察顶部反馈从 0% 增长到 100%。"), blockMargins(10))

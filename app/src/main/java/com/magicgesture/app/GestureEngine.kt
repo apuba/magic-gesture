@@ -60,6 +60,15 @@ class GestureEngine(
     @Synchronized fun lost(now: Long) { if (now - lastSeenAt >= 300) { resetTransient(); smoothed = null } }
     @Synchronized fun consume(points: List<Point>, now: Long): List<GestureEvent> {
         if (paused || points.size != 21 || (lastSeenAt != 0L && now <= lastSeenAt)) return emptyList()
+        if (now < cooldownUntil) {
+            lastSeenAt = now
+            return emptyList()
+        }
+        if (cooldownUntil != 0L) {
+            cooldownUntil = 0L
+            resetTransient()
+            smoothed = null
+        }
         if (lastSeenAt != 0L && now - lastSeenAt > 300) resetTransient()
         lastSeenAt = now
         val output = mutableListOf<GestureEvent>()
@@ -116,7 +125,6 @@ class GestureEngine(
             )
         ).toFloat()
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded && dist(points[8], points[12]) / handScale > .28f
-        if (now < cooldownUntil) return output
         if (features.recents && vPose) {
             pinch = Pinch.READY
             candidateAt = 0L
