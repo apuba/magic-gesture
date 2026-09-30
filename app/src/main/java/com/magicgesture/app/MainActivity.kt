@@ -94,7 +94,7 @@ class MainActivity : Activity() {
         }
         setupGuideContainer.addView(permissionCard(
             "2", "开启无障碍服务",
-            "无障碍服务用于执行点击、页面滑动、截图、最近任务和视频双击等操作。手势识别数据只在本机处理。",
+            "无障碍服务用于执行点击、页面滑动、截图和视频双击等操作。V 字自拍由本 App 的前置摄像头直接保存，不读取其他应用内容。",
             "进入“已下载的应用”或“已安装的服务”，找到本 App 并开启“使用服务”。",
             accessibilityPermissionButton
         ), margins(bottom = 10))
@@ -124,7 +124,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 24, height = 50))
 
         content.addView(label("手势使用指南", 22f, Color.rgb(31, 31, 55), true))
-        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；触发后进入 2 秒冷却期，期间暂停全部手势判断，结束后重新识别。", 13f, Color.rgb(104, 102, 126), false).apply {
+        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；离散动作成功后进入 2 秒冷却期，期间光标仍可移动。", 13f, Color.rgb(104, 102, 126), false).apply {
             setPadding(0, dp(6), 0, dp(14))
         })
 
@@ -133,8 +133,13 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "食指挑动 / 四指并拢上下挥", "上下滚动页面", "用水平食指上挑或下挑；也可将食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限；也可只竖起食指后整只手左移。", "←", "back", features.back), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限；也可只竖起食指后整只手右移。", "→", "home", features.home), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "最近任务", "食指和中指组成 V 字并稳定保持 2 秒，打开最近任务列表。", "Ⅱ", "recents", features.recents), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", "确认当前光标", "拇指与食指相触，其余三指伸直并保持约 0.6 秒。需要先启用并移动光标。", "OK", "ok", features.ok), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持约 0.6 秒，控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "莲花指", "最近任务", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "Ⅱ", "lotus_recents", features.lotusRecents), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_ok, "兰花指", "返回", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "←", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -281,8 +286,13 @@ class MainActivity : Activity() {
         "back" -> "向左滑动"
         "home" -> "向右滑动"
         "screenshot" -> "截图"
-        "recents" -> "V 字最近任务"
+        "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
+        "thumbs_up" -> "大拇指点赞"
+        "ok" -> "OK 确认"
+        "play_pause" -> "握拳播放/暂停"
+        "lotus_recents" -> "莲花指最近任务"
+        "orchid_back" -> "兰花指返回"
         else -> "手势"
     }
 
@@ -295,8 +305,13 @@ class MainActivity : Activity() {
             "back" to features.back,
             "home" to features.home,
             "screenshot" to features.screenshot,
-            "recents" to features.recents,
-            "like" to features.like
+            "selfie" to features.selfie,
+            "like" to features.like,
+            "thumbs_up" to features.thumbsUp,
+            "ok" to features.ok,
+            "play_pause" to features.playPause,
+            "lotus_recents" to features.lotusRecents,
+            "orchid_back" to features.orchidBack
         )
         updatingFeatureSwitches = true
         values.forEach { (key, value) -> featureSwitches[key]?.isChecked = value }
@@ -425,7 +440,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("开启无障碍服务前请确认")
             .setMessage(
-                "魔法手势使用 Android 无障碍服务，将你主动做出的隔空手势转换为点击、滑动、返回桌面、最近任务、截图和视频双击等操作。\n\n" +
+                "魔法手势使用 Android 无障碍服务，将你主动做出的隔空手势转换为点击、滑动、返回桌面、截图和视频双击等操作。\n\n" +
                     "本 App 不通过无障碍服务读取聊天内容、密码或页面文字；摄像头手势识别在设备本机完成。你可以随时在系统设置中关闭该服务。"
             )
             .setNegativeButton("暂不开启", null)

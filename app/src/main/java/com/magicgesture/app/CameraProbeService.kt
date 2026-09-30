@@ -3,15 +3,24 @@ package com.magicgesture.app
 import android.Manifest
 import android.app.*
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
+import android.graphics.Bitmap
 import android.hardware.camera2.*
 import android.media.ImageReader
+import android.media.AudioManager
+import android.provider.MediaStore
 import android.os.*
 import android.util.Log
 import android.view.Surface
+import android.view.KeyEvent
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.Executors
 
 /** Keeps the front camera and gesture recognition running while another app is visible. */
 class CameraProbeService : Service() {
@@ -34,9 +43,19 @@ class CameraProbeService : Service() {
     private var pipeline: HandPipeline? = null
     private var sensorRotation = 0
     private var controlMode = false
+    @Volatile private var selfieInProgress = false
     private var featureConfig = GestureFeatureConfig()
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
+    private val globalCooldown = GlobalCooldownManager()
+    private val mappingManager = GestureMappingManager()
+    private val featureGate = GestureFeatureGate()
+    private val selfieWriter = Executors.newSingleThreadExecutor()
+    private val actionExecutor = GestureActionExecutor(
+        accessibilityService = { ControlAccessibilityService.active },
+        selfieCapture = ::captureSelfie,
+        mediaToggle = ::toggleMediaPlayback
+    )
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()
     }
@@ -72,23 +91,38 @@ class CameraProbeService : Service() {
                 try {
                     pipeline = HandPipeline(this) { event ->
                         val service = ControlAccessibilityService.active
-                        when (event) {
-                            is GestureEvent.Cursor -> { if (featureConfig.cursor) service?.render(event.x, event.y) }
-                            is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
-                            is GestureEvent.Click -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback("点击") }
-                            is GestureEvent.Swipe -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback(if (event.up) "向上滑动" else "向下滑动") }
-                            is GestureEvent.HorizontalSwipe -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback(if (event.left) "向左滑动" else "向右滑动") }
-                            GestureEvent.Screenshot -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback("已触发截图") }
-                            GestureEvent.Like -> {
-                                overlayIndicator.showProtection()
-                                if (service == null) overlayIndicator.showFeedback("无障碍服务未连接")
-                                else service.likeVideo { success ->
-                                    overlayIndicator.showFeedback(if (success) "已点赞" else "未找到可用的点赞按钮")
+                        if (selfieInProgress && event !is GestureEvent.Cursor && event !is GestureEvent.Feedback) return@HandPipeline
+                        if (!globalCooldown.allows(event)) return@HandPipeline
+                        val mapped = mappingManager.resolve(event)
+                        if (mapped != null) {
+                            if (!featureGate.allows(mapped.mapping, featureConfig)) return@HandPipeline
+                            val submitted = actionExecutor.execute(mapped) { success ->
+                                if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS) {
+                                    finishAction(
+                                        success,
+                                        mapped.mapping.action.successMessage(),
+                                        mapped.mapping.action.failureMessage()
+                                    )
                                 }
                             }
-                            GestureEvent.Back -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback("返回") }
-                            GestureEvent.Home -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback("返回桌面") }
-                            GestureEvent.Recents -> { service?.inject(event); overlayIndicator.showProtection(); overlayIndicator.showFeedback("打开最近任务") }
+                            if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
+                                finishAction(false, mapped.mapping.action.successMessage(), "无障碍服务未连接")
+                            }
+                            return@HandPipeline
+                        }
+                        when (event) {
+                            is GestureEvent.Cursor, is GestureEvent.Click,
+                            is GestureEvent.Swipe, is GestureEvent.HorizontalSwipe,
+                            GestureEvent.Selfie, GestureEvent.Like, GestureEvent.Screenshot,
+                            GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
+                            GestureEvent.LotusRecents, GestureEvent.OrchidBack -> Unit // Migrated gestures use the mapping pipeline above.
+                            is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
+                            GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
+                                ?: finishAction(false, "返回", "无障碍服务未连接")
+                            GestureEvent.Home -> service?.inject(event) { finishAction(it, "返回桌面") }
+                                ?: finishAction(false, "返回桌面", "无障碍服务未连接")
+                            GestureEvent.Recents -> service?.inject(event) { finishAction(it, "打开最近任务") }
+                                ?: finishAction(false, "最近任务", "无障碍服务未连接")
                         }
                     }
                 } catch (e: Exception) {
@@ -175,6 +209,75 @@ class CameraProbeService : Service() {
         handler.removeCallbacks(reopenCamera)
         handler.postDelayed(reopenCamera, 1500)
     }
+    private fun captureSelfie(callback: (Boolean) -> Unit) {
+        if (selfieInProgress) { callback(false); return }
+        selfieInProgress = true
+        overlayIndicator.showFeedback("自拍倒计时：3")
+        handler.postDelayed({ overlayIndicator.showFeedback("自拍倒计时：2") }, 1_000L)
+        handler.postDelayed({ overlayIndicator.showFeedback("自拍倒计时：1") }, 2_000L)
+        handler.postDelayed({
+            val activePipeline = pipeline
+            if (stopped || activePipeline == null) {
+                selfieInProgress = false
+                callback(false)
+                return@postDelayed
+            }
+            activePipeline.captureNextFrame { bitmap ->
+                selfieWriter.execute {
+                    val saved = saveSelfie(bitmap)
+                    bitmap.recycle()
+                    selfieInProgress = false
+                    callback(saved)
+                }
+            }
+        }, 3_000L)
+    }
+    private fun toggleMediaPlayback(callback: (Boolean) -> Unit) {
+        return try {
+            val audio = getSystemService(AudioManager::class.java)
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+            callback(true)
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "media toggle failed", e)
+            callback(false)
+        }
+    }
+    private fun saveSelfie(bitmap: Bitmap): Boolean {
+        return try {
+            val name = "MagicGesture_selfie_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MagicGesture")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+            val saved = contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 94, it) } == true
+            if (!saved) {
+                contentResolver.delete(uri, null, null)
+                return false
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "selfie save failed", e)
+            false
+        }
+    }
+    private fun finishAction(success: Boolean, successMessage: String, failureMessage: String = "动作执行失败") {
+        if (success) {
+            globalCooldown.actionSucceeded()
+            overlayIndicator.showProtection(GlobalCooldownManager.DEFAULT_DURATION_MS)
+        }
+        overlayIndicator.showFeedback(if (success) successMessage else failureMessage)
+    }
     private fun fail(message: String) { isControlRunning = false; Log.e("CameraProbe", message); overlayIndicator.setState(OverlayIndicator.State.ERROR); updateNotification(message); handler.postDelayed({ stopSelf() }, 3000) }
     private fun notification(message: String): Notification {
         val stopIntent = Intent(this, CameraProbeService::class.java).setAction("STOP")
@@ -189,12 +292,14 @@ class CameraProbeService : Service() {
     override fun onDestroy() {
         isControlRunning = false
         stopped = true
+        globalCooldown.reset()
         cameraGeneration++
         handler.removeCallbacksAndMessages(null)
         session?.close(); session = null
         camera?.close(); camera = null
         reader?.close(); reader = null
         pipeline?.close(); pipeline = null
+        selfieWriter.shutdownNow()
         preferenceListener?.let {
             getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(it)
         }

@@ -30,6 +30,8 @@ class ControlAccessibilityService : AccessibilityService() {
     companion object { @Volatile var active: ControlAccessibilityService? = null; private set }
     override fun onServiceConnected() { super.onServiceConnected(); active = this }
     private var cursor: View? = null
+    private var cursorX = .5f
+    private var cursorY = .5f
     private var busy = false
     private val main = Handler(Looper.getMainLooper())
     private val imageWorker = Executors.newSingleThreadExecutor()
@@ -39,6 +41,8 @@ class ControlAccessibilityService : AccessibilityService() {
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
 
     fun render(x: Float, y: Float) = main.post {
+        cursorX = x.coerceIn(0f, 1f)
+        cursorY = y.coerceIn(0f, 1f)
         val metrics = resources.displayMetrics
         val view = cursor ?: View(this).apply {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.CYAN); setStroke(3, Color.BLACK) }
@@ -54,39 +58,47 @@ class ControlAccessibilityService : AccessibilityService() {
         window.updateViewLayout(view, params)
     }
     fun hideCursor() = main.post { cursor?.let { window.removeView(it) }; cursor = null }
-    fun inject(event: GestureEvent) = main.post {
-        if (busy) return@post
+    fun confirmAtCursor(callback: (Boolean) -> Unit) = main.post {
+        if (busy || cursor == null) { callback(false); return@post }
+        val metrics = resources.displayMetrics
+        val path = Path().apply { moveTo(cursorX * metrics.widthPixels, cursorY * metrics.heightPixels) }
+        dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
+    fun inject(event: GestureEvent, callback: (Boolean) -> Unit = {}) = main.post {
+        if (busy) { callback(false); return@post }
         val m = resources.displayMetrics
         val path = Path()
         when (event) {
             is GestureEvent.Click -> {
                 path.moveTo(event.x * m.widthPixels, event.y * m.heightPixels)
-                dispatch(path, 70)
+                dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
             }
             is GestureEvent.Swipe -> {
                 val x = m.widthPixels * .5f
                 val start = m.heightPixels * (if (event.up) .78f else .18f)
                 val end = m.heightPixels * (if (event.up) .22f else .82f)
                 path.moveTo(x, start); path.lineTo(x, end)
-                dispatch(path, if (event.up) 300 else 420)
+                dispatch(path, if (event.up) 300 else 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
             }
             is GestureEvent.HorizontalSwipe -> {
                 val y = m.heightPixels * .52f
                 val start = m.widthPixels * (if (event.left) .82f else .18f)
                 val end = m.widthPixels * (if (event.left) .18f else .82f)
                 path.moveTo(start, y); path.lineTo(end, y)
-                dispatch(path, 360)
+                dispatch(path, 360, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
             }
             GestureEvent.Screenshot -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
-                }
+                    callback(performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT))
+                } else callback(false)
             }
             GestureEvent.Like -> Unit
-            GestureEvent.Back -> performGlobalAction(GLOBAL_ACTION_BACK)
-            GestureEvent.Home -> performGlobalAction(GLOBAL_ACTION_HOME)
-            GestureEvent.Recents -> performGlobalAction(GLOBAL_ACTION_RECENTS)
-            else -> Unit
+            GestureEvent.Back -> callback(performGlobalAction(GLOBAL_ACTION_BACK))
+            GestureEvent.Home -> callback(performGlobalAction(GLOBAL_ACTION_HOME))
+            GestureEvent.Recents -> callback(performGlobalAction(GLOBAL_ACTION_RECENTS))
+            GestureEvent.LotusRecents -> callback(performGlobalAction(GLOBAL_ACTION_RECENTS))
+            GestureEvent.OrchidBack -> callback(performGlobalAction(GLOBAL_ACTION_BACK))
+            else -> callback(false)
         }
     }
 

@@ -7,15 +7,22 @@ import kotlin.math.acos
 /** Pure logic. Coordinates are normalized to [0,1], timestamps are monotonic milliseconds. */
 data class Point(val x: Float, val y: Float)
 sealed interface GestureEvent {
+    enum class MotionSource { INDEX_FINGER, PALM }
     data class Cursor(val x: Float, val y: Float) : GestureEvent
     data class Click(val x: Float, val y: Float) : GestureEvent
-    data class Swipe(val up: Boolean) : GestureEvent
-    data class HorizontalSwipe(val left: Boolean) : GestureEvent
+    data class Swipe(val up: Boolean, val source: MotionSource) : GestureEvent
+    data class HorizontalSwipe(val left: Boolean, val source: MotionSource) : GestureEvent
     data object Screenshot : GestureEvent
     data object Like : GestureEvent
     data object Back : GestureEvent
     data object Home : GestureEvent
+    data object Selfie : GestureEvent
     data object Recents : GestureEvent
+    data object ThumbsUp : GestureEvent
+    data object Ok : GestureEvent
+    data object PlayPause : GestureEvent
+    data object LotusRecents : GestureEvent
+    data object OrchidBack : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -25,6 +32,7 @@ class GestureEngine(
     private enum class Pinch { READY, CANDIDATE, FIRED }
     private enum class IndexClick { READY, STABILIZING, ARMED, BENT }
     private enum class PalmAxis { NONE, HORIZONTAL, VERTICAL }
+    private enum class StaticHold { READY, CANDIDATE, FIRED }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
         WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
@@ -46,9 +54,18 @@ class GestureEngine(
     private var indexScrollStartAngle = 0f
     private var vHoldAt = 0L
     private var vLatched = false
+    private var thumbsUpHold = StaticHold.READY
+    private var thumbsUpHoldAt = 0L
+    private var okHold = StaticHold.READY
+    private var okHoldAt = 0L
+    private var fistHold = StaticHold.READY
+    private var fistHoldAt = 0L
+    private var lotusHold = StaticHold.READY
+    private var lotusHoldAt = 0L
+    private var orchidHold = StaticHold.READY
+    private var orchidHoldAt = 0L
     private var lastFeedbackAt = 0L
-    private var cooldownUntil = 0L
-    private val actionProtectionMs = 2000L
+    private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
     private var lastSeenAt = 0L
     private var smoothed: Point? = null
@@ -60,15 +77,6 @@ class GestureEngine(
     @Synchronized fun lost(now: Long) { if (now - lastSeenAt >= 300) { resetTransient(); smoothed = null } }
     @Synchronized fun consume(points: List<Point>, now: Long): List<GestureEvent> {
         if (paused || points.size != 21 || (lastSeenAt != 0L && now <= lastSeenAt)) return emptyList()
-        if (now < cooldownUntil) {
-            lastSeenAt = now
-            return emptyList()
-        }
-        if (cooldownUntil != 0L) {
-            cooldownUntil = 0L
-            resetTransient()
-            smoothed = null
-        }
         if (lastSeenAt != 0L && now - lastSeenAt > 300) resetTransient()
         lastSeenAt = now
         val output = mutableListOf<GestureEvent>()
@@ -113,6 +121,15 @@ class GestureEngine(
         val middleFolded = dist(points[12], points[0]) < dist(points[10], points[0]) * 1.08f
         val ringFolded = dist(points[16], points[0]) < dist(points[14], points[0]) * 1.08f
         val pinkyFolded = dist(points[20], points[0]) < dist(points[18], points[0]) * 1.08f
+        val thumbUpPose = thumbOpen && middleFolded && ringFolded && pinkyFolded &&
+            dist(points[8], points[0]) < dist(points[6], points[0]) * 1.08f &&
+            points[4].y < points[3].y - handScale * .18f
+        val okPose = dist(points[4], points[8]) / handScale < .30f && middleOpen && ringOpen && pinkyOpen
+        // Provisional one-hand definitions; thresholds must be calibrated on real devices.
+        val lotusPose = dist(points[4], points[16]) / handScale < .30f &&
+            indexOpen && middleOpen && pinkyOpen && dist(points[4], points[12]) / handScale > .38f
+        val orchidPose = dist(points[4], points[12]) / handScale < .30f &&
+            indexOpen && ringOpen && pinkyOpen && dist(points[4], points[8]) / handScale > .38f
         val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded
         val indexBentPose = middleFolded && ringFolded && pinkyFolded && (
             dist(points[8], points[0]) < dist(points[6], points[0]) * 1.05f ||
@@ -125,7 +142,7 @@ class GestureEngine(
             )
         ).toFloat()
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded && dist(points[8], points[12]) / handScale > .28f
-        if (features.recents && vPose) {
+        if (features.selfie && vPose) {
             pinch = Pinch.READY
             candidateAt = 0L
             releaseAt = 0L
@@ -139,8 +156,7 @@ class GestureEngine(
                     lastFeedbackAt = now
                 }
                 if (now - vHoldAt >= 2000) {
-                    output += GestureEvent.Recents
-                    cooldownUntil = now + actionProtectionMs
+                    output += GestureEvent.Selfie
                     vLatched = true
                 }
             }
@@ -192,7 +208,6 @@ class GestureEngine(
                         output += GestureEvent.Click(point.x, point.y)
                         indexClick = IndexClick.READY
                         indexClickPoint = null
-                        cooldownUntil = now + actionProtectionMs
                         screenshotSequence = ScreenshotSequence.IDLE
                         return output
                     }
@@ -216,11 +231,16 @@ class GestureEngine(
             releaseAt = 0L
             return output
         }
+        if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
+        if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
+        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output)) return output
+        if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
+        if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
         // Finger-heart uses thumb/index proximity independently from index-bend clicking.
         val fingerHeartPose = ratio < .40f
         val fingersClearlyReleased = ratio > .58f
         if (features.like) when (pinch) {
-            Pinch.READY -> if (fingerHeartPose && now >= cooldownUntil) {
+            Pinch.READY -> if (fingerHeartPose) {
                 pinch = Pinch.CANDIDATE
                 candidateAt = now
                 releaseAt = 0L
@@ -237,7 +257,6 @@ class GestureEngine(
                 features.like && now - candidateAt >= 600 -> {
                     pinch = Pinch.FIRED
                     output += GestureEvent.Like
-                    cooldownUntil = now + actionProtectionMs
                 }
                 features.like && now - candidateAt >= 180 && now - lastFeedbackAt >= 180 -> {
                     val held = now - candidateAt
@@ -253,6 +272,42 @@ class GestureEngine(
             } else releaseAt = 0L
         } else pinch = Pinch.READY
         return output
+    }
+    private fun advanceStaticHold(
+        pose: Boolean,
+        now: Long,
+        event: GestureEvent,
+        state: () -> StaticHold,
+        setState: (StaticHold) -> Unit,
+        startedAt: () -> Long,
+        setStartedAt: (Long) -> Unit,
+        output: MutableList<GestureEvent>
+    ): Boolean {
+        when (state()) {
+            StaticHold.READY -> if (pose) {
+                setState(StaticHold.CANDIDATE)
+                setStartedAt(now)
+                return true
+            }
+            StaticHold.CANDIDATE -> {
+                if (!pose) {
+                    setState(StaticHold.READY)
+                    setStartedAt(0L)
+                } else if (now - startedAt() >= 600L) {
+                    setState(StaticHold.FIRED)
+                    output += event
+                }
+                return true
+            }
+            StaticHold.FIRED -> {
+                if (!pose) {
+                    setState(StaticHold.READY)
+                    setStartedAt(0L)
+                }
+                return true
+            }
+        }
+        return false
     }
     private fun advanceOpenPalmSequence(
         directionOpen: Boolean,
@@ -329,33 +384,29 @@ class GestureEngine(
                         }
                     }
                     if (openPalmAxis == PalmAxis.HORIZONTAL && features.back && dx <= -.075f * movementScale && elapsed <= 5000) {
-                        output += GestureEvent.HorizontalSwipe(left = true)
+                        output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        backCooldownUntil = now + actionProtectionMs
-                        cooldownUntil = backCooldownUntil
+                        backCooldownUntil = now + localRepeatGuardMs
                         return true
                     }
                     if (openPalmAxis == PalmAxis.HORIZONTAL && features.home && dx >= .075f * movementScale && elapsed <= 5000) {
-                        output += GestureEvent.HorizontalSwipe(left = false)
+                        output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        backCooldownUntil = now + actionProtectionMs
-                        cooldownUntil = backCooldownUntil
+                        backCooldownUntil = now + localRepeatGuardMs
                         return true
                     }
                     if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy <= -.065f * movementScale && elapsed <= 5000) {
-                        output += GestureEvent.Swipe(up = true)
+                        output += GestureEvent.Swipe(up = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        cooldownUntil = now + actionProtectionMs
                         return true
                     }
                     if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy >= .055f * movementScale && elapsed <= 5000) {
-                        output += GestureEvent.Swipe(up = false)
+                        output += GestureEvent.Swipe(up = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        cooldownUntil = now + actionProtectionMs
                         return true
                     }
                     if (elapsed > 5000) {
@@ -377,17 +428,15 @@ class GestureEngine(
                     val dy = palm.y - start.y
                     val elapsed = now - screenshotStageAt
                     if (features.back && dx <= -.10f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
-                        output += GestureEvent.HorizontalSwipe(left = true)
+                        output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        cooldownUntil = now + actionProtectionMs
                         return true
                     }
                     if (features.home && dx >= .10f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
-                        output += GestureEvent.HorizontalSwipe(left = false)
+                        output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
-                        cooldownUntil = now + actionProtectionMs
                         return true
                     }
                     if (elapsed > 5000) {
@@ -406,15 +455,13 @@ class GestureEngine(
                 val triggerAngle = 24f * movementScale
                 val angleChange = indexAngleDegrees - indexScrollStartAngle
                 if (angleChange <= -triggerAngle && elapsed <= 5000) {
-                    output += GestureEvent.Swipe(up = true)
+                    output += GestureEvent.Swipe(up = true, source = GestureEvent.MotionSource.INDEX_FINGER)
                     screenshotSequence = ScreenshotSequence.WAIT_RELEASE
-                    cooldownUntil = now + actionProtectionMs
                     return true
                 }
                 if (angleChange >= triggerAngle && elapsed <= 5000) {
-                    output += GestureEvent.Swipe(up = false)
+                    output += GestureEvent.Swipe(up = false, source = GestureEvent.MotionSource.INDEX_FINGER)
                     screenshotSequence = ScreenshotSequence.WAIT_RELEASE
-                    cooldownUntil = now + actionProtectionMs
                     return true
                 }
                 if (elapsed > 5000) {
@@ -470,8 +517,7 @@ class GestureEngine(
                     if (now - screenshotStageAt >= 250) {
                         output += GestureEvent.Screenshot
                         screenshotSequence = ScreenshotSequence.WAIT_SCREENSHOT_RELEASE
-                        screenshotCooldownUntil = now + actionProtectionMs
-                        cooldownUntil = screenshotCooldownUntil
+                        screenshotCooldownUntil = now + localRepeatGuardMs
                     }
                     return true
                 }
@@ -505,6 +551,16 @@ class GestureEngine(
         indexScrollStartAngle = 0f
         vHoldAt = 0
         vLatched = false
+        thumbsUpHold = StaticHold.READY
+        thumbsUpHoldAt = 0L
+        okHold = StaticHold.READY
+        okHoldAt = 0L
+        fistHold = StaticHold.READY
+        fistHoldAt = 0L
+        lotusHold = StaticHold.READY
+        lotusHoldAt = 0L
+        orchidHold = StaticHold.READY
+        orchidHoldAt = 0L
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)

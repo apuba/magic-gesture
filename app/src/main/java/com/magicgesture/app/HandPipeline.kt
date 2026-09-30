@@ -20,6 +20,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     private var lastSentAt = 0L
     private var lastResultAt = 0L
     private val closed = AtomicBoolean(false)
+    @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
     init {
         engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.features(context))
         reverseHorizontal = GesturePreferences.reverseHorizontal(context)
@@ -47,6 +48,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     @Synchronized fun resume() = engine.resume()
     @Synchronized fun pause() = engine.stop()
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
+    fun captureNextFrame(callback: (Bitmap) -> Unit) { pendingFrameCapture = callback }
     fun submit(image: Image, sensorRotation: Int) {
         if (closed.get()) return
         val now = SystemClock.uptimeMillis()
@@ -56,6 +58,10 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         val matrix = Matrix().apply { postRotate(sensorRotation.toFloat()); postScale(-1f, 1f) }
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         if (rotated !== bitmap) bitmap.recycle()
+        pendingFrameCapture?.let { capture ->
+            pendingFrameCapture = null
+            capture(rotated.copy(Bitmap.Config.ARGB_8888, false))
+        }
         val mpImage = BitmapImageBuilder(rotated).build()
         try {
             landmarker.detectAsync(mpImage, now)

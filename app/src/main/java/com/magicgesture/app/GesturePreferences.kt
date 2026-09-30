@@ -9,8 +9,13 @@ data class GestureFeatureConfig(
     val back: Boolean = true,
     val home: Boolean = true,
     val screenshot: Boolean = true,
-    val recents: Boolean = true,
-    val like: Boolean = true
+    val selfie: Boolean = true,
+    val like: Boolean = true,
+    val thumbsUp: Boolean = true,
+    val ok: Boolean = true,
+    val playPause: Boolean = true,
+    val lotusRecents: Boolean = true,
+    val orchidBack: Boolean = true
 )
 
 object GesturePreferences {
@@ -43,8 +48,13 @@ object GesturePreferences {
             back = prefs.getBoolean("feature_back", true),
             home = prefs.getBoolean("feature_home", true),
             screenshot = prefs.getBoolean("feature_screenshot", true),
-            recents = prefs.getBoolean("feature_recents", true),
-            like = prefs.getBoolean("feature_like", true)
+            selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
+            like = prefs.getBoolean("feature_like", true),
+            thumbsUp = prefs.getBoolean("feature_thumbs_up", true),
+            ok = prefs.getBoolean("feature_ok", true),
+            playPause = prefs.getBoolean("feature_play_pause", true),
+            lotusRecents = prefs.getBoolean("feature_lotus_recents", true),
+            orchidBack = prefs.getBoolean("feature_orchid_back", true)
         )
     }
 
@@ -71,8 +81,13 @@ object GesturePreferences {
             .putBoolean("feature_back", features.back)
             .putBoolean("feature_home", features.home)
             .putBoolean("feature_screenshot", features.screenshot)
-            .putBoolean("feature_recents", features.recents)
+            .putBoolean("feature_selfie", features.selfie)
             .putBoolean("feature_like", features.like)
+            .putBoolean("feature_thumbs_up", features.thumbsUp)
+            .putBoolean("feature_ok", features.ok)
+            .putBoolean("feature_play_pause", features.playPause)
+            .putBoolean("feature_lotus_recents", features.lotusRecents)
+            .putBoolean("feature_orchid_back", features.orchidBack)
             .apply()
     }
 }
