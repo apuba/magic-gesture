@@ -7,7 +7,7 @@
 - applicationId / namespace：`com.magicgesture.app`
 - targetSdk：35 → 36
 - versionCode：9
-- versionName：`0.9.0-beta`
+- versionName：`0.9.0`
 - AccessibilityService：关闭窗口内容读取 `canRetrieveWindowContent=false`
 - AccessibilityService：移除 `typeAllMask` 与 `flagReportViewIds`
 - 删除未被调用的 `findLikeNode()` 页面节点扫描代码
@@ -17,12 +17,11 @@
 
 ## 正式上架前仍需完成
 
-1. 在 Android Studio 本地 Sync 并运行真机回归测试。
-2. 创建并永久妥善保管正式 release keystore。
-3. 用该 keystore 生成签名 AAB（Google Play）与需要时的 Release APK。
-4. 完成隐私政策、Google Play Data Safety、AccessibilityService 与前台摄像头服务声明。
-5. 在 API 36 真机/模拟器及主流品牌 Android 设备验证后台、悬浮窗、通知、摄像头和无障碍行为。
+1. 永久妥善备份正式 release keystore 与本地签名配置。
+2. 完成隐私政策、Google Play Data Safety、AccessibilityService 与前台摄像头服务声明。
+3. 在 API 36 真机/模拟器及主流品牌 Android 设备继续验证后台、悬浮窗、通知、摄像头和无障碍行为。
+4. 上架前重新生成并归档最终签名 AAB/APK。
 
 ## 构建说明
 
-当前处理环境无法访问 `services.gradle.org`，因此无法下载 Gradle 9.3.0 来执行最终编译。源码已做静态一致性检查；请在可联网的 Android Studio 环境中执行 Gradle Sync 和 Build。
+已在 JDK 17、Android SDK 36 与 Gradle 9.3.0 环境完成 Debug/Release Lint、APK 和 AAB 构建；Release APK/AAB 已通过本地签名验证。
