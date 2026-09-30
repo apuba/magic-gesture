@@ -28,6 +28,8 @@ class CameraProbeService : Service() {
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
+    private var cameraOpening = false
+    private var cameraGeneration = 0
     private var stopped = false
     private var pipeline: HandPipeline? = null
     private var sensorRotation = 0
@@ -35,6 +37,9 @@ class CameraProbeService : Service() {
     private var featureConfig = GestureFeatureConfig()
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
+    private val reopenCamera = Runnable {
+        if (!stopped && camera == null && !cameraOpening) openCamera()
+    }
     override fun onCreate() {
         super.onCreate()
         worker.start(); handler = Handler(worker.looper)
@@ -63,7 +68,7 @@ class CameraProbeService : Service() {
         else startForeground(7, notification)
         overlayIndicator.show()
         if (camera == null && reader == null) handler.post {
-            if (controlMode) {
+            if (controlMode && pipeline == null) {
                 try {
                     pipeline = HandPipeline(this) { event ->
                         val service = ControlAccessibilityService.active
@@ -105,6 +110,8 @@ class CameraProbeService : Service() {
                 cameraManager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
             } ?: run { fail("未找到前置摄像头"); return }
             sensorRotation = cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            cameraOpening = true
+            val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
                 setOnImageAvailableListener({ r -> r.acquireLatestImage()?.use { image ->
                     if (controlMode) try { pipeline?.submit(image, sensorRotation) }
@@ -112,11 +119,28 @@ class CameraProbeService : Service() {
                 } }, handler)
             }
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
-                override fun onOpened(device: CameraDevice) { camera = device; configure(device) }
-                override fun onDisconnected(device: CameraDevice) { device.close(); camera = null; fail("摄像头断开") }
-                override fun onError(device: CameraDevice, error: Int) { device.close(); camera = null; fail("摄像头错误 $error") }
+                override fun onOpened(device: CameraDevice) {
+                    cameraOpening = false
+                    if (stopped || generation != cameraGeneration) { device.close(); return }
+                    camera = device
+                    configure(device)
+                }
+                override fun onDisconnected(device: CameraDevice) {
+                    device.close()
+                    if (generation == cameraGeneration) recoverCamera("摄像头被其他应用占用，等待恢复")
+                }
+                override fun onError(device: CameraDevice, error: Int) {
+                    device.close()
+                    if (generation == cameraGeneration) recoverCamera("摄像头暂时不可用，等待恢复")
+                }
             }, handler)
-        } catch (e: Exception) { fail("相机启动失败：${e.javaClass.simpleName}") }
+        } catch (e: CameraAccessException) {
+            cameraOpening = false
+            recoverCamera("摄像头暂时不可用，等待恢复")
+        } catch (e: Exception) {
+            cameraOpening = false
+            fail("相机启动失败：${e.javaClass.simpleName}")
+        }
     }
     private fun configure(device: CameraDevice) {
         try {
@@ -133,9 +157,23 @@ class CameraProbeService : Service() {
                         updateNotification(if (controlMode) "手势识别与悬浮控制正在运行" else "摄像头后台运行中")
                     } catch (e: Exception) { fail("开始取帧失败：${e.javaClass.simpleName}") }
                 }
-                override fun onConfigureFailed(s: CameraCaptureSession) { s.close(); fail("相机会话配置失败") }
+                override fun onConfigureFailed(s: CameraCaptureSession) { s.close(); recoverCamera("相机会话中断，等待恢复") }
             }, handler)
-        } catch (e: Exception) { fail("配置失败：${e.javaClass.simpleName}") }
+        } catch (e: CameraAccessException) { recoverCamera("相机会话中断，等待恢复") }
+        catch (e: Exception) { fail("配置失败：${e.javaClass.simpleName}") }
+    }
+    private fun recoverCamera(message: String) {
+        if (stopped) return
+        isControlRunning = false
+        cameraOpening = false
+        Log.w("CameraProbe", message)
+        session?.close(); session = null
+        camera?.close(); camera = null
+        reader?.close(); reader = null
+        overlayIndicator.setState(OverlayIndicator.State.ERROR)
+        updateNotification(message)
+        handler.removeCallbacks(reopenCamera)
+        handler.postDelayed(reopenCamera, 1500)
     }
     private fun fail(message: String) { isControlRunning = false; Log.e("CameraProbe", message); overlayIndicator.setState(OverlayIndicator.State.ERROR); updateNotification(message); handler.postDelayed({ stopSelf() }, 3000) }
     private fun notification(message: String): Notification {
@@ -151,6 +189,7 @@ class CameraProbeService : Service() {
     override fun onDestroy() {
         isControlRunning = false
         stopped = true
+        cameraGeneration++
         handler.removeCallbacksAndMessages(null)
         session?.close(); session = null
         camera?.close(); camera = null
