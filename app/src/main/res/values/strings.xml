@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">魔法手势</string>
+    <string name="accessibility_description">用户主动开启隔空手势后，执行点击、滑动和截图；不读取页面文字。</string>
+</resources>

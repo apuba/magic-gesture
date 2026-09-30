@@ -1,0 +1,35 @@
+# Gradle and Kotlin build state
+.gradle/
+.kotlin/
+**/build/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Local Android SDK configuration
+local.properties
+
+# Signing keys and private release configuration
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Native build intermediates
+.cxx/
+.externalNativeBuild/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
