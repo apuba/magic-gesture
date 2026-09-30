@@ -102,10 +102,10 @@ class CalibrationActivity : Activity() {
             })
             cursorSwitch = featureSwitch("食指光标", "显示并移动青色光标。", savedFeatures.cursor)
             clickSwitch = featureSwitch("食指弯曲点击", "只伸出食指稳定约 0.2 秒，弯曲后在 1 秒内重新伸直执行点击。", savedFeatures.click)
-            scrollSwitch = featureSwitch("上下滚动", "可使用水平食指上下挑动，或张掌整只手上下挥动。", savedFeatures.scroll)
-            backSwitch = featureSwitch("向左滑动", "张掌左挥，或竖起食指后整只手左移。", savedFeatures.back)
-            homeSwitch = featureSwitch("向右滑动", "张掌右挥，或竖起食指后整只手右移。", savedFeatures.home)
-            screenshotSwitch = featureSwitch("张掌握拳截图", "五指明显展开并静止约 0.7 秒，提示准备完成后握拳并松开。", savedFeatures.screenshot)
+            scrollSwitch = featureSwitch("上下滚动", "可使用水平食指上下挑动，或将食指、中指、无名指和小指并拢后整只手上下挥动；拇指不限。", savedFeatures.scroll)
+            backSwitch = featureSwitch("向左滑动", "食指、中指、无名指和小指并拢后左挥，拇指不限；也可竖起食指后整只手左移。", savedFeatures.back)
+            homeSwitch = featureSwitch("向右滑动", "食指、中指、无名指和小指并拢后右挥，拇指不限；也可竖起食指后整只手右移。", savedFeatures.home)
+            screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             recentsSwitch = featureSwitch("V 字最近任务", "V 字保持 2 秒打开最近任务。", savedFeatures.recents)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
             listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, recentsSwitch, likeSwitch).forEach {
@@ -116,10 +116,10 @@ class CalibrationActivity : Activity() {
             addView(title("练习顺序"))
             addView(body("建议按顺序逐项测试。一次只做一个动作，触发后有 2 秒保护时间；先收起手指或把手移出画面。"))
             addView(practiceCard(R.drawable.gesture_point, "1  光标与点击", "食指移动光标；稳定约 0.2 秒后弯曲食指，再在 1 秒内重新伸直。"), blockMargins(10))
-            addView(practiceCard(R.drawable.gesture_point_horizontal, "2  方向动作", "水平食指挑动或张掌上下挥测试滚动；张掌左右挥或竖直食指左右移测试横向滑动。"), blockMargins(10))
+            addView(practiceCard(R.drawable.gesture_four_fingers_together, "2  方向动作", "水平食指挑动，或将食指、中指、无名指和小指并拢后挥动；拇指不限，四指分开时不触发。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_v, "3  V 字计时", "保持 V 字 2 秒，观察顶部反馈从 0% 增长到 100%。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_finger_heart, "4  比心双击点赞", "拇指与食指交叉形成小爱心，其余三指自然收拢并稳定保持约 0.6 秒。"), blockMargins(10))
-            addView(practiceCard(R.drawable.gesture_palm, "5  截图组合", "五指明显展开并静止约 0.7 秒；看到截图准备提示后握拳，短暂保持再松开。"), blockMargins(20))
+            addView(practiceCard(R.drawable.gesture_palm, "5  截图组合", "五指明显分开并保持；看到提示后握拳，再次五指分开并保持完成截图。"), blockMargins(20))
 
             addView(Button(this@CalibrationActivity).apply {
                 text = "保存设置并返回"

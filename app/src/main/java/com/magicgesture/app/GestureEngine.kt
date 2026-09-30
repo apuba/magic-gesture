@@ -2,6 +2,7 @@ package com.magicgesture.app
 
 import kotlin.math.hypot
 import kotlin.math.atan2
+import kotlin.math.acos
 
 /** Pure logic. Coordinates are normalized to [0,1], timestamps are monotonic milliseconds. */
 data class Point(val x: Float, val y: Float)
@@ -23,9 +24,10 @@ class GestureEngine(
 ) {
     private enum class Pinch { READY, CANDIDATE, FIRED }
     private enum class IndexClick { READY, STABILIZING, ARMED, BENT }
+    private enum class PalmAxis { NONE, HORIZONTAL, VERTICAL }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
-        WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
+        WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
     }
     private var pinch = Pinch.READY
     private var indexClick = IndexClick.READY
@@ -39,6 +41,7 @@ class GestureEngine(
     private var screenshotCooldownUntil = 0L
     private var backCooldownUntil = 0L
     private var openPalmStart: Point? = null
+    private var openPalmAxis = PalmAxis.NONE
     private var lastOpenPalmAt = 0L
     private var indexScrollStartAngle = 0f
     private var vHoldAt = 0L
@@ -46,6 +49,7 @@ class GestureEngine(
     private var lastFeedbackAt = 0L
     private var cooldownUntil = 0L
     private val actionProtectionMs = 2000L
+    private val openPalmSettleMs = 160L
     private var lastSeenAt = 0L
     private var smoothed: Point? = null
     private var paused = false
@@ -71,8 +75,21 @@ class GestureEngine(
             dist(points[tipIndex], points[0]) > dist(points[pipIndex], points[0]) * 1.10f
         }
         val thumbOpen = dist(points[4], points[5]) > dist(points[3], points[5]) * 1.05f
-        val fiveFingersOpen = fourFingersOpen && (thumbOpen || ratio > .32f)
-        val screenshotPalmOpen = fourFingersOpen && thumbOpen && ratio > .45f
+        val fourFingerGapAngles = listOf(
+            vectorAngleDegrees(points[5], points[8], points[9], points[12]),
+            vectorAngleDegrees(points[9], points[12], points[13], points[16]),
+            vectorAngleDegrees(points[13], points[16], points[17], points[20])
+        )
+        val fiveFingerGapAngles = listOf(
+            vectorAngleDegrees(points[2], points[4], points[5], points[8])
+        ) + fourFingerGapAngles
+        // Compare each finger's own MCP-to-tip direction instead of rays from the wrist.
+        // Fingers that physically touch still originate at different places on the palm,
+        // so wrist-based angles incorrectly make a closed hand look spread.
+        // Direction pose: index, middle, ring and little fingers are extended and touching.
+        // The thumb is intentionally not part of this requirement.
+        val directionPalm = fourFingersOpen && fourFingerGapAngles.all { it <= 5f }
+        val screenshotPalmOpen = fourFingersOpen && thumbOpen && fiveFingerGapAngles.all { it > 5f }
         val fist = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).all { (tipIndex, pipIndex) ->
             dist(points[tipIndex], points[0]) < dist(points[pipIndex], points[0]) * 1.08f
         }
@@ -181,7 +198,7 @@ class GestureEngine(
             indexClick = IndexClick.READY
             indexClickPoint = null
         }
-        if (advanceOpenPalmSequence(fiveFingersOpen, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, fist, palm, now, output)) {
+        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, fist, palm, now, output)) {
             if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
                 indexClick = IndexClick.READY
                 indexClickPoint = null
@@ -230,7 +247,7 @@ class GestureEngine(
         return output
     }
     private fun advanceOpenPalmSequence(
-        open: Boolean,
+        directionOpen: Boolean,
         screenshotOpen: Boolean,
         indexOnly: Boolean,
         indexAngleDegrees: Float,
@@ -256,46 +273,54 @@ class GestureEngine(
                     output += GestureEvent.Feedback("竖直食指已识别：请向左或向右移动")
                     return true
                 }
-                if (open && (features.scroll || features.back || features.home || features.screenshot) && now >= screenshotCooldownUntil) {
-                    screenshotSequence = ScreenshotSequence.OPEN_CANDIDATE
+                if (features.screenshot && screenshotOpen && now >= screenshotCooldownUntil) {
+                    screenshotSequence = ScreenshotSequence.WAIT_FIST
                     screenshotStageAt = now
                     screenshotArmedAt = 0L
-                    openPalmStart = palm
                     lastOpenPalmAt = now
-                    output += GestureEvent.Feedback("张掌已识别：挥动或握拳")
+                    output += GestureEvent.Feedback("五指张开已识别：请保持")
+                    return true
+                }
+                if (directionOpen && (features.scroll || features.back || features.home)) {
+                    screenshotSequence = ScreenshotSequence.OPEN_CANDIDATE
+                    screenshotStageAt = now
+                    openPalmStart = palm
+                    openPalmAxis = PalmAxis.NONE
+                    lastOpenPalmAt = now
+                    output += GestureEvent.Feedback("食指、中指、无名指和小指并拢：请挥动")
                     return true
                 }
             }
             ScreenshotSequence.OPEN_CANDIDATE -> {
-                if (open) lastOpenPalmAt = now
-                if (!open) {
-                    // Allow a brief transition while the fingers close into a fist.
-                    if (features.screenshot && fist && screenshotArmedAt != 0L) {
-                        screenshotSequence = ScreenshotSequence.FIST_HOLD
-                        screenshotStageAt = now
-                        screenshotArmedAt = 0L
-                        openPalmStart = palm
-                        output += GestureEvent.Feedback("请短暂保持握拳")
-                        return true
-                    }
-                    // A quick close is more likely a pinch/finger-heart than a screenshot.
-                    if (fist) {
-                        screenshotSequence = ScreenshotSequence.IDLE
-                        openPalmStart = null
-                        return false
-                    }
+                if (directionOpen) lastOpenPalmAt = now
+                if (!directionOpen) {
                     // Landmark detection can briefly lose one finger during a fast wave.
                     if (now - lastOpenPalmAt <= 260) return true
                     screenshotSequence = ScreenshotSequence.IDLE
                     openPalmStart = null
+                    openPalmAxis = PalmAxis.NONE
                     return false
+                }
+                val elapsed = now - screenshotStageAt
+                if (elapsed < openPalmSettleMs) {
+                    // Ignore the small sideways jump that commonly occurs while the palm opens.
+                    openPalmStart = palm
+                    return true
                 }
                 val start = openPalmStart
                 if (start != null && now >= backCooldownUntil) {
                     val dx = palm.x - start.x
                     val dy = palm.y - start.y
-                    val elapsed = now - screenshotStageAt
-                    if (features.back && dx <= -.075f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.08f && elapsed <= 5000) {
+                    val absDx = kotlin.math.abs(dx)
+                    val absDy = kotlin.math.abs(dy)
+                    if (openPalmAxis == PalmAxis.NONE && kotlin.math.max(absDx, absDy) >= .035f * movementScale) {
+                        openPalmAxis = when {
+                            absDx >= absDy * 1.45f -> PalmAxis.HORIZONTAL
+                            absDy >= absDx * 1.35f -> PalmAxis.VERTICAL
+                            else -> PalmAxis.NONE
+                        }
+                    }
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.back && dx <= -.075f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = true)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
@@ -303,7 +328,7 @@ class GestureEngine(
                         cooldownUntil = backCooldownUntil
                         return true
                     }
-                    if (features.home && dx >= .075f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.08f && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.home && dx >= .075f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = false)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
@@ -311,24 +336,18 @@ class GestureEngine(
                         cooldownUntil = backCooldownUntil
                         return true
                     }
-                    if (features.scroll && dy <= -.065f * movementScale && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.08f && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy <= -.065f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = true)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         cooldownUntil = now + actionProtectionMs
                         return true
                     }
-                    if (features.scroll && dy >= .055f * movementScale && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.05f && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy >= .055f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = false)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         cooldownUntil = now + actionProtectionMs
-                        return true
-                    }
-                    val movement = kotlin.math.max(kotlin.math.abs(dx), kotlin.math.abs(dy))
-                    if (features.screenshot && screenshotOpen && screenshotArmedAt == 0L && elapsed >= 700 && movement < .035f) {
-                        screenshotArmedAt = now
-                        output += GestureEvent.Feedback("截图已准备：请握拳", 100)
                         return true
                     }
                     if (elapsed > 5000) {
@@ -396,44 +415,67 @@ class GestureEngine(
                 return true
             }
             ScreenshotSequence.WAIT_FIST -> {
-                if (now - screenshotArmedAt > 5000) {
-                    screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                if (screenshotOpen) {
+                    lastOpenPalmAt = now
+                    if (screenshotArmedAt == 0L && now - screenshotStageAt >= 300) {
+                        screenshotArmedAt = now
+                        output += GestureEvent.Feedback("五指张开已确认：请握拳", 100)
+                    }
+                    if (now - screenshotStageAt > 5000) screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                     return true
                 }
-                if (fist) {
+                if (fist && screenshotArmedAt != 0L) {
                     screenshotSequence = ScreenshotSequence.FIST_HOLD
                     screenshotStageAt = now
                     screenshotArmedAt = 0L
-                    openPalmStart = palm
                     output += GestureEvent.Feedback("请短暂保持握拳")
+                    return true
+                }
+                if (now - lastOpenPalmAt <= 260) return true
+                if (now - screenshotStageAt > 5000 || !fist) {
+                    screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                    return true
                 }
                 return true
             }
             ScreenshotSequence.FIST_HOLD -> {
-                if (!fist) {
-                    if (now - screenshotStageAt >= 180) {
+                if (fist) {
+                    if (now - screenshotStageAt >= 180 && screenshotArmedAt == 0L) {
+                        screenshotArmedAt = now
+                        output += GestureEvent.Feedback("握拳已识别：请再次张开五指", 100)
+                    }
+                    return true
+                }
+                if (screenshotOpen && screenshotArmedAt != 0L) {
+                    screenshotSequence = ScreenshotSequence.WAIT_FINAL_OPEN
+                    screenshotStageAt = now
+                    lastOpenPalmAt = now
+                    output += GestureEvent.Feedback("请保持五指张开")
+                    return true
+                }
+                if (now - screenshotStageAt > 1800) screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                return true
+            }
+            ScreenshotSequence.WAIT_FINAL_OPEN -> {
+                if (screenshotOpen) {
+                    lastOpenPalmAt = now
+                    if (now - screenshotStageAt >= 250) {
                         output += GestureEvent.Screenshot
                         screenshotSequence = ScreenshotSequence.WAIT_SCREENSHOT_RELEASE
                         screenshotCooldownUntil = now + actionProtectionMs
                         cooldownUntil = screenshotCooldownUntil
-                    } else {
-                        screenshotSequence = ScreenshotSequence.WAIT_FIST
-                        screenshotArmedAt = now
                     }
                     return true
                 }
-                if (now - screenshotStageAt >= 180 && screenshotArmedAt == 0L) {
-                    screenshotArmedAt = now
-                    output += GestureEvent.Feedback("握拳已识别：松开完成截图", 100)
-                }
+                if (now - lastOpenPalmAt > 220) screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                 return true
             }
             ScreenshotSequence.WAIT_RELEASE -> {
-                if (!open && !indexOnly) screenshotSequence = ScreenshotSequence.IDLE
+                if (!directionOpen && !screenshotOpen && !indexOnly && !fist) screenshotSequence = ScreenshotSequence.IDLE
                 return true
             }
             ScreenshotSequence.WAIT_SCREENSHOT_RELEASE -> {
-                if (!open && !fist) screenshotSequence = ScreenshotSequence.IDLE
+                if (!screenshotOpen && !fist) screenshotSequence = ScreenshotSequence.IDLE
                 return true
             }
         }
@@ -450,6 +492,7 @@ class GestureEngine(
         screenshotStageAt = 0
         screenshotArmedAt = 0
         openPalmStart = null
+        openPalmAxis = PalmAxis.NONE
         lastOpenPalmAt = 0
         indexScrollStartAngle = 0f
         vHoldAt = 0
@@ -457,4 +500,13 @@ class GestureEngine(
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)
+    private fun vectorAngleDegrees(aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): Float {
+        val ax = aEnd.x - aStart.x
+        val ay = aEnd.y - aStart.y
+        val bx = bEnd.x - bStart.x
+        val by = bEnd.y - bStart.y
+        val magnitude = (hypot(ax, ay) * hypot(bx, by)).coerceAtLeast(.000001f)
+        val cosine = ((ax * bx + ay * by) / magnitude).coerceIn(-1f, 1f)
+        return Math.toDegrees(acos(cosine).toDouble()).toFloat()
+    }
 }

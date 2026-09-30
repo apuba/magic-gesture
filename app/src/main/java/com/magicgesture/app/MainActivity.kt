@@ -130,9 +130,9 @@ class MainActivity : Activity() {
 
         content.addView(gestureCard(R.drawable.gesture_point, "食指移动", "控制光标", "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", "确认点击", "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point_horizontal, "食指挑动 / 张掌上下挥", "上下滚动页面", "准备姿势识别后，在 5 秒内用水平食指上挑或下挑；也可张掌后整只手上下挥动。", "↕", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "手掌或竖直食指向左", "页面向左滑动", "张开手掌向左挥，或只竖起食指后整只手向左移动。", "←", "back", features.back), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "手掌或竖直食指向右", "页面向右滑动", "张开手掌向右挥，或只竖起食指后整只手向右移动。", "→", "home", features.home), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "食指挑动 / 四指并拢上下挥", "上下滚动页面", "用水平食指上挑或下挑；也可将食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限；也可只竖起食指后整只手左移。", "←", "back", features.back), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限；也可只竖起食指后整只手右移。", "→", "home", features.home), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "最近任务", "食指和中指组成 V 字并稳定保持 2 秒，打开最近任务列表。", "Ⅱ", "recents", features.recents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
@@ -227,10 +227,10 @@ class MainActivity : Activity() {
         })
         addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(label("张掌 → 握拳", 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(label("五指张开 → 握拳 → 五指张开", 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(featureToggle("screenshot", enabled), LinearLayout.LayoutParams(dp(56), dp(48)))
         })
-        addView(label("五指明显展开并保持静止约 0.7 秒，看到“截图已准备”后握拳，短暂保持再松开。", 12.5f, Color.rgb(105, 103, 124), false).apply {
+        addView(label("五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持完成截图。手指并拢时不会触发。", 12.5f, Color.rgb(105, 103, 124), false).apply {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(8), dp(6), dp(8), 0)
         })
