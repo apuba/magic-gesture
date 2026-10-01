@@ -37,7 +37,7 @@ class MainActivity : Activity() {
     private var pendingControl = false
     private var waitingForOverlayPermission = false
     private var waitingForAccessibilityPermission = false
-    private val featureSwitches = mutableMapOf<String, Switch>()
+    private val featureSwitches = mutableMapOf<String, MutableList<Switch>>()
     private var updatingFeatureSwitches = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,9 +135,12 @@ class MainActivity : Activity() {
 
         content.addView(gestureCard(R.drawable.gesture_point, "食指移动", "控制光标", "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", "确认点击", "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "食指挑动 / 四指并拢上下挥", "上下滚动页面", "用水平食指上挑或下挑；也可将食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限；也可只竖起食指后整只手左移。", "←", "back", features.back), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限；也可只竖起食指后整只手右移。", "→", "home", features.home), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", "上下滚动页面", "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", "上下滚动页面", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "back", features.back), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向左", "页面向左滑动", "只竖起食指，整只手向左移动。", "←", "back", features.back), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "home", features.home), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向右", "页面向右滑动", "只竖起食指，整只手向右移动。", "→", "home", features.home), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -189,7 +192,7 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(label(title, 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(featureToggle(feature, enabled), LinearLayout.LayoutParams(dp(56), dp(48)))
+                addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
             })
             addView(label(action, 13f, Color.rgb(91, 87, 218), true).apply { setPadding(0, dp(3), 0, 0) })
             addView(label(description, 12.5f, Color.rgb(105, 103, 124), false).apply {
@@ -270,18 +273,23 @@ class MainActivity : Activity() {
         addState(intArrayOf(), rounded(fill, radiusDp, stroke))
     }
 
-    private fun featureToggle(feature: String, enabled: Boolean) = Switch(this).apply {
+    private fun featureToggle(feature: String, enabled: Boolean, name: String? = null) = Switch(this).apply {
+        val display = name ?: featureName(feature)
         isChecked = enabled
         minWidth = dp(56)
         minHeight = dp(48)
-        contentDescription = "启用或关闭${featureName(feature)}"
+        contentDescription = "启用或关闭${display}"
         setOnCheckedChangeListener { _, checked ->
             if (!updatingFeatureSwitches) {
                 GesturePreferences.setFeature(this@MainActivity, feature, checked)
-                status.text = "●  ${featureName(feature)}已${if (checked) "开启" else "关闭"}，运行中的控制已即时更新"
+                status.text = "●  ${display}已${if (checked) "开启" else "关闭"}，运行中的控制已即时更新"
+                // Sibling switches sharing the same feature stay in sync.
+                updatingFeatureSwitches = true
+                featureSwitches[feature]?.forEach { if (it !== this) it.isChecked = checked }
+                updatingFeatureSwitches = false
             }
         }
-        featureSwitches[feature] = this
+        featureSwitches.getOrPut(feature) { mutableListOf() }.add(this)
     }
 
     private fun featureName(feature: String) = when (feature) {
@@ -319,7 +327,7 @@ class MainActivity : Activity() {
             "orchid_back" to features.orchidBack
         )
         updatingFeatureSwitches = true
-        values.forEach { (key, value) -> featureSwitches[key]?.isChecked = value }
+        values.forEach { (key, value) -> featureSwitches[key]?.forEach { it.isChecked = value } }
         updatingFeatureSwitches = false
     }
 
