@@ -74,14 +74,14 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(playPause, GestureFeatureConfig(playPause = false)))
     }
 
-    @Test fun lotusAndOrchidMapToRecentsAndBack() {
+    @Test fun lotusAndOrchidBothMapToRecents() {
         val lotus = requireNotNull(mappings.resolve(GestureEvent.LotusRecents)).mapping
         val orchid = requireNotNull(mappings.resolve(GestureEvent.OrchidBack)).mapping
 
         assertEquals(GestureCode.G14, lotus.code)
         assertEquals(GestureAction.RECENTS, lotus.action)
         assertEquals(GestureCode.G15, orchid.code)
-        assertEquals(GestureAction.BACK, orchid.action)
+        assertEquals(GestureAction.RECENTS, orchid.action)
         assertFalse(gate.allows(lotus, GestureFeatureConfig(lotusRecents = false)))
         assertFalse(gate.allows(orchid, GestureFeatureConfig(orchidBack = false)))
     }
@@ -107,13 +107,33 @@ class GestureArchitectureTest {
 
     @Test fun directionFeatureGatesUseExistingUserSettings() {
         val scroll = requireNotNull(mappings.resolve(GestureEvent.Swipe(true, GestureEvent.MotionSource.PALM))).mapping
-        val back = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
+        val palmLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
+        val back = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
         val home = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
         assertFalse(gate.allows(scroll, GestureFeatureConfig(scroll = false)))
+        // G07/G08 now scroll horizontally, so they follow the scroll switch, not back/home.
+        assertFalse(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = false)))
+        assertTrue(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = true)))
         assertFalse(gate.allows(back, GestureFeatureConfig(back = false)))
         assertFalse(gate.allows(home, GestureFeatureConfig(home = false)))
         assertTrue(gate.allows(scroll, GestureFeatureConfig(scroll = true)))
+    }
+
+    @Test fun palmWavesOwnHorizontalScrollWhileIndexWavesKeepNavigation() {
+        val left = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
+        val right = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.PALM))).mapping
+        val back = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val home = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+
+        assertEquals(GestureCode.G07, left.code)
+        assertEquals(GestureAction.SCROLL_LEFT, left.action)
+        assertEquals(GestureCode.G08, right.code)
+        assertEquals(GestureAction.SCROLL_RIGHT, right.action)
+        assertEquals(GestureCode.G09, back.code)
+        assertEquals(GestureAction.BACK, back.action)
+        assertEquals(GestureCode.G10, home.code)
+        assertEquals(GestureAction.HOME, home.action)
     }
 
     @Test fun userOverridesReplaceTheActionButKeepGestureTypeAndCooldown() {
@@ -132,7 +152,7 @@ class GestureArchitectureTest {
     @Test fun actionForReportsOverrideOrFactoryDefault() {
         val remapped = GestureMappingManager(mapOf(GestureCode.G07 to GestureAction.RECENTS))
         assertEquals(GestureAction.RECENTS, remapped.actionFor(GestureCode.G07))
-        assertEquals(GestureAction.BACK, remapped.actionFor(GestureCode.G15))
+        assertEquals(GestureAction.RECENTS, remapped.actionFor(GestureCode.G15))
         assertEquals(GestureAction.MOVE_CURSOR, remapped.actionFor(GestureCode.G01))
     }
 
@@ -140,6 +160,8 @@ class GestureArchitectureTest {
         val manager = GestureMappingManager()
         assertTrue(manager.isRemappable(GestureCode.G02))
         assertTrue(manager.isRemappable(GestureCode.G22))
+        // G26 is unbound by default but its pipeline exists, so it stays bindable.
+        assertTrue(manager.isRemappable(GestureCode.G26))
         // G01 is the continuous cursor; G16-G19/G23 have no pipeline yet.
         assertFalse(manager.isRemappable(GestureCode.G01))
         assertFalse(manager.isRemappable(GestureCode.G16))
@@ -188,7 +210,8 @@ class GestureArchitectureTest {
     @Test fun g24ThroughG28DefaultToTheirSpecifiedActions() {
         assertEquals(GestureAction.BACK, GestureMappingManager.defaultActionOf(GestureCode.G24))
         assertEquals(GestureAction.NOTIFICATIONS, GestureMappingManager.defaultActionOf(GestureCode.G25))
-        assertEquals(GestureAction.DRAG, GestureMappingManager.defaultActionOf(GestureCode.G26))
+        // G26 is deliberately unbound; users can assign any action to it themselves.
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G26))
         assertEquals(GestureAction.RECENTS, GestureMappingManager.defaultActionOf(GestureCode.G27))
         assertEquals(GestureAction.LOCK_SCREEN, GestureMappingManager.defaultActionOf(GestureCode.G28))
     }
@@ -197,7 +220,6 @@ class GestureArchitectureTest {
         val cases = listOf(
             GestureEvent.LeftLBack to GestureCode.G24,
             GestureEvent.LShape to GestureCode.G25,
-            GestureEvent.ClawDrag(.2f, .3f, .6f, .7f) to GestureCode.G26,
             GestureEvent.CShape to GestureCode.G27,
             GestureEvent.LoveLock to GestureCode.G28
         )
@@ -211,16 +233,27 @@ class GestureArchitectureTest {
         // Each new gesture is gated by its own switch.
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LeftLBack)).mapping, GestureFeatureConfig(leftL = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LShape)).mapping, GestureFeatureConfig(lShape = false)))
-        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f))).mapping, GestureFeatureConfig(clawDrag = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.CShape)).mapping, GestureFeatureConfig(cShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LoveLock)).mapping, GestureFeatureConfig(loveLock = false)))
+        // G26 keeps its own switch even though it has no default action.
+        val claw = GestureMapping(GestureCode.G26, GestureType.HOLD, GestureAction.DRAG, CooldownPolicy.GLOBAL_AFTER_SUCCESS)
+        assertTrue(gate.allows(claw, GestureFeatureConfig()))
+        assertFalse(gate.allows(claw, GestureFeatureConfig(clawDrag = false)))
+        // An unbound gesture stays silent without an override...
+        assertNull(mappings.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f)))
+        // ...and accepts a user override that supplies the missing default.
+        val bound = GestureMappingManager(mapOf(GestureCode.G26 to GestureAction.DRAG))
+        val mappedClaw = requireNotNull(bound.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f)))
+        assertEquals(GestureCode.G26, mappedClaw.mapping.code)
+        assertEquals(GestureAction.DRAG, mappedClaw.mapping.action)
         // The new codes are remappable like the rest.
         assertTrue(mappings.isRemappable(GestureCode.G24))
         assertTrue(mappings.isRemappable(GestureCode.G28))
     }
 
     @Test fun dragEventKeepsItsCoordinatesThroughThePipeline() {
-        val mapped = requireNotNull(mappings.resolve(GestureEvent.ClawDrag(.25f, .30f, .75f, .80f)))
+        val bound = GestureMappingManager(mapOf(GestureCode.G26 to GestureAction.DRAG))
+        val mapped = requireNotNull(bound.resolve(GestureEvent.ClawDrag(.25f, .30f, .75f, .80f)))
         assertEquals(GestureAction.DRAG, mapped.mapping.action)
         val drag = mapped.event as GestureEvent.ClawDrag
         assertEquals(.25f, drag.startX)

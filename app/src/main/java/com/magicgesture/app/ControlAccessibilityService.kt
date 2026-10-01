@@ -94,6 +94,17 @@ class ControlAccessibilityService : AccessibilityService() {
         dispatch(path, if (up) 300 else 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
     }
 
+    /** Horizontal page scroll; the stroke direction matches the hand wave direction. */
+    fun scrollHorizontal(left: Boolean, callback: (Boolean) -> Unit = {}) = main.post {
+        if (busy) { callback(false); return@post }
+        val m = resources.displayMetrics
+        val path = Path().apply {
+            moveTo(m.widthPixels * (if (left) .78f else .22f), m.heightPixels * .5f)
+            lineTo(m.widthPixels * (if (left) .22f else .78f), m.heightPixels * .5f)
+        }
+        dispatch(path, 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
+
     /** Press-move-release stroke between two normalized screen points (G26 claw drag). */
     fun injectDrag(startX: Float, startY: Float, endX: Float, endY: Float, callback: (Boolean) -> Unit = {}) = main.post {
         if (busy) { callback(false); return@post }

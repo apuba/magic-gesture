@@ -12,7 +12,7 @@ enum class GestureCode {
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 
 enum class GestureAction {
-    MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
+    MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
     DRAG;
@@ -22,6 +22,8 @@ enum class GestureAction {
         CLICK -> "点击"
         SCROLL_UP -> "向上滑动"
         SCROLL_DOWN -> "向下滑动"
+        SCROLL_LEFT -> "向左滑动"
+        SCROLL_RIGHT -> "向右滑动"
         BACK -> "返回"
         HOME -> "返回桌面"
         SELFIE -> "自拍已保存"
@@ -57,6 +59,8 @@ enum class GestureAction {
         CLICK -> "点击"
         SCROLL_UP -> "向上滚动"
         SCROLL_DOWN -> "向下滚动"
+        SCROLL_LEFT -> "向左滚动"
+        SCROLL_RIGHT -> "向右滚动"
         BACK -> "返回"
         HOME -> "返回桌面"
         SELFIE -> "自拍"
@@ -121,19 +125,32 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             is GestureEvent.TwoFingerSwipe -> if (event.left) GestureCode.G29 else GestureCode.G30
             else -> return null
         }
-        val base = defaultMappings[code] ?: return null
+        val base = defaultMappings[code]
         val overridden = overrides[code]
-        val mapping = if (overridden != null && overridden != base.action) base.copy(action = overridden) else base
+        val mapping = when {
+            base != null && overridden != null && overridden != base.action -> base.copy(action = overridden)
+            base != null -> base
+            // A deliberately unbound gesture (e.g. G26) can still carry a user override; all
+            // unbound pipelines are hold/trajectory gestures, so HOLD fits them.
+            overridden != null -> GestureMapping(code, GestureType.HOLD, overridden, CooldownPolicy.GLOBAL_AFTER_SUCCESS)
+            else -> return null
+        }
         return MappedGesture(mapping, event)
     }
 
-    /** The action a gesture currently performs: user override, or the factory default. */
-    fun actionFor(code: GestureCode): GestureAction = overrides[code] ?: requireNotNull(defaultActionOf(code))
+    /** The action a gesture currently performs; null for an unbound gesture without override. */
+    fun actionFor(code: GestureCode): GestureAction? = overrides[code] ?: defaultActionOf(code)
 
     /** Only gestures with a real detection pipeline may be remapped; the cursor stays fixed. */
-    fun isRemappable(code: GestureCode): Boolean = code != GestureCode.G01 && defaultMappings.containsKey(code)
+    fun isRemappable(code: GestureCode): Boolean =
+        code != GestureCode.G01 && code !in NO_PIPELINE_CODES
 
     companion object {
+        /** Codes that only exist in the enum as placeholders; no detector, no event. */
+        private val NO_PIPELINE_CODES = setOf(
+            GestureCode.G16, GestureCode.G17, GestureCode.G18, GestureCode.G19, GestureCode.G23
+        )
+
         fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
 
         private fun dynamicMapping(code: GestureCode, action: GestureAction) = GestureMapping(
@@ -160,8 +177,10 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G04 to dynamicMapping(GestureCode.G04, GestureAction.SCROLL_DOWN),
         GestureCode.G05 to dynamicMapping(GestureCode.G05, GestureAction.SCROLL_UP),
         GestureCode.G06 to dynamicMapping(GestureCode.G06, GestureAction.SCROLL_DOWN),
-        GestureCode.G07 to dynamicMapping(GestureCode.G07, GestureAction.BACK),
-        GestureCode.G08 to dynamicMapping(GestureCode.G08, GestureAction.HOME),
+        // The four-finger wave family G05-G08 owns all four scroll directions;
+        // navigation (back/home) stays with the index-finger waves G09/G10.
+        GestureCode.G07 to dynamicMapping(GestureCode.G07, GestureAction.SCROLL_LEFT),
+        GestureCode.G08 to dynamicMapping(GestureCode.G08, GestureAction.SCROLL_RIGHT),
         GestureCode.G09 to dynamicMapping(GestureCode.G09, GestureAction.BACK),
         GestureCode.G10 to dynamicMapping(GestureCode.G10, GestureAction.HOME),
         GestureCode.G11 to GestureMapping(
@@ -191,7 +210,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G15 to GestureMapping(
             GestureCode.G15,
             GestureType.HOLD,
-            GestureAction.BACK,
+            GestureAction.RECENTS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G20 to GestureMapping(
@@ -224,12 +243,8 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.NOTIFICATIONS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
-        GestureCode.G26 to GestureMapping(
-            GestureCode.G26,
-            GestureType.HOLD,
-            GestureAction.DRAG,
-            CooldownPolicy.GLOBAL_AFTER_SUCCESS
-        ),
+        // G26 (claw) is deliberately unbound for now: the pipeline stays, the user can
+        // assign any action to it in the mapping UI. DRAG itself is no longer offered.
         GestureCode.G27 to GestureMapping(
             GestureCode.G27,
             GestureType.HOLD,
@@ -252,9 +267,10 @@ class GestureFeatureGate {
     fun allows(mapping: GestureMapping, features: GestureFeatureConfig): Boolean = when (mapping.code) {
         GestureCode.G01 -> features.cursor
         GestureCode.G02 -> features.click
-        GestureCode.G03, GestureCode.G04, GestureCode.G05, GestureCode.G06 -> features.scroll
-        GestureCode.G07, GestureCode.G09 -> features.back
-        GestureCode.G08, GestureCode.G10 -> features.home
+        GestureCode.G03, GestureCode.G04, GestureCode.G05, GestureCode.G06,
+        GestureCode.G07, GestureCode.G08 -> features.scroll
+        GestureCode.G09 -> features.back
+        GestureCode.G10 -> features.home
         GestureCode.G11 -> features.selfie
         GestureCode.G12 -> features.like
         GestureCode.G13 -> features.screenshot
@@ -303,6 +319,11 @@ class GestureActionExecutor(
             GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN -> {
                 val service = accessibilityService() ?: return false
                 service.scrollDirectional(mapped.mapping.action == GestureAction.SCROLL_UP, callback)
+                true
+            }
+            GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT -> {
+                val service = accessibilityService() ?: return false
+                service.scrollHorizontal(mapped.mapping.action == GestureAction.SCROLL_LEFT, callback)
                 true
             }
             GestureAction.BACK -> globalAction(AccessibilityService.GLOBAL_ACTION_BACK, callback)

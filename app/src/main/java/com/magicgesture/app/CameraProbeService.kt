@@ -142,8 +142,8 @@ class CameraProbeService : Service() {
                             GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
                             GestureEvent.LotusRecents, GestureEvent.OrchidBack,
                             GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
-                            GestureEvent.LoveLock, is GestureEvent.ClawDrag,
-                            is GestureEvent.TwoFingerSwipe -> Unit // Migrated gestures use the mapping pipeline above.
+                            GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe -> Unit // Migrated gestures use the mapping pipeline above.
+                            is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                             is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                             GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
                                 ?: finishAction(false, "返回", "无障碍服务未连接")

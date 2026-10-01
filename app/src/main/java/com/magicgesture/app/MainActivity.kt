@@ -137,20 +137,20 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", "确认点击", "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", "上下滚动页面", "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", "上下滚动页面", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "back", features.back), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向左", "页面向左滑动", "只竖起食指，整只手向左移动。", "←", "back", features.back), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "home", features.home), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向右", "页面向右滑动", "只竖起食指，整只手向右移动。", "→", "home", features.home), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向左", "返回", "只竖起食指，整只手向左移动。", "←", "back", features.back), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向右", "返回桌面", "只竖起食指，整只手向右移动。", "→", "home", features.home), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", "确认当前光标", "拇指与食指相触，其余三指伸直并保持约 0.6 秒。需要先启用并移动光标。", "OK", "ok", features.ok), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持约 0.6 秒，控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", "最近任务", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "Ⅱ", "lotus_recents", features.lotusRecents), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "返回", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "←", "orchid_back", features.orchidBack), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "最近任务", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", "返回", "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", "下拉通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_claw, "爪形拖动", "拖动操作", "五指向内弯成爪形保持约 0.6 秒开始拖动，移动手掌后张开手指完成拖动。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", "未设置动作", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在校准页映射中指定。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", "最近任务", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢挥动", "上一曲 / 下一曲", "食指与中指并拢伸直、其余手指收起，整只手向左挥动为上一曲、向右挥动为下一曲。识别阈值待真机校准。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
@@ -311,10 +311,10 @@ class MainActivity : Activity() {
         "ok" -> "OK 确认"
         "play_pause" -> "握拳播放/暂停"
         "lotus_recents" -> "莲花指最近任务"
-        "orchid_back" -> "兰花指返回"
+        "orchid_back" -> "兰花指最近任务"
         "left_l" -> "左 L 手形返回"
         "l_shape" -> "L 手形通知栏"
-        "claw_drag" -> "爪形拖动"
+        "claw_drag" -> "爪形手势"
         "c_shape" -> "C 手形最近任务"
         "love_lock" -> "Love 手形锁屏"
         "two_finger_media" -> "两指切换曲目"
