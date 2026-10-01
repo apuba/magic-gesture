@@ -176,7 +176,7 @@ class CalibrationActivity : Activity() {
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
             leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)
-            lShapeSwitch = featureSwitch("L 手形通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.lShape)
+            lShapeSwitch = featureSwitch("L 手形通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持 2 秒（有倒计时提示）。初版阈值，待真机校准。", savedFeatures.lShape)
             clawDragSwitch = featureSwitch("爪形手势", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在上方映射中指定。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)

@@ -255,7 +255,7 @@ class GestureEngine(
         // G24-G28 checked before the click/swipe chains: their index-based poses would
         // otherwise arm click or horizontal-swipe detection while the L shapes are held.
         if (features.leftL && advanceStaticHold(leftLPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
-        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output)) return output
+        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 2000L, label = "L 手形保持")) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
@@ -377,7 +377,9 @@ class GestureEngine(
         setState: (StaticHold) -> Unit,
         startedAt: () -> Long,
         setStartedAt: (Long) -> Unit,
-        output: MutableList<GestureEvent>
+        output: MutableList<GestureEvent>,
+        holdMs: Long = 600L,
+        label: String? = null
     ): Boolean {
         when (state()) {
             StaticHold.READY -> if (pose) {
@@ -389,9 +391,19 @@ class GestureEngine(
                 if (!pose) {
                     setState(StaticHold.READY)
                     setStartedAt(0L)
-                } else if (now - startedAt() >= 600L) {
-                    setState(StaticHold.FIRED)
-                    output += event
+                } else {
+                    // Long holds show a countdown so the user knows to keep the pose.
+                    if (label != null && holdMs >= 1000L && now - lastFeedbackAt >= 250) {
+                        val held = now - startedAt()
+                        val progress = ((held * 100L) / holdMs).toInt().coerceIn(0, 100)
+                        val remaining = ((holdMs - held).coerceAtLeast(0L) + 999L) / 1000L
+                        output += GestureEvent.Feedback("$label：还需 $remaining 秒", progress)
+                        lastFeedbackAt = now
+                    }
+                    if (now - startedAt() >= holdMs) {
+                        setState(StaticHold.FIRED)
+                        output += event
+                    }
                 }
                 return true
             }

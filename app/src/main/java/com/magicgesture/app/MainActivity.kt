@@ -149,7 +149,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", "返回桌面", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "最近任务", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", "返回", "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", "下拉通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", "下拉通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 2 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", "未设置动作", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在校准页映射中指定。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", "最近任务", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
