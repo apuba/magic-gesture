@@ -64,6 +64,27 @@ object GesturePreferences {
             .apply()
     }
 
+    // ---- Gesture -> action mapping overrides ("mapping_G07" = "HOME"). Missing key = default. ----
+
+    fun actionOverrides(context: Context): Map<GestureCode, GestureAction> {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val overrides = mutableMapOf<GestureCode, GestureAction>()
+        for (code in GestureCode.entries) {
+            val stored = prefs.getString(mappingKey(code), null) ?: continue
+            val action = runCatching { GestureAction.valueOf(stored) }.getOrNull() ?: continue
+            overrides[code] = action
+        }
+        return overrides
+    }
+
+    fun setActionOverride(context: Context, code: GestureCode, action: GestureAction?) {
+        val editor = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        if (action == null) editor.remove(mappingKey(code)) else editor.putString(mappingKey(code), action.name)
+        editor.apply()
+    }
+
+    private fun mappingKey(code: GestureCode) = "mapping_${code.name}"
+
     fun save(
         context: Context,
         sensitivity: String,

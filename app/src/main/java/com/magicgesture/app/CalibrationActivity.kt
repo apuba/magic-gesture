@@ -1,6 +1,7 @@
 package com.magicgesture.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,6 +17,35 @@ import android.widget.TextView
 import android.widget.Toast
 
 class CalibrationActivity : Activity() {
+    /** Remappable gestures and their display names, in UI order. The G01 cursor stays fixed. */
+    private val gestureNames = linkedMapOf(
+        GestureCode.G02 to "食指弯曲再伸直",
+        GestureCode.G03 to "食指上挑",
+        GestureCode.G04 to "食指下挑",
+        GestureCode.G05 to "四指并拢上挥",
+        GestureCode.G06 to "四指并拢下挥",
+        GestureCode.G07 to "四指并拢左挥",
+        GestureCode.G08 to "四指并拢右挥",
+        GestureCode.G09 to "竖直食指向左",
+        GestureCode.G10 to "竖直食指向右",
+        GestureCode.G11 to "V 字保持",
+        GestureCode.G12 to "比心保持",
+        GestureCode.G13 to "张掌→握拳→张掌",
+        GestureCode.G14 to "莲花指",
+        GestureCode.G15 to "兰花指",
+        GestureCode.G20 to "大拇指",
+        GestureCode.G21 to "OK 手势",
+        GestureCode.G22 to "握拳"
+    )
+
+    /** Actions offered in the picker. Cursor/likes-duplicate variants are excluded on purpose. */
+    private val selectableActions = listOf(
+        GestureAction.CLICK, GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
+        GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
+        GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE
+    )
+
+    private val mappingButtons = mutableMapOf<GestureCode, Button>()
     private var selectedSensitivity = "normal"
     private lateinit var lowButton: Button
     private lateinit var normalButton: Button
@@ -101,6 +131,14 @@ class CalibrationActivity : Activity() {
             )
             addView(feedbackSwitch, blockMargins(22))
 
+            addView(title("手势动作映射"))
+            addView(body("每个手势都可以换成其他动作。点击右侧按钮选择动作，选“默认”恢复出厂设置；修改立即生效，无需重启手势控制。").apply {
+                setPadding(0, dp(5), 0, dp(12))
+            })
+            mappingButtons.clear()
+            gestureNames.forEach { (code, _) -> addView(mappingRow(code), blockMargins(8)) }
+            addView(body("提示：功能开关控制的是手势本身（是否参与识别），映射控制的是触发后执行什么动作，两者相互独立。"), blockMargins(18))
+
             addView(title("手势功能开关"))
             addView(body("测试时可只开启一个手势，关闭的功能不会参与判断，也不会影响其他动作。").apply {
                 setPadding(0, dp(5), 0, dp(12))
@@ -167,6 +205,55 @@ class CalibrationActivity : Activity() {
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)))
         })
         }
+    }
+
+    /** Gesture name on the left, current action on the right; tapping opens the action picker. */
+    private fun mappingRow(code: GestureCode) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(16), dp(8), dp(10), dp(8))
+        background = rounded(Color.WHITE, 16, Color.rgb(226, 232, 240))
+        addView(TextView(this@CalibrationActivity).apply {
+            text = gestureNames.getValue(code)
+            textSize = 14.5f
+            setTextColor(Color.rgb(30, 41, 59))
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val button = Button(this@CalibrationActivity).apply {
+            textSize = 13f
+            isAllCaps = false
+            minWidth = dp(104)
+            minHeight = dp(36)
+            setPadding(dp(14), 0, dp(14), 0)
+            stateListAnimator = null
+            setTextColor(Color.rgb(37, 99, 235))
+            background = pressable(Color.rgb(239, 246, 255), Color.rgb(219, 234, 254), 12, Color.rgb(191, 219, 254))
+        }
+        button.text = currentAction(code).displayLabel()
+        button.setOnClickListener { showActionPicker(code) }
+        mappingButtons[code] = button
+        addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)))
+    }
+
+    private fun currentAction(code: GestureCode): GestureAction =
+        GesturePreferences.actionOverrides(this)[code] ?: requireNotNull(GestureMappingManager.defaultActionOf(code))
+
+    private fun showActionPicker(code: GestureCode) {
+        // First option is null = restore the factory default for this gesture.
+        val options = listOf<GestureAction?>(null) + selectableActions
+        val defaultLabel = GestureMappingManager.defaultActionOf(code)?.displayLabel() ?: "无"
+        val labels = options.map { it?.displayLabel() ?: "默认（$defaultLabel）" }.toTypedArray()
+        val current = GesturePreferences.actionOverrides(this)[code]
+        val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
+        AlertDialog.Builder(this)
+            .setTitle("${gestureNames.getValue(code)} · 选择动作")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                GesturePreferences.setActionOverride(this, code, options[which])
+                mappingButtons[code]?.text = currentAction(code).displayLabel()
+                Toast.makeText(this, "映射已更新，运行中即时生效", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun sensitivityButton(label: String, value: String) = Button(this).apply {

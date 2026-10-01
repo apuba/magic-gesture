@@ -50,7 +50,7 @@ class CameraProbeService : Service() {
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
     private val globalCooldown = GlobalCooldownManager()
-    private val mappingManager = GestureMappingManager()
+    private var mappingManager = GestureMappingManager()
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -69,13 +69,20 @@ class CameraProbeService : Service() {
         worker.start(); handler = Handler(worker.looper)
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         featureConfig = GesturePreferences.features(this)
+        mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
         overlayIndicator = OverlayIndicator(this)
         preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("feature_") == true) {
-                featureConfig = GesturePreferences.features(this)
-                pipeline?.updateFeatures(featureConfig)
-                if (!featureConfig.cursor) ControlAccessibilityService.active?.hideCursor()
-                overlayIndicator.showFeedback("手势开关已即时更新")
+            when {
+                key?.startsWith("feature_") == true -> {
+                    featureConfig = GesturePreferences.features(this)
+                    pipeline?.updateFeatures(featureConfig)
+                    if (!featureConfig.cursor) ControlAccessibilityService.active?.hideCursor()
+                    overlayIndicator.showFeedback("手势开关已即时更新")
+                }
+                key?.startsWith("mapping_") == true -> {
+                    mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
+                    overlayIndicator.showFeedback("手势映射已即时更新")
+                }
             }
         }.also {
             getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(it)

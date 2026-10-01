@@ -72,6 +72,33 @@ class ControlAccessibilityService : AccessibilityService() {
         val path = Path().apply { moveTo(cursorX * metrics.widthPixels, cursorY * metrics.heightPixels) }
         dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
     }
+
+    // ---- Action-centric entry points: used by GestureActionExecutor so a remapped gesture
+    // ---- never depends on its original event type. ----
+
+    /** Performs a system global action (back / home / recents / ...). */
+    fun globalAction(actionCode: Int, callback: (Boolean) -> Unit = {}) = main.post {
+        if (busy) { callback(false); return@post }
+        callback(performGlobalAction(actionCode))
+    }
+
+    /** Scrolls the current page in the given direction, mirroring the swipe injection timing. */
+    fun scrollDirectional(up: Boolean, callback: (Boolean) -> Unit = {}) = main.post {
+        if (busy) { callback(false); return@post }
+        val m = resources.displayMetrics
+        val path = Path().apply {
+            moveTo(m.widthPixels * .5f, m.heightPixels * (if (up) .78f else .18f))
+            lineTo(m.widthPixels * .5f, m.heightPixels * (if (up) .22f else .82f))
+        }
+        dispatch(path, if (up) 300 else 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
+
+    /** System screenshot; mirrors the API-28 guard inside inject(). */
+    fun screenshotAction(callback: (Boolean) -> Unit = {}) = main.post {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) callback(performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT))
+        else callback(false)
+    }
+
     fun inject(event: GestureEvent, callback: (Boolean) -> Unit = {}) = main.post {
         if (busy) { callback(false); return@post }
         val m = resources.displayMetrics

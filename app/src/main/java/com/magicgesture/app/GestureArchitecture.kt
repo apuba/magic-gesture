@@ -1,5 +1,7 @@
 package com.magicgesture.app
 
+import android.accessibilityservice.AccessibilityService
+
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
     G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23
@@ -33,6 +35,22 @@ enum class GestureAction {
         CONFIRM -> "请先启用并移动光标"
         else -> "动作执行失败"
     }
+
+    /** Short label shown in the mapping configuration UI. */
+    fun displayLabel(): String = when (this) {
+        MOVE_CURSOR -> "移动光标"
+        CLICK -> "点击"
+        SCROLL_UP -> "向上滚动"
+        SCROLL_DOWN -> "向下滚动"
+        BACK -> "返回"
+        HOME -> "返回桌面"
+        SELFIE -> "自拍"
+        LIKE, THUMBS_UP_LIKE -> "双击点赞"
+        SCREENSHOT -> "截图"
+        CONFIRM -> "点击光标位置"
+        PLAY_PAUSE -> "播放/暂停"
+        RECENTS -> "最近任务"
+    }
 }
 
 enum class CooldownPolicy { NONE, GLOBAL_AFTER_SUCCESS }
@@ -46,8 +64,57 @@ data class GestureMapping(
 
 data class MappedGesture(val mapping: GestureMapping, val event: GestureEvent)
 
-class GestureMappingManager {
-    private val mappings = mapOf(
+/**
+ * Resolves gesture events to mappings. User overrides (gesture -> action) are applied on top
+ * of the factory defaults; the gesture type and cooldown policy always stay with the gesture.
+ */
+class GestureMappingManager(private val overrides: Map<GestureCode, GestureAction> = emptyMap()) {
+
+    fun resolve(event: GestureEvent): MappedGesture? {
+        val code = when (event) {
+            is GestureEvent.Cursor -> GestureCode.G01
+            is GestureEvent.Click -> GestureCode.G02
+            is GestureEvent.Swipe -> when (event.source) {
+                GestureEvent.MotionSource.INDEX_FINGER -> if (event.up) GestureCode.G03 else GestureCode.G04
+                GestureEvent.MotionSource.PALM -> if (event.up) GestureCode.G05 else GestureCode.G06
+            }
+            is GestureEvent.HorizontalSwipe -> when (event.source) {
+                GestureEvent.MotionSource.PALM -> if (event.left) GestureCode.G07 else GestureCode.G08
+                GestureEvent.MotionSource.INDEX_FINGER -> if (event.left) GestureCode.G09 else GestureCode.G10
+            }
+            GestureEvent.Selfie -> GestureCode.G11
+            GestureEvent.Like -> GestureCode.G12
+            GestureEvent.Screenshot -> GestureCode.G13
+            GestureEvent.LotusRecents -> GestureCode.G14
+            GestureEvent.OrchidBack -> GestureCode.G15
+            GestureEvent.ThumbsUp -> GestureCode.G20
+            GestureEvent.Ok -> GestureCode.G21
+            GestureEvent.PlayPause -> GestureCode.G22
+            else -> return null
+        }
+        val base = defaultMappings[code] ?: return null
+        val overridden = overrides[code]
+        val mapping = if (overridden != null && overridden != base.action) base.copy(action = overridden) else base
+        return MappedGesture(mapping, event)
+    }
+
+    /** The action a gesture currently performs: user override, or the factory default. */
+    fun actionFor(code: GestureCode): GestureAction = overrides[code] ?: requireNotNull(defaultActionOf(code))
+
+    /** Only gestures with a real detection pipeline may be remapped; the cursor stays fixed. */
+    fun isRemappable(code: GestureCode): Boolean = code != GestureCode.G01 && defaultMappings.containsKey(code)
+
+    companion object {
+        fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
+
+        private fun dynamicMapping(code: GestureCode, action: GestureAction) = GestureMapping(
+            code,
+            GestureType.DYNAMIC,
+            action,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        )
+
+        private val defaultMappings = mapOf(
         GestureCode.G01 to GestureMapping(
             GestureCode.G01,
             GestureType.CONTINUOUS,
@@ -117,39 +184,6 @@ class GestureMappingManager {
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         )
     )
-
-    companion object {
-        private fun dynamicMapping(code: GestureCode, action: GestureAction) = GestureMapping(
-            code,
-            GestureType.DYNAMIC,
-            action,
-            CooldownPolicy.GLOBAL_AFTER_SUCCESS
-        )
-    }
-
-    fun resolve(event: GestureEvent): MappedGesture? {
-        val code = when (event) {
-            is GestureEvent.Cursor -> GestureCode.G01
-            is GestureEvent.Click -> GestureCode.G02
-            is GestureEvent.Swipe -> when (event.source) {
-                GestureEvent.MotionSource.INDEX_FINGER -> if (event.up) GestureCode.G03 else GestureCode.G04
-                GestureEvent.MotionSource.PALM -> if (event.up) GestureCode.G05 else GestureCode.G06
-            }
-            is GestureEvent.HorizontalSwipe -> when (event.source) {
-                GestureEvent.MotionSource.PALM -> if (event.left) GestureCode.G07 else GestureCode.G08
-                GestureEvent.MotionSource.INDEX_FINGER -> if (event.left) GestureCode.G09 else GestureCode.G10
-            }
-            GestureEvent.Selfie -> GestureCode.G11
-            GestureEvent.Like -> GestureCode.G12
-            GestureEvent.Screenshot -> GestureCode.G13
-            GestureEvent.LotusRecents -> GestureCode.G14
-            GestureEvent.OrchidBack -> GestureCode.G15
-            GestureEvent.ThumbsUp -> GestureCode.G20
-            GestureEvent.Ok -> GestureCode.G21
-            GestureEvent.PlayPause -> GestureCode.G22
-            else -> return null
-        }
-        return MappedGesture(requireNotNull(mappings[code]), event)
     }
 }
 
@@ -177,7 +211,11 @@ class GestureActionExecutor(
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
     private val mediaToggle: ((Boolean) -> Unit) -> Unit
 ) {
-    /** Returns false when the action cannot even be submitted. */
+    /**
+     * Action-centric dispatch: execution depends only on the mapped action, never on the
+     * gesture event that produced it, so user-remapped gestures work for every action.
+     * Returns false when the action cannot even be submitted.
+     */
     fun execute(mapped: MappedGesture, callback: (Boolean) -> Unit): Boolean {
         return when (mapped.mapping.action) {
             GestureAction.MOVE_CURSOR -> {
@@ -189,26 +227,30 @@ class GestureActionExecutor(
             }
             GestureAction.CLICK -> {
                 val service = accessibilityService() ?: return false
-                val click = mapped.event as? GestureEvent.Click ?: return false
-                service.inject(click, callback)
+                val click = mapped.event as? GestureEvent.Click
+                // Gestures remapped to CLICK have no coordinates of their own; fall back
+                // to tapping the current cursor position, exactly like CONFIRM.
+                if (click != null) service.inject(click, callback) else service.confirmAtCursor(callback)
                 true
             }
-            GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
-            GestureAction.BACK, GestureAction.HOME, GestureAction.SCREENSHOT, GestureAction.RECENTS -> {
+            GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN -> {
                 val service = accessibilityService() ?: return false
-                service.inject(mapped.event, callback)
+                service.scrollDirectional(mapped.mapping.action == GestureAction.SCROLL_UP, callback)
+                true
+            }
+            GestureAction.BACK -> globalAction(AccessibilityService.GLOBAL_ACTION_BACK, callback)
+            GestureAction.HOME -> globalAction(AccessibilityService.GLOBAL_ACTION_HOME, callback)
+            GestureAction.RECENTS -> globalAction(AccessibilityService.GLOBAL_ACTION_RECENTS, callback)
+            GestureAction.SCREENSHOT -> {
+                val service = accessibilityService() ?: return false
+                service.screenshotAction(callback)
                 true
             }
             GestureAction.SELFIE -> {
                 selfieCapture(callback)
                 true
             }
-            GestureAction.LIKE -> {
-                val service = accessibilityService() ?: return false
-                service.likeVideo(callback)
-                true
-            }
-            GestureAction.THUMBS_UP_LIKE -> {
+            GestureAction.LIKE, GestureAction.THUMBS_UP_LIKE -> {
                 val service = accessibilityService() ?: return false
                 service.likeVideo(callback)
                 true
@@ -223,5 +265,11 @@ class GestureActionExecutor(
                 true
             }
         }
+    }
+
+    private fun globalAction(actionCode: Int, callback: (Boolean) -> Unit): Boolean {
+        val service = accessibilityService() ?: return false
+        service.globalAction(actionCode, callback)
+        return true
     }
 }

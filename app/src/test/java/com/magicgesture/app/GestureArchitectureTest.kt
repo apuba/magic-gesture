@@ -115,4 +115,44 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(home, GestureFeatureConfig(home = false)))
         assertTrue(gate.allows(scroll, GestureFeatureConfig(scroll = true)))
     }
+
+    @Test fun userOverridesReplaceTheActionButKeepGestureTypeAndCooldown() {
+        val remapped = GestureMappingManager(mapOf(GestureCode.G15 to GestureAction.HOME))
+
+        val mapped = requireNotNull(remapped.resolve(GestureEvent.OrchidBack))
+        assertEquals(GestureCode.G15, mapped.mapping.code)
+        assertEquals(GestureAction.HOME, mapped.mapping.action)
+        assertEquals(GestureType.HOLD, mapped.mapping.type)
+        assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.mapping.cooldownPolicy)
+        // The feature gate still follows the gesture (input side), not the remapped action.
+        assertFalse(gate.allows(mapped.mapping, GestureFeatureConfig(orchidBack = false)))
+        assertTrue(gate.allows(mapped.mapping, GestureFeatureConfig(orchidBack = true)))
+    }
+
+    @Test fun actionForReportsOverrideOrFactoryDefault() {
+        val remapped = GestureMappingManager(mapOf(GestureCode.G07 to GestureAction.RECENTS))
+        assertEquals(GestureAction.RECENTS, remapped.actionFor(GestureCode.G07))
+        assertEquals(GestureAction.BACK, remapped.actionFor(GestureCode.G15))
+        assertEquals(GestureAction.MOVE_CURSOR, remapped.actionFor(GestureCode.G01))
+    }
+
+    @Test fun remappingOnlyCoversGesturesWithRealPipelines() {
+        val manager = GestureMappingManager()
+        assertTrue(manager.isRemappable(GestureCode.G02))
+        assertTrue(manager.isRemappable(GestureCode.G22))
+        // G01 is the continuous cursor; G16-G19/G23 have no pipeline yet.
+        assertFalse(manager.isRemappable(GestureCode.G01))
+        assertFalse(manager.isRemappable(GestureCode.G16))
+        assertFalse(manager.isRemappable(GestureCode.G17))
+        assertFalse(manager.isRemappable(GestureCode.G18))
+        assertFalse(manager.isRemappable(GestureCode.G19))
+        assertFalse(manager.isRemappable(GestureCode.G23))
+    }
+
+    @Test fun overrideEqualToTheDefaultBehavesLikeNoOverride() {
+        val remapped = GestureMappingManager(mapOf(GestureCode.G15 to GestureAction.BACK))
+        val mapped = requireNotNull(remapped.resolve(GestureEvent.OrchidBack))
+        assertEquals(GestureAction.BACK, mapped.mapping.action)
+        assertEquals(GestureAction.BACK, remapped.actionFor(GestureCode.G15))
+    }
 }
