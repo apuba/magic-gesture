@@ -184,11 +184,15 @@ class GestureEngine(
         // G27: fingers half-bent forming a C, more open than the claw.
         val cShapePose = !fist && !clawPose && !fourFingersOpen && thumbOpen &&
             tipPalmRatios.all { it in .85f..1.35f }
-        // G29/G30: index and middle extended and touching (not a spread V), ring and pinky folded.
+        // G29/G30: index and middle extended and roughly parallel (not a spread V), ring and pinky folded.
+        // On a real hand, pressed-together fingertips still sit ~0.3 palm-widths apart, so distance
+        // alone cannot separate this pose from the V — the splay angle is the discriminator.
+        val twoFingerIndexMiddleAngle = vectorAngleDegrees(points[5], points[8], points[9], points[12])
         val twoFingerTogetherPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
-            vectorAngleDegrees(points[5], points[8], points[9], points[12]) <= 8f
-        val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded && dist(points[8], points[12]) / handScale > .28f
-        if (features.selfie && vPose) {
+            dist(points[8], points[12]) / handScale <= .42f && twoFingerIndexMiddleAngle <= 15f
+        val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
+            dist(points[8], points[12]) / handScale > .28f && twoFingerIndexMiddleAngle > 15f
+        if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
             candidateAt = 0L
             releaseAt = 0L

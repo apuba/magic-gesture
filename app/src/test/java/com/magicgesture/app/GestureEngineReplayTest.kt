@@ -64,14 +64,18 @@ class GestureEngineReplayTest {
 
     // ---------------------------------------------------------------- poses
 
+    /** Realistic V: middle finger splayed outward so the index/middle angle is well above 15°. */
     private fun vSign() = baseHand(index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED, ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED)
+        .withLandmark(11, Point(.52f, .41f))
+        .withLandmark(12, Point(.57f, .33f))
 
     /**
      * Neutral release pose: index and middle extended but touching, ring and pinky folded.
-     * It matches no gesture state machine (V separation is below threshold, not index-only,
+     * It matches no firing state machine (fingers parallel so it is not a V, not index-only,
      * not a fist, not an open palm), so every detector observes the release.
      */
-    private fun restPose(): List<Point> = vSign().withLandmark(12, Point(.44f, .35f))
+    private fun restPose(): List<Point> = baseHand(index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED, ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED)
+        .withLandmark(12, Point(.44f, .35f))
 
     private fun fistPose() = baseHand(
         FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, thumbSide
@@ -307,7 +311,11 @@ class GestureEngineReplayTest {
 
     @Test fun holdingTheTwoFingerPoseAloneNeverFires() {
         val r = Replay()
-        r.feed(30, ::restPose)                       // restPose IS the two-finger pose
+        r.feed(50, ::restPose)                       // restPose IS the two-finger pose; 2.5s > selfie hold
         assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+        // Pressed-together fingers (gap slightly over the old 0.28 threshold, parallel) must
+        // never be mistaken for a spread V and start the selfie countdown.
+        assertEquals(0, r.events.countOf<GestureEvent.Selfie>())
+        assertEquals(0, r.events.countOf<GestureEvent.Feedback>())
     }
 }
