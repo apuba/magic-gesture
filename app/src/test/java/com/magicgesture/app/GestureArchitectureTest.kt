@@ -74,12 +74,12 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(playPause, GestureFeatureConfig(playPause = false)))
     }
 
-    @Test fun lotusAndOrchidBothMapToRecents() {
+    @Test fun lotusMapsHomeAndOrchidMapsRecents() {
         val lotus = requireNotNull(mappings.resolve(GestureEvent.LotusRecents)).mapping
         val orchid = requireNotNull(mappings.resolve(GestureEvent.OrchidBack)).mapping
 
         assertEquals(GestureCode.G14, lotus.code)
-        assertEquals(GestureAction.RECENTS, lotus.action)
+        assertEquals(GestureAction.HOME, lotus.action)
         assertEquals(GestureCode.G15, orchid.code)
         assertEquals(GestureAction.RECENTS, orchid.action)
         assertFalse(gate.allows(lotus, GestureFeatureConfig(lotusRecents = false)))
@@ -262,22 +262,33 @@ class GestureArchitectureTest {
         assertEquals(.80f, drag.endY)
     }
 
-    @Test fun g29AndG30DefaultToMediaTrackControl() {
-        val previous = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(left = true)))
+    @Test fun twoFingerWavesDefaultToTrackControlAndVolume() {
+        val previous = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.LEFT)))
         assertEquals(GestureCode.G29, previous.mapping.code)
         assertEquals(GestureAction.MEDIA_PREVIOUS, previous.mapping.action)
         assertEquals(GestureType.DYNAMIC, previous.mapping.type)
         assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, previous.mapping.cooldownPolicy)
 
-        val next = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(left = false)))
+        val next = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.RIGHT)))
         assertEquals(GestureCode.G30, next.mapping.code)
         assertEquals(GestureAction.MEDIA_NEXT, next.mapping.action)
 
-        // Both directions share one feature switch and are remappable.
+        val louder = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.UP)))
+        assertEquals(GestureCode.G31, louder.mapping.code)
+        assertEquals(GestureAction.VOLUME_UP, louder.mapping.action)
+
+        val quieter = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.DOWN)))
+        assertEquals(GestureCode.G32, quieter.mapping.code)
+        assertEquals(GestureAction.VOLUME_DOWN, quieter.mapping.action)
+
+        // All four directions share one feature switch and are remappable.
         assertFalse(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = false)))
         assertTrue(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = true)))
-        assertTrue(gate.allows(next.mapping, GestureFeatureConfig(twoFingerMedia = true)))
+        assertTrue(gate.allows(louder.mapping, GestureFeatureConfig(twoFingerMedia = true)))
+        assertTrue(gate.allows(quieter.mapping, GestureFeatureConfig(twoFingerMedia = true)))
         assertTrue(mappings.isRemappable(GestureCode.G29))
         assertTrue(mappings.isRemappable(GestureCode.G30))
+        assertTrue(mappings.isRemappable(GestureCode.G31))
+        assertTrue(mappings.isRemappable(GestureCode.G32))
     }
 }

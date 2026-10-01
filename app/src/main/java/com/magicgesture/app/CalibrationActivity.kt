@@ -42,7 +42,9 @@ class CalibrationActivity : Activity() {
         GestureCode.G27 to "C 手形",
         GestureCode.G28 to "Love 手形",
         GestureCode.G29 to "两指左挥",
-        GestureCode.G30 to "两指右挥"
+        GestureCode.G30 to "两指右挥",
+        GestureCode.G31 to "两指上挥",
+        GestureCode.G32 to "两指下挥"
     )
 
     /**
@@ -174,14 +176,14 @@ class CalibrationActivity : Activity() {
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
             okSwitch = featureSwitch("OK 确认", "做出 OK 手势并保持约 0.6 秒，点击当前光标位置。", savedFeatures.ok)
             playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持约 0.6 秒，发送系统媒体播放/暂停指令。", savedFeatures.playPause)
-            lotusRecentsSwitch = featureSwitch("莲花指最近任务", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
+            lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
             leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)
             lShapeSwitch = featureSwitch("L 手形通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.lShape)
             clawDragSwitch = featureSwitch("爪形手势", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在上方映射中指定。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
-            twoFingerMediaSwitch = featureSwitch("两指切换曲目", "食指与中指并拢伸直、其余手指收起，整只手向左挥动为上一曲、向右挥动为下一曲。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
+            twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起，整只手左挥为上一曲、右挥为下一曲、上挥增大音量、下挥降低音量。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
             listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
                 addView(it, blockMargins(8))
             }

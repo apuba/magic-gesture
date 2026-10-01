@@ -309,10 +309,10 @@ class GestureEngineReplayTest {
     }
 
     /** Index and middle extended and touching, ring and pinky folded; whole hand translated. */
-    private fun twoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
+    private fun twoFingerHand(offsetX: Float = 0f, offsetY: Float = 0f): List<Point> = baseHand(
         index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
-        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX
-    ).withLandmark(12, Point(.44f + offsetX, .35f))
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX, offsetY = offsetY
+    ).withLandmark(12, Point(.44f + offsetX, .35f + offsetY))
 
     /** Pressed fingers with a small real-device splay that exceeded the former 15-degree limit. */
     private fun slightlySplayedTwoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
@@ -336,7 +336,7 @@ class GestureEngineReplayTest {
         r.feed(6) { dx -= .03f; twoFingerHand(dx) }  // wave left -> previous track
         val first = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
         assertEquals(1, first.size)
-        assertEquals(true, first[0].left)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, first[0].direction)
 
         r.feed(4, ::fistPose)                        // release: re-arm needs a pose break
         r.feed(4) { twoFingerHand() }
@@ -344,7 +344,25 @@ class GestureEngineReplayTest {
         r.feed(6) { dx2 += .03f; twoFingerHand(dx2) }  // wave right -> next track
         val both = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
         assertEquals(2, both.size)
-        assertEquals(false, both[1].left)
+        assertEquals(GestureEvent.TwoFingerDirection.RIGHT, both[1].direction)
+    }
+
+    @Test fun twoFingerSwipeUpRaisesVolumeAndDownLowersIt() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dy = 0f
+        r.feed(6) { dy -= .025f; twoFingerHand(0f, dy) }  // wave up -> volume up
+        val up = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(1, up.size)
+        assertEquals(GestureEvent.TwoFingerDirection.UP, up[0].direction)
+
+        r.feed(4, ::fistPose)                        // release: re-arm needs a pose break
+        r.feed(4) { twoFingerHand() }
+        var dy2 = 0f
+        r.feed(6) { dy2 += .025f; twoFingerHand(0f, dy2) }  // wave down -> volume down
+        val all = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(2, all.size)
+        assertEquals(GestureEvent.TwoFingerDirection.DOWN, all[1].direction)
     }
 
     @Test fun holdingTheTwoFingerPoseAloneNeverFires() {
@@ -374,7 +392,7 @@ class GestureEngineReplayTest {
         r.feed(6) { dx -= .03f; occludedMiddleTwoFingerHand(dx) }
         val swipes = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
         assertEquals(1, swipes.size)
-        assertEquals(true, swipes.single().left)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, swipes.single().direction)
         assertEquals(0, r.events.countOf<GestureEvent.Click>())
         assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢已识别") })
     }

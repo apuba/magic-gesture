@@ -28,7 +28,9 @@ sealed interface GestureEvent {
     data object CShape : GestureEvent
     data object LoveLock : GestureEvent
     data class ClawDrag(val startX: Float, val startY: Float, val endX: Float, val endY: Float) : GestureEvent
-    data class TwoFingerSwipe(val left: Boolean) : GestureEvent
+    /** Four-direction wave of the two-finger (index+middle together) pose. */
+    enum class TwoFingerDirection { LEFT, RIGHT, UP, DOWN }
+    data class TwoFingerSwipe(val direction: TwoFingerDirection) : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -460,10 +462,10 @@ class GestureEngine(
         return false
     }
     /**
-     * G29/G30 track switching: hold the index+middle-together pose, then wave the whole hand
-     * left for the previous track or right for the next one. The pose is also a common
-     * "neutral" hand shape, so this machine never consumes frames — every other detector
-     * keeps observing them; it only emits events on its own transitions.
+     * G29-G32 two-finger media control: hold the index+middle-together pose, then wave the
+     * whole hand left/right for the previous/next track or up/down for volume up/down. The
+     * pose is also a common "neutral" hand shape, so this machine never consumes frames —
+     * every other detector keeps observing them; it only emits events on its own transitions.
      */
     private fun advanceTwoFingerSwipe(
         pose: Boolean,
@@ -481,7 +483,7 @@ class GestureEngine(
                 twoFingerState = TwoFingerSwipeState.TRACKING
                 twoFingerStart = palm
                 twoFingerStageAt = now
-                output += GestureEvent.Feedback("两指并拢已识别：请向左或向右挥动")
+                output += GestureEvent.Feedback("两指并拢已识别：左右挥切歌，上下挥调音量")
             }
             TwoFingerSwipeState.TRACKING -> {
                 if (!pose) {
@@ -495,15 +497,22 @@ class GestureEngine(
                     val dy = palm.y - start.y
                     val elapsed = now - twoFingerStageAt
                     val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f
-                    if (dx <= -.09f * movementScale && horizontal && elapsed <= 5000) {
-                        output += GestureEvent.TwoFingerSwipe(left = true)
-                        twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
-                        twoFingerStart = null
-                    } else if (dx >= .09f * movementScale && horizontal && elapsed <= 5000) {
-                        output += GestureEvent.TwoFingerSwipe(left = false)
-                        twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
-                        twoFingerStart = null
-                    } else if (elapsed > 5000) {
+                    val vertical = kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.25f
+                    val fired = when {
+                        // Landmark y grows downward, so a wave up produces negative dy.
+                        dx <= -.09f * movementScale && horizontal && elapsed <= 5000 ->
+                            GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.LEFT)
+                        dx >= .09f * movementScale && horizontal && elapsed <= 5000 ->
+                            GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.RIGHT)
+                        dy <= -.08f * movementScale && vertical && elapsed <= 5000 ->
+                            GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.UP)
+                        dy >= .08f * movementScale && vertical && elapsed <= 5000 ->
+                            GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.DOWN)
+                        elapsed > 5000 -> null
+                        else -> null
+                    }
+                    if (fired != null || elapsed > 5000) {
+                        if (fired != null) output += fired
                         twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
                         twoFingerStart = null
                     }
