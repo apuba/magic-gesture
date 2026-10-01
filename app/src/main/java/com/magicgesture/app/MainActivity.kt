@@ -25,7 +25,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
-import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -112,12 +111,6 @@ class MainActivity : Activity() {
         })
         content.addView(setupGuideContainer)
 
-        if (isHonorOrHuaweiDevice()) {
-            content.addView(actionButton("⚡  保持授权不丢失（荣耀 / 华为机型）", Color.rgb(255, 247, 226), Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 216, 157)) {
-                showPowerManagementDialog()
-            }, margins(bottom = 10, height = 48))
-        }
-
         startControlButton = actionButton("✦  启动手势控制", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
             pendingControl = true
             startProbe()
@@ -130,6 +123,9 @@ class MainActivity : Activity() {
         }, margins(bottom = 10, height = 48))
         content.addView(actionButton("手势练习与校准", Color.WHITE, Color.rgb(37, 99, 235), Color.rgb(219, 234, 254), Color.rgb(191, 219, 254)) {
             startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }, margins(bottom = 10, height = 50))
+        content.addView(actionButton("⚡  保持授权不丢失", Color.rgb(255, 247, 226), Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 216, 157)) {
+            startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
         }, margins(bottom = 24, height = 50))
 
         content.addView(label("手势使用指南", 22f, Color.rgb(31, 31, 55), true))
@@ -303,34 +299,6 @@ class MainActivity : Activity() {
         "lotus_recents" -> "莲花指最近任务"
         "orchid_back" -> "兰花指返回"
         else -> "手势"
-    }
-
-    /** HONOR MagicOS / HUAWEI HarmonyOS 会在上划清理后台或强行停止时撤销无障碍授权（2026-10-01 实测，见交接文档 10.1）。 */
-    private fun isHonorOrHuaweiDevice(): Boolean {
-        val manufacturer = (Build.MANUFACTURER ?: "").uppercase(Locale.ROOT)
-        val brand = (Build.BRAND ?: "").uppercase(Locale.ROOT)
-        return manufacturer.contains("HONOR") || manufacturer.contains("HUAWEI") ||
-            brand.contains("HONOR") || brand.contains("HUAWEI")
-    }
-
-    private fun showPowerManagementDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("保持授权不丢失（荣耀 / 华为机型）")
-            .setMessage(
-                "荣耀、华为系统会在上划清理后台或强行停止 App 时，一并撤销无障碍授权，导致手势控制失效并需要重新授权。\n\n" +
-                    "建议完成以下设置，避免日常清理后台后授权丢失：\n\n" +
-                    "设置 → 应用 → 魔法手势 → 电池\n" +
-                    "关闭“自动管理”，改为“手动管理”，并开启“允许自启动”“允许关联启动”“允许后台活动”。"
-            )
-            .setPositiveButton("去应用详情设置") { _, _ ->
-                try {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-                } catch (e: Exception) {
-                    status.text = "●  无法打开应用详情：${e.javaClass.simpleName}"
-                }
-            }
-            .setNegativeButton("我知道了", null)
-            .show()
     }
 
     private fun refreshFeatureSwitches() {
