@@ -11,6 +11,8 @@ import android.graphics.ImageFormat
 import android.graphics.Bitmap
 import android.hardware.camera2.*
 import android.media.ImageReader
+import android.media.MediaActionSound
+import android.media.ToneGenerator
 import android.media.AudioManager
 import android.provider.MediaStore
 import android.os.*
@@ -51,6 +53,9 @@ class CameraProbeService : Service() {
     private val mappingManager = GestureMappingManager()
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var toneGenerator: ToneGenerator? = null
+    @Volatile private var mediaActionSound: MediaActionSound? = null
     private val actionExecutor = GestureActionExecutor(
         accessibilityService = { ControlAccessibilityService.active },
         selfieCapture = ::captureSelfie,
@@ -77,6 +82,11 @@ class CameraProbeService : Service() {
         }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(channel, "魔法手势运行状态", NotificationManager.IMPORTANCE_LOW))
+        // Pre-warm audio on the idle worker thread so the countdown ticks stay exactly 1s apart.
+        handler.post {
+            try { if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) } catch (e: Exception) { Log.w("CameraProbe", "tone generator init failed", e) }
+            try { if (mediaActionSound == null) mediaActionSound = MediaActionSound() } catch (e: Exception) { Log.w("CameraProbe", "media action sound init failed", e) }
+        }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
@@ -91,7 +101,7 @@ class CameraProbeService : Service() {
                 try {
                     pipeline = HandPipeline(this) { event ->
                         val service = ControlAccessibilityService.active
-                        if (selfieInProgress && event !is GestureEvent.Cursor && event !is GestureEvent.Feedback) return@HandPipeline
+                        if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
                         if (!globalCooldown.allows(event)) return@HandPipeline
                         val mapped = mappingManager.resolve(event)
                         if (mapped != null) {
@@ -212,10 +222,14 @@ class CameraProbeService : Service() {
     private fun captureSelfie(callback: (Boolean) -> Unit) {
         if (selfieInProgress) { callback(false); return }
         selfieInProgress = true
-        overlayIndicator.showFeedback("自拍倒计时：3")
-        handler.postDelayed({ overlayIndicator.showFeedback("自拍倒计时：2") }, 1_000L)
-        handler.postDelayed({ overlayIndicator.showFeedback("自拍倒计时：1") }, 2_000L)
-        handler.postDelayed({
+        // Countdown freezes every gesture (including the cursor), so the hand can be lowered right away.
+        ControlAccessibilityService.active?.hideCursor()
+        // Schedule on the main looper: the camera worker thread is busy with YUV conversion
+        // and inference, which would otherwise delay the 1s ticks.
+        mainHandler.post(CountdownTick(3))
+        mainHandler.postDelayed(CountdownTick(2), 1_000L)
+        mainHandler.postDelayed(CountdownTick(1), 2_000L)
+        mainHandler.postDelayed({
             val activePipeline = pipeline
             if (stopped || activePipeline == null) {
                 selfieInProgress = false
@@ -224,14 +238,54 @@ class CameraProbeService : Service() {
             }
             activePipeline.captureNextFrame { bitmap ->
                 selfieWriter.execute {
+                    playShutter()
+                    val preview = previewThumbnail(bitmap)
                     val saved = saveSelfie(bitmap)
                     bitmap.recycle()
                     selfieInProgress = false
+                    if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
                     callback(saved)
                 }
             }
         }, 3_000L)
     }
+    private inner class CountdownTick(private val seconds: Int) : Runnable {
+        override fun run() {
+            overlayIndicator.showCountdown(seconds)
+            playCountdownTick()
+        }
+    }
+    /** Short beep for each countdown second; falls back silently when audio is unavailable. */
+    private fun playCountdownTick() {
+        try {
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 160)
+        } catch (e: Exception) {
+            Log.w("CameraProbe", "countdown tick failed", e)
+        }
+    }
+    /** System camera shutter sound at the actual capture moment. */
+    private fun playShutter() {
+        try {
+            if (mediaActionSound == null) mediaActionSound = MediaActionSound()
+            mediaActionSound?.play(MediaActionSound.SHUTTER_CLICK)
+        } catch (e: Exception) {
+            Log.w("CameraProbe", "shutter sound failed", e)
+        }
+    }
+    /** Builds an independent small thumbnail for the overlay preview; the original selfie bitmap keeps its own lifecycle. */
+    private fun previewThumbnail(source: Bitmap): Bitmap? = try {
+        if (source.width <= 480) source.copy(Bitmap.Config.ARGB_8888, false)
+        else Bitmap.createScaledBitmap(
+            source,
+            480,
+            (source.height * 480f / source.width).toInt().coerceAtLeast(1),
+            true
+        )
+    } catch (e: Exception) {
+        Log.w("CameraProbe", "selfie preview thumbnail failed", e)
+        null
+    }
+
     private fun toggleMediaPlayback(callback: (Boolean) -> Unit) {
         return try {
             val audio = getSystemService(AudioManager::class.java)
@@ -294,12 +348,17 @@ class CameraProbeService : Service() {
         stopped = true
         globalCooldown.reset()
         cameraGeneration++
+        mainHandler.removeCallbacksAndMessages(null)
         handler.removeCallbacksAndMessages(null)
         session?.close(); session = null
         camera?.close(); camera = null
         reader?.close(); reader = null
         pipeline?.close(); pipeline = null
         selfieWriter.shutdownNow()
+        try { toneGenerator?.release() } catch (_: Exception) { }
+        toneGenerator = null
+        try { mediaActionSound?.release() } catch (_: Exception) { }
+        mediaActionSound = null
         preferenceListener?.let {
             getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(it)
         }

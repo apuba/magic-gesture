@@ -3,12 +3,14 @@ package com.magicgesture.app
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -19,6 +21,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.TextView
 import kotlin.math.abs
 
@@ -65,6 +68,24 @@ class OverlayIndicator(
     private val hideFeedback = Runnable {
         feedbackView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
         feedbackView = null
+    }
+    private var selfiePreviewView: ImageView? = null
+    private var selfiePreviewBitmap: Bitmap? = null
+    private var countdownView: TextView? = null
+    private val hideCountdown = Runnable {
+        countdownView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
+        countdownView = null
+    }
+    private val hideSelfiePreview = Runnable {
+        val preview = selfiePreviewView ?: return@Runnable
+        preview.animate().alpha(0f).setDuration(350L).withEndAction {
+            try { windowManager.removeView(preview) } catch (_: Exception) { }
+            if (selfiePreviewView === preview) {
+                selfiePreviewView = null
+                selfiePreviewBitmap?.recycle()
+                selfiePreviewBitmap = null
+            }
+        }.start()
     }
 
     fun show() {
@@ -116,10 +137,131 @@ class OverlayIndicator(
         }
     }
 
+    /** Shows one large countdown digit for the selfie timer; call again each second. */
+    fun showCountdown(seconds: Int) {
+        if (!Settings.canDrawOverlays(context)) return
+        main.post {
+            main.removeCallbacks(hideCountdown)
+            countdownView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
+            countdownView = null
+            val digit = TextView(context).apply {
+                text = seconds.toString()
+                textSize = 84f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                elevation = dp(16).toFloat()
+                contentDescription = "自拍倒计时 $seconds"
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(190, 30, 27, 92))
+                    setStroke(dp(2), Color.argb(200, 255, 255, 255))
+                }
+                alpha = 0f
+                scaleX = 1.6f
+                scaleY = 1.6f
+            }
+            val size = dp(132)
+            val countdownParams = WindowManager.LayoutParams(
+                size,
+                size,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+            try {
+                windowManager.addView(digit, countdownParams)
+            } catch (_: Exception) { return@post }
+            countdownView = digit
+            digit.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(180L).start()
+            main.postDelayed(hideCountdown, 850L)
+        }
+    }
+
+    /** Shows a short-lived thumbnail of the just-saved selfie, similar to the system screenshot preview. Takes bitmap ownership. */    fun showSelfiePreview(source: Bitmap) {
+        if (!Settings.canDrawOverlays(context)) { source.recycle(); return }
+        main.post {
+            main.removeCallbacks(hideSelfiePreview)
+            selfiePreviewView?.let { existing ->
+                existing.animate().cancel()
+                try { windowManager.removeView(existing) } catch (_: Exception) { }
+                selfiePreviewBitmap?.recycle()
+            }
+            selfiePreviewView = null
+            selfiePreviewBitmap = null
+
+            val previewWidth = dp(128)
+            val ratio = source.height.toFloat() / source.width
+            val thumbnail: Bitmap = try {
+                val scaled = if (source.width <= 480) source
+                else Bitmap.createScaledBitmap(
+                    source,
+                    480,
+                    (source.height * (480f / source.width)).toInt().coerceAtLeast(1),
+                    true
+                )
+                if (scaled !== source) source.recycle()
+                scaled
+            } catch (_: Exception) { return@post }
+            val viewWidth = previewWidth + dp(8)
+            val viewHeight = (previewWidth * ratio).toInt().coerceAtLeast(dp(48)) + dp(8)
+            val previewParams = WindowManager.LayoutParams(
+                viewWidth,
+                viewHeight,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                x = margin
+                y = dp(84)
+            }
+            val imageView = ImageView(context).apply {
+                setImageBitmap(thumbnail)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                elevation = dp(12).toFloat()
+                clipToOutline = true
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(14).toFloat()
+                    setColor(Color.WHITE)
+                    setStroke(dp(1), Color.argb(170, 255, 255, 255))
+                }
+                contentDescription = "自拍已保存，这是照片缩略图预览"
+                alpha = 0f
+            }
+            try {
+                windowManager.addView(imageView, previewParams)
+            } catch (_: Exception) { thumbnail.recycle(); return@post }
+            selfiePreviewView = imageView
+            selfiePreviewBitmap = thumbnail
+            imageView.animate().alpha(1f).setDuration(220L).start()
+            main.postDelayed(hideSelfiePreview, 3200L)
+        }
+    }
+
     fun remove() {
         main.removeCallbacks(hideFeedback)
         feedbackView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
         feedbackView = null
+        main.removeCallbacks(hideCountdown)
+        countdownView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
+        countdownView = null
+        main.removeCallbacks(hideSelfiePreview)
+        selfiePreviewView?.let {
+            it.animate().cancel()
+            try { windowManager.removeView(it) } catch (_: Exception) { }
+        }
+        selfiePreviewView = null
+        selfiePreviewBitmap?.recycle()
+        selfiePreviewBitmap = null
         val dot = view ?: return
         view = null
         try { windowManager.removeView(dot) } catch (_: Exception) { }
