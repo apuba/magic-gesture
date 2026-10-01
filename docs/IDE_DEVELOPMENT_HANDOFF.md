@@ -10,7 +10,7 @@
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 下 13 个类，全部单层包结构
-- **测试**：`app/src/test/` 下 3 个测试类，44 个用例（GestureArchitectureTest 20 / GestureEngineReplayTest 22 / GlobalCooldownManagerTest 2），当前全绿
+- **测试**：`app/src/test/` 下 4 个测试类，共 49 个用例，当前全绿
 
 ## 2. 核心架构
 
@@ -30,7 +30,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 1. **执行器只看映射结果动作**，换绑后才不炸（如其他手势换绑 CLICK 会降级为点击当前光标位置）。
 2. **功能开关管"手势是否识别"，映射管"触发后做什么"，二者独立**（UI 已有此文案）。
-3. **G01 光标固定不可换绑**；G16-G19/G23 无检测管线不可换绑；`DRAG` 只有爪形手势能提供坐标，已从换绑选单移除但动作枚举保留（G26 默认不绑定，触发时提示未绑定）。
+3. **G01 光标固定不可换绑**；G16/G17/G23 无检测管线不可换绑；G18/G19 已实现且可换绑；`DRAG` 只有爪形手势能提供坐标，已从换绑选单移除但动作枚举保留（G26 默认不绑定，触发时提示未绑定）。
 4. `GestureEngine` 中部分状态机**吞帧**（提前 return 阻断后续检测器），部分**不吞帧**（旁路只发事件）。不吞帧的典型：两指并拢系列 G29-G33（该姿势同时是常见"自然手型"，吞帧会阻断其他手势的释放检测，见状态机注释与回放测试 `restPose`）。
 5. **冷却期冻结识别管线**：冷却期间光标也停（注意与早期版本"光标白名单"行为不同，首页文案已同步为准确描述）。
 
@@ -61,8 +61,8 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（28） | G01 光标、G02 点击、G03-G06 上下滚动（食指/四指）、G07/G08 四指左右滚动、G09/G10 竖直食指左右挑=页面左右滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 2s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形拖动（默认未绑定）、G27 C 形最近任务、G28 Love 形锁屏、G29-G32 两指并拢四向媒体（左=上一曲/右=下一曲/上=音量+/下=音量−）、G33 两指双击=播放/暂停 |
-| 未实现（5） | G16/G17（保持 3 秒打开指定 App）、G18/G19（画圈音量）、G23（张掌静止暂停识别）——仅枚举占位，无检测器/事件/映射 |
+| 已实现（30） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G18/G19 食指顺/逆时针画圈持续增减音量、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 1.5s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形锁屏、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停 |
+| 未实现（3） | G16/G17（保持 3 秒打开指定 App）、G23（张掌静止暂停识别）——仅枚举占位，无检测器/事件/映射 |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
 
@@ -70,14 +70,14 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 `MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
 
-音量动作实现：`CameraProbeService.adjustVolume` 读媒体流最大值，`step = max/10`，`setStreamVolume` 直设目标并 `FLAG_SHOW_UI`；失败回退模拟音量键。
+音量动作实现：普通换绑动作仍由 `CameraProbeService.adjustVolume` 每次调整约 10%；G18/G19 先确认完整顺/逆时针圆，进入独占会话后每约 90° 圆弧且至少间隔 250ms 调整 5%，停止约 0.75s或姿势改变后结束；G31/G32 两指保持会话约每 0.4 秒调整 5%。两类会话期间均不输出光标或其他手势，结束后统一冷却 2 秒。
 
 ## 6. 已知问题与待办（按优先级）
 
-1. **装机验收积压（最高优先）**：`c9c446e` 未装机。重点验证：音量 10% 档位手感（太猛/太肉改 `max / 10` 分母）、G33 两指双击节奏、G29-G32 四个方向直觉、G14/G15 新映射、G22/G25 保持 2 秒倒计时节奏。
+1. **装机验收积压（最高优先）**：重点验证 G18/G19 圆形大小、方向、角度步进、停止退出，G31/G32 持续音量独占态，以及 G22 握拳 1.5 秒节奏；同时验证 G33 双击、G29/G30 切歌和 G14/G15。
 2. **真机阈值校准**：G14/G15（莲花/兰花 0.30 触碰阈值）、G24-G28、G29-G33 全部为合成初版阈值，按真机手感逐个微调，一次只改一个。
 3. **首页卡片动作标签是静态文案**：换绑后不联动。应改为读 `GestureMappingManager.actionFor(code)`。
-4. G16/G17/G18/G19/G23 未开发（打开指定 App 需应用选择器 UI；画圈音量需圆弧轨迹状态机；G23 暂停识别是安全阀功能）。
+4. G16/G17/G23 未开发（打开指定 App 需应用选择器 UI；G23 暂停识别是安全阀功能）。
 5. `captureRollingScreenshot`（滚动长截图）已实现但未接入动作目录，激活成本低。
 6. G12/G20 双击点赞用固定屏幕坐标，换 App/布局即失效，考虑标注实验性或改为用户校准坐标。
 7. 保持授权引导仅有荣耀/华为方案，小米/OPPO/vivo 待补。
@@ -97,12 +97,12 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 ```powershell
 cd e:/2026/MagicGesture-v0.9
-.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 44/44 通过）
+.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 49/49 通过）
 .\gradlew.bat installDebug                       # 安装到已连接设备
 D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整路径
 ```
 
-手机测试路径：开相机权限 → 系统设置启用 `ControlAccessibilityService` → 应用内启动手势控制 → 播放音乐后摆"两指并拢"：左/右挥切歌、上/下挥调音量、双击播放暂停（每次触发后放下手重摆，且 2 秒冷却）。
+手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先以食指顺/逆时针画完整圆并继续旋转，确认方向、5% 圆弧步进、独占和停止退出；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1.5 秒。
 
 荣耀机型注意：安装时保持手机解锁并确认 USB 安装弹窗；无障碍授权丢失时引导用户在 设置→应用→魔法手势→电池 关闭"自动管理"（详见 §8.1/§10.1 of 旧文档记录，或提交 95864c6 系列）。
 

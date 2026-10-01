@@ -141,19 +141,21 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", "页面向左滑动", "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", "页面向右滑动", "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "食指顺时针画圈", "持续增加音量", "保持手掌相对稳定，用食指指尖连续顺时针画圈；识别成功后按圆弧进度持续增加音量。", "↻", "clockwise_circle_volume", features.clockwiseCircleVolume), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "食指逆时针画圈", "持续降低音量", "保持手掌相对稳定，用食指指尖连续逆时针画圈；识别成功后按圆弧进度持续降低音量。", "↺", "counter_clockwise_circle_volume", features.counterClockwiseCircleVolume), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", "确认当前光标", "拇指与食指相触，其余三指伸直并保持约 0.6 秒。需要先启用并移动光标。", "OK", "ok", features.ok), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持 2 秒（有倒计时提示），控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持 1.5 秒（有倒计时提示），控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", "返回桌面", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "最近任务", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", "返回", "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", "下拉通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 2 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", "未设置动作", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在校准页映射中指定。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", "未设置动作", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", "最近任务", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢", "切歌 / 音量 / 播放暂停", "食指与中指并拢伸直、其余手指收起：左挥上一曲、右挥下一曲、上挥音量加、下挥音量减；两指快速弯下再伸直、连点两下为播放/暂停。识别阈值待真机校准。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢", "切歌 / 持续调音量 / 播放暂停", "食指与中指并拢伸直、其余手指收起：左右挥切歌；向上或向下拉动后保持姿势，可持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -307,6 +309,8 @@ class MainActivity : Activity() {
         "index_left_scroll" -> "食指左挑"
         "palm_right_scroll" -> "四指右挥"
         "index_right_scroll" -> "食指右挑"
+        "clockwise_circle_volume" -> "顺时针画圈增大音量"
+        "counter_clockwise_circle_volume" -> "逆时针画圈降低音量"
         "screenshot" -> "截图"
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
@@ -335,6 +339,8 @@ class MainActivity : Activity() {
             "index_left_scroll" to features.indexLeftScroll,
             "palm_right_scroll" to features.palmRightScroll,
             "index_right_scroll" to features.indexRightScroll,
+            "clockwise_circle_volume" to features.clockwiseCircleVolume,
+            "counter_clockwise_circle_volume" to features.counterClockwiseCircleVolume,
             "screenshot" to features.screenshot,
             "selfie" to features.selfie,
             "like" to features.like,

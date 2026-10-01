@@ -32,10 +32,10 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
             .setResultListener { result, _ ->
                 if (closed.get()) return@setResultListener
                 val now = SystemClock.uptimeMillis()
-                if (now - lastResultAt > 300) engine.lost(now)
+                if (now - lastResultAt > 300) engine.lost(now).forEach(onEvent)
                 lastResultAt = now
                 val hand = result.landmarks().firstOrNull()
-                if (hand == null) engine.lost(now)
+                if (hand == null) engine.lost(now).forEach(onEvent)
                 else {
                     val points = hand.map { Point(if (reverseHorizontal) 1f - it.x() else it.x(), it.y()) }
                     engine.consume(points, now).forEach(onEvent)
@@ -48,6 +48,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     @Synchronized fun resume() = engine.resume()
     @Synchronized fun pause() = engine.stop()
     @Synchronized fun resetTracking() { engine.stop(); engine.resume() }
+    @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
     fun captureNextFrame(callback: (Bitmap) -> Unit) { pendingFrameCapture = callback }
     fun submit(image: Image, frameRotation: Int) {

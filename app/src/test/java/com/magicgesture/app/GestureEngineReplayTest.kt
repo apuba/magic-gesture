@@ -155,20 +155,39 @@ class GestureEngineReplayTest {
         .withLandmark(16, Point(.54f, .50f))
         .withLandmark(20, Point(.59f, .52f))
 
+    /** Same claw curl viewed too far from the side: projected palm width collapses. */
+    private fun sideOnClawPose(): List<Point> = clawPose().map { point ->
+        Point(.5f + (point.x - .5f) * .35f, point.y)
+    }
+
     /** Moderately curled fingers forming a broad C; wrist-distance alone can look almost extended. */
     private fun cShapePose(): List<Point> = baseHand(
         FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
-    ).withLandmark(8, Point(.40f, .46f))
+    ).withLandmark(8, Point(.43f, .46f))
         .withLandmark(12, Point(.47f, .46f))
-        .withLandmark(16, Point(.54f, .46f))
-        .withLandmark(20, Point(.60f, .48f))
+        .withLandmark(16, Point(.51f, .46f))
+        .withLandmark(20, Point(.55f, .48f))
 
     /** A wider, less-curled C that must remain valid without becoming an open-palm match. */
     private fun wideCShapePose(): List<Point> = cShapePose()
-        .withLandmark(8, Point(.39f, .41f))
-        .withLandmark(12, Point(.47f, .42f))
-        .withLandmark(16, Point(.55f, .44f))
-        .withLandmark(20, Point(.62f, .47f))
+        .withLandmark(8, Point(.40f, .41f))
+        .withLandmark(12, Point(.45f, .42f))
+        .withLandmark(16, Point(.50f, .44f))
+        .withLandmark(20, Point(.55f, .47f))
+
+    /** One edge fingertip drifts sideways, as commonly happens when fingers overlap on camera. */
+    private fun noisyCShapePose(): List<Point> = cShapePose()
+        .withLandmark(20, Point(.63f, .49f))
+        .withLandmark(4, Point(.35f, .55f))
+
+    private fun indexCirclePose(step: Int, clockwise: Boolean): List<Point> {
+        val direction = if (clockwise) 1f else -1f
+        val angle = direction * (Math.PI * 2.0 * step / 24.0)
+        return pointingIndex().withLandmark(
+            8,
+            Point(.40f + .065f * kotlin.math.cos(angle).toFloat(), .35f + .065f * kotlin.math.sin(angle).toFloat())
+        )
+    }
 
     // ---------------------------------------------------------------- replay driver
 
@@ -179,6 +198,10 @@ class GestureEngineReplayTest {
 
         fun feed(frames: Int, pose: () -> List<Point>) {
             repeat(frames) { events += engine.consume(pose(), ++t * 50L) }
+        }
+
+        fun feedPoses(poses: Iterable<List<Point>>) {
+            poses.forEach { events += engine.consume(it, ++t * 50L) }
         }
     }
 
@@ -230,14 +253,14 @@ class GestureEngineReplayTest {
 
     @Test fun fistHoldFiresPlayPauseOnceAndRequiresRelease() {
         val r = Replay()
-        r.feed(20, ::fistPose)                   // 1s: below the 2s hold, must not fire yet
+        r.feed(20, ::fistPose)                   // 1s: below the 1.5s hold, must not fire yet
         assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
-        r.feed(25, ::fistPose)                   // 2.25s total -> PlayPause at 2s
+        r.feed(15, ::fistPose)                   // 1.75s total -> PlayPause at 1.5s
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(20, ::fistPose)                   // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(8, ::restPose)
-        r.feed(45, ::fistPose)                   // re-enter: fires again
+        r.feed(35, ::fistPose)                   // re-enter: fires again
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 
@@ -349,22 +372,21 @@ class GestureEngineReplayTest {
         assertEquals(GestureEvent.TwoFingerDirection.RIGHT, both[1].direction)
     }
 
-    @Test fun twoFingerSwipeUpRaisesVolumeAndDownLowersIt() {
+    @Test fun twoFingerVerticalHoldStartsTicksExclusivelyAndEndsOnPoseChange() {
         val r = Replay()
         r.feed(4) { twoFingerHand() }
         var dy = 0f
-        r.feed(6) { dy -= .025f; twoFingerHand(0f, dy) }  // wave up -> volume up
-        val up = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
-        assertEquals(1, up.size)
-        assertEquals(GestureEvent.TwoFingerDirection.UP, up[0].direction)
+        r.feed(6) { dy -= .025f; twoFingerHand(0f, dy) }
+        val cursorCountAtStart = r.events.countOf<GestureEvent.Cursor>()
+        r.feed(10) { twoFingerHand(0f, dy) }
+        assertEquals(cursorCountAtStart, r.events.countOf<GestureEvent.Cursor>())
+        r.feed(1, ::fistPose)
 
-        r.feed(4, ::fistPose)                        // release: re-arm needs a pose break
-        r.feed(4) { twoFingerHand() }
-        var dy2 = 0f
-        r.feed(6) { dy2 += .025f; twoFingerHand(0f, dy2) }  // wave down -> volume down
-        val all = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
-        assertEquals(2, all.size)
-        assertEquals(GestureEvent.TwoFingerDirection.DOWN, all[1].direction)
+        val holds = r.events.filterIsInstance<GestureEvent.TwoFingerVolumeHold>()
+        assertEquals(GestureEvent.VolumeHoldPhase.START, holds.first().phase)
+        assertTrue(holds.first().raise)
+        assertTrue(holds.any { it.phase == GestureEvent.VolumeHoldPhase.TICK })
+        assertEquals(GestureEvent.VolumeHoldPhase.END, holds.last().phase)
     }
 
     @Test fun twoFingerDoubleTapTogglesPlayPause() {
@@ -439,6 +461,18 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.CShape>())
     }
 
+    @Test fun clawRequiresFrontFacingPalmAndSeparatedFingers() {
+        val side = Replay(GestureFeatureConfig(scroll = false))
+        side.feed(14, ::sideOnClawPose)
+        assertEquals(0, side.events.countOf<GestureEvent.ClawDrag>())
+        assertEquals(0, side.events.countOf<GestureEvent.CShape>())
+
+        val grouped = Replay(GestureFeatureConfig(scroll = false))
+        grouped.feed(14, ::cShapePose)
+        assertEquals(0, grouped.events.countOf<GestureEvent.ClawDrag>())
+        assertEquals(1, grouped.events.countOf<GestureEvent.CShape>())
+    }
+
     @Test fun widerCShapeStillFiresButSpreadPalmDoesNot() {
         val wide = Replay(GestureFeatureConfig(scroll = false))
         wide.feed(14, ::wideCShapePose)
@@ -447,5 +481,30 @@ class GestureEngineReplayTest {
         val open = Replay(GestureFeatureConfig(scroll = false))
         open.feed(14, ::spreadPalm)
         assertEquals(0, open.events.countOf<GestureEvent.CShape>())
+    }
+
+    @Test fun cShapeToleratesOneNoisyFingertipAndACloserThumbOpening() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::noisyCShapePose)
+        assertEquals(1, r.events.countOf<GestureEvent.CShape>())
+        assertEquals(0, r.events.countOf<GestureEvent.ClawDrag>())
+    }
+
+    @Test fun clockwiseAndCounterClockwiseIndexCirclesStartContinuousVolumeSessions() {
+        val clockwise = Replay(GestureFeatureConfig(scroll = false))
+        clockwise.feedPoses((0..36).map { indexCirclePose(it % 24, true) })
+        clockwise.feed(1, ::fistPose)
+        val up = clockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
+        assertTrue(up.any { it.raise && it.phase == GestureEvent.VolumeHoldPhase.START })
+        assertTrue(up.any { it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
+        assertEquals(GestureEvent.VolumeHoldPhase.END, up.last().phase)
+
+        val counterClockwise = Replay(GestureFeatureConfig(scroll = false))
+        counterClockwise.feedPoses((0..36).map { indexCirclePose(it % 24, false) })
+        counterClockwise.feed(1, ::fistPose)
+        val down = counterClockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
+        assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.START })
+        assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
+        assertEquals(GestureEvent.VolumeHoldPhase.END, down.last().phase)
     }
 }

@@ -162,12 +162,12 @@ class GestureArchitectureTest {
         assertTrue(manager.isRemappable(GestureCode.G22))
         // G26 is unbound by default but its pipeline exists, so it stays bindable.
         assertTrue(manager.isRemappable(GestureCode.G26))
-        // G01 is the continuous cursor; G16-G19/G23 have no pipeline yet.
+        // G01 is the continuous cursor; G16/G17/G23 have no pipeline yet.
         assertFalse(manager.isRemappable(GestureCode.G01))
         assertFalse(manager.isRemappable(GestureCode.G16))
         assertFalse(manager.isRemappable(GestureCode.G17))
-        assertFalse(manager.isRemappable(GestureCode.G18))
-        assertFalse(manager.isRemappable(GestureCode.G19))
+        assertTrue(manager.isRemappable(GestureCode.G18))
+        assertTrue(manager.isRemappable(GestureCode.G19))
         assertFalse(manager.isRemappable(GestureCode.G23))
     }
 
@@ -280,6 +280,17 @@ class GestureArchitectureTest {
         val quieter = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.DOWN)))
         assertEquals(GestureCode.G32, quieter.mapping.code)
         assertEquals(GestureAction.VOLUME_DOWN, quieter.mapping.action)
+
+        val heldLouder = requireNotNull(mappings.resolve(
+            GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.START)
+        ))
+        val heldQuieter = requireNotNull(mappings.resolve(
+            GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.TICK)
+        ))
+        assertEquals(GestureCode.G31, heldLouder.mapping.code)
+        assertEquals(GestureAction.VOLUME_UP, heldLouder.mapping.action)
+        assertEquals(GestureCode.G32, heldQuieter.mapping.code)
+        assertEquals(GestureAction.VOLUME_DOWN, heldQuieter.mapping.action)
 
         // All four directions share one feature switch and are remappable.
         assertFalse(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = false)))

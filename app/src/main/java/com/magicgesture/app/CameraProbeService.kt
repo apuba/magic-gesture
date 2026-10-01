@@ -53,6 +53,9 @@ class CameraProbeService : Service() {
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
     private val globalCooldown = GlobalCooldownManager()
+    private var volumeHoldActive = false
+    private var volumeHoldRaise = false
+    private var volumeHoldChanged = false
     private var mappingManager = GestureMappingManager()
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
@@ -121,23 +124,18 @@ class CameraProbeService : Service() {
                     pipeline = HandPipeline(this) { event ->
                         val service = ControlAccessibilityService.active
                         if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
+                        if (event is GestureEvent.TwoFingerVolumeHold) {
+                            handleContinuousVolume(event, event.raise, event.phase)
+                            return@HandPipeline
+                        }
+                        if (event is GestureEvent.CircleVolume) {
+                            handleContinuousVolume(event, event.raise, event.phase)
+                            return@HandPipeline
+                        }
                         if (!globalCooldown.allows(event)) return@HandPipeline
                         val mapped = mappingManager.resolve(event)
                         if (mapped != null) {
-                            if (!featureGate.allows(mapped.mapping, featureConfig)) return@HandPipeline
-                            Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
-                            val submitted = actionExecutor.execute(mapped) { success ->
-                                if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS) {
-                                    finishAction(
-                                        success,
-                                        mapped.mapping.action.successMessage(),
-                                        mapped.mapping.action.failureMessage()
-                                    )
-                                }
-                            }
-                            if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
-                                finishAction(false, mapped.mapping.action.successMessage(), "无障碍服务未连接")
-                            }
+                            executeMapped(mapped)
                             return@HandPipeline
                         }
                         when (event) {
@@ -148,7 +146,8 @@ class CameraProbeService : Service() {
                             GestureEvent.LotusRecents, GestureEvent.OrchidBack,
                             GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
                             GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
-                            GestureEvent.TwoFingerDoubleTap -> Unit // Migrated gestures use the mapping pipeline above.
+                            GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
+                            is GestureEvent.CircleVolume -> Unit // Migrated gestures use the mapping pipeline above.
                             is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                             is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                             GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
@@ -218,6 +217,49 @@ class CameraProbeService : Service() {
         } catch (e: Exception) {
             cameraOpening = false
             fail("相机启动失败：${e.javaClass.simpleName}")
+        }
+    }
+    private fun executeMapped(mapped: MappedGesture) {
+        if (!featureGate.allows(mapped.mapping, featureConfig)) return
+        Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
+        val submitted = actionExecutor.execute(mapped) { success ->
+            if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS) {
+                finishAction(success, mapped.mapping.action.successMessage(), mapped.mapping.action.failureMessage())
+            }
+        }
+        if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
+            finishAction(false, mapped.mapping.action.successMessage(), "无障碍服务未连接")
+        }
+    }
+    private fun handleContinuousVolume(event: GestureEvent, raise: Boolean, phase: GestureEvent.VolumeHoldPhase) {
+        when (phase) {
+            GestureEvent.VolumeHoldPhase.START -> {
+                if (globalCooldown.isActive()) return
+                val mapped = mappingManager.resolve(event) ?: run {
+                    pipeline?.finishVolumeSession(waitForRelease = true)
+                    return
+                }
+                if (!featureGate.allows(mapped.mapping, featureConfig)) {
+                    pipeline?.finishVolumeSession(waitForRelease = true)
+                    return
+                }
+                val continuousAction = if (raise) GestureAction.VOLUME_UP else GestureAction.VOLUME_DOWN
+                if (mapped.mapping.action != continuousAction) {
+                    pipeline?.finishVolumeSession(waitForRelease = true)
+                    executeMapped(mapped)
+                    return
+                }
+                volumeHoldActive = true
+                volumeHoldRaise = raise
+                volumeHoldChanged = false
+                adjustHeldVolume(raise)
+            }
+            GestureEvent.VolumeHoldPhase.TICK -> if (volumeHoldActive && volumeHoldRaise == raise) {
+                adjustHeldVolume(raise)
+            }
+            GestureEvent.VolumeHoldPhase.END -> if (volumeHoldActive && volumeHoldRaise == raise) {
+                finishVolumeHold(atBoundary = false)
+            }
         }
     }
     private fun currentDisplayRotationDegrees(): Int {
@@ -366,6 +408,54 @@ class CameraProbeService : Service() {
                 callback
             )
         }
+    }
+    /** One tick of the exclusive two-finger volume session (about 5% of the media range). */
+    private fun adjustHeldVolume(raise: Boolean) {
+        if (!volumeHoldActive) return
+        try {
+            val audio = getSystemService(AudioManager::class.java)
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val atBoundary = if (raise) current >= max else current <= 0
+            if (atBoundary) {
+                finishVolumeHold(
+                    atBoundary = true,
+                    message = if (raise) "媒体音量已最大" else "媒体音量已静音"
+                )
+                return
+            }
+            val step = maxOf(1, (max + 19) / 20)
+            val target = (current + if (raise) step else -step).coerceIn(0, max)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
+            volumeHoldChanged = true
+            val percent = ((target * 100f) / max).toInt().coerceIn(0, 100)
+            overlayIndicator.showFeedback("正在${if (raise) "增加" else "降低"}媒体音量：$percent%")
+            if (target == 0 || target == max) {
+                finishVolumeHold(
+                    atBoundary = true,
+                    message = if (target == max) "媒体音量已最大" else "媒体音量已静音"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "continuous volume adjust failed", e)
+            volumeHoldActive = false
+            pipeline?.finishVolumeSession(waitForRelease = true)
+            finishAction(false, "", "持续调节音量失败")
+        }
+    }
+    private fun finishVolumeHold(atBoundary: Boolean, message: String? = null) {
+        if (!volumeHoldActive) return
+        volumeHoldActive = false
+        pipeline?.finishVolumeSession(waitForRelease = atBoundary)
+        val finalMessage = message ?: run {
+            val audio = getSystemService(AudioManager::class.java)
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val percent = ((current * 100f) / max).toInt().coerceIn(0, 100)
+            "音量调节结束：$percent%"
+        }
+        finishAction(volumeHoldChanged || atBoundary, finalMessage, "音量未发生变化")
+        volumeHoldChanged = false
     }
     private fun saveSelfie(bitmap: Bitmap): Boolean {
         return try {
