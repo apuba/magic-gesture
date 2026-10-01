@@ -491,7 +491,8 @@ class GestureEngineReplayTest {
     }
 
     @Test fun clockwiseAndCounterClockwiseIndexCirclesStartContinuousVolumeSessions() {
-        val clockwise = Replay(GestureFeatureConfig(scroll = false))
+        val circleVolumeOn = GestureFeatureConfig(scroll = false, clockwiseCircleVolume = true, counterClockwiseCircleVolume = true)
+        val clockwise = Replay(circleVolumeOn)
         clockwise.feedPoses((0..36).map { indexCirclePose(it % 24, true) })
         clockwise.feed(1, ::fistPose)
         val up = clockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
@@ -499,12 +500,20 @@ class GestureEngineReplayTest {
         assertTrue(up.any { it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
         assertEquals(GestureEvent.VolumeHoldPhase.END, up.last().phase)
 
-        val counterClockwise = Replay(GestureFeatureConfig(scroll = false))
+        val counterClockwise = Replay(circleVolumeOn)
         counterClockwise.feedPoses((0..36).map { indexCirclePose(it % 24, false) })
         counterClockwise.feed(1, ::fistPose)
         val down = counterClockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
         assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.START })
         assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
         assertEquals(GestureEvent.VolumeHoldPhase.END, down.last().phase)
+    }
+
+    /** Circle volume ships disabled (real-device pose conflicts); the pipeline must stay dormant. */
+    @Test fun indexCirclesAreIgnoredWhenCircleVolumeSwitchesAreOff() {
+        val off = Replay(GestureFeatureConfig(scroll = false))
+        off.feedPoses((0..36).map { indexCirclePose(it % 24, true) })
+        off.feed(1, ::fistPose)
+        assertEquals(0, off.events.countOf<GestureEvent.CircleVolume>())
     }
 }
