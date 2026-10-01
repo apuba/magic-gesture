@@ -34,6 +34,11 @@ object GesturePreferences {
     private const val SENSITIVITY = "sensitivity"
     private const val REVERSE_HORIZONTAL = "reverse_horizontal"
     private const val FEEDBACK = "feedback_enabled"
+    const val COOLDOWN_MS = "cooldown_ms"
+
+    /** Post-action lock duration, user-tunable 0.6s..4s via the calibration page slider. */
+    const val MIN_COOLDOWN_MS = 600L
+    const val MAX_COOLDOWN_MS = 4_000L
 
     fun sensitivity(context: Context): String = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getString(SENSITIVITY, "normal") ?: "normal"
@@ -49,6 +54,17 @@ object GesturePreferences {
 
     fun feedbackEnabled(context: Context): Boolean = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getBoolean(FEEDBACK, true)
+
+    fun cooldownMs(context: Context): Long = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .getLong(COOLDOWN_MS, GlobalCooldownManager.DEFAULT_DURATION_MS)
+        .coerceIn(MIN_COOLDOWN_MS, MAX_COOLDOWN_MS)
+
+    /** Saved immediately on slider release so a running control session picks it up live. */
+    fun saveCooldownMs(context: Context, value: Long) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(COOLDOWN_MS, value.coerceIn(MIN_COOLDOWN_MS, MAX_COOLDOWN_MS))
+            .apply()
+    }
 
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

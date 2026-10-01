@@ -156,7 +156,9 @@ class CalibrationActivity : Activity() {
                 "在屏幕顶部显示动作名称，以及 V 字保持进度。",
                 GesturePreferences.feedbackEnabled(this@CalibrationActivity)
             )
-            addView(feedbackSwitch, blockMargins(22))
+            addView(feedbackSwitch, blockMargins(12))
+
+            addView(cooldownCard(), blockMargins(22))
 
             addView(title("手势动作映射"))
             addView(body("每个手势都可以换成其他动作。点击右侧按钮选择动作，选“默认”恢复出厂设置；修改立即生效，无需重启手势控制。").apply {
@@ -202,7 +204,7 @@ class CalibrationActivity : Activity() {
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
 
             addView(title("练习顺序"))
-            addView(body("建议按顺序逐项测试。一次只做一个动作；触发后进入 2 秒冷却期，期间暂停全部手势判断，结束后重新识别。"))
+            addView(body("建议按顺序逐项测试。一次只做一个动作；触发后进入冷却期（时长见上方“手势冷却时长”设置），期间暂停全部手势判断，结束后重新识别。"))
             addView(practiceCard(R.drawable.gesture_point, "1  光标与点击", "食指移动光标；稳定约 0.2 秒后弯曲食指，再在 1 秒内重新伸直。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_four_fingers_together, "2  方向动作", "水平食指挑动，或将食指、中指、无名指和小指并拢后挥动；拇指不限，四指分开时不触发。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_v, "3  V 字自拍", "保持 V 字 2 秒确认，观察进度；随后有 3 秒时间放下手并调整姿势。"), blockMargins(10))
@@ -335,6 +337,49 @@ class CalibrationActivity : Activity() {
         isChecked = checked
         setPadding(dp(16), dp(13), dp(12), dp(13))
         background = rounded(Color.WHITE, 16, Color.rgb(226, 232, 240))
+    }
+
+    /**
+     * Post-action cooldown slider (0.6s..4s, 100ms steps). Saved on release so a running
+     * control session applies the new duration live via the preference listener.
+     */
+    private fun cooldownCard() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(13), dp(16), dp(13))
+        background = rounded(Color.WHITE, 16, Color.rgb(226, 232, 240))
+        addView(title("手势冷却时长").apply { textSize = 16f })
+        addView(body("动作执行成功后暂停全部手势识别的时长。太短容易连触，太长影响连续操作。").apply {
+            setPadding(0, dp(4), 0, 0)
+        })
+        val current = TextView(this@CalibrationActivity).apply {
+            textSize = 14f
+            setTextColor(Color.rgb(37, 99, 235))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(8), 0, dp(2))
+        }
+        val slider = android.widget.SeekBar(this@CalibrationActivity).apply {
+            // 100ms steps from 0.6s to 4.0s.
+            max = ((GesturePreferences.MAX_COOLDOWN_MS - GesturePreferences.MIN_COOLDOWN_MS) / 100L).toInt()
+            progress = ((GesturePreferences.cooldownMs(context) - GesturePreferences.MIN_COOLDOWN_MS) / 100L).toInt()
+            fun format(ms: Long): String {
+                val seconds = ms / 1000f
+                return if (seconds == seconds.toLong().toFloat()) "${seconds.toLong()} 秒" else "%.1f 秒".format(seconds)
+            }
+            current.text = "当前：${format(GesturePreferences.cooldownMs(context))}"
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: android.widget.SeekBar, value: Int, fromUser: Boolean) {
+                    current.text = "当前：${format(GesturePreferences.MIN_COOLDOWN_MS + value * 100L)}"
+                }
+                override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) = Unit
+                override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) {
+                    GesturePreferences.saveCooldownMs(context, GesturePreferences.MIN_COOLDOWN_MS + seekBar.progress * 100L)
+                }
+            })
+        }
+        addView(current)
+        addView(slider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(0, dp(4), 0, 0)
+        })
     }
 
     private fun featureSwitch(name: String, description: String, checked: Boolean) = settingSwitch(name, description, checked).apply {

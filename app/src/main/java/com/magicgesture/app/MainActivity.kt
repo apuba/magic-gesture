@@ -130,7 +130,9 @@ class MainActivity : Activity() {
         }, margins(bottom = 24, height = 50))
 
         content.addView(label("手势使用指南", 22f, Color.rgb(31, 31, 55), true))
-        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；动作成功后进入 2 秒冷却期，期间暂停全部手势识别（包括光标）。", 13f, Color.rgb(104, 102, 126), false).apply {
+        val cooldownSeconds = GesturePreferences.cooldownMs(this) / 1000f
+        val cooldownText = if (cooldownSeconds == cooldownSeconds.toLong().toFloat()) "${cooldownSeconds.toLong()}" else "%.1f".format(cooldownSeconds)
+        content.addView(label("手掌正对前置摄像头，保持在画面中央。准备姿势识别后请在 5 秒内完成动作；动作成功后进入 $cooldownText 秒冷却期，期间暂停全部手势识别（包括光标）。", 13f, Color.rgb(104, 102, 126), false).apply {
             setPadding(0, dp(6), 0, dp(14))
         })
 
@@ -154,7 +156,9 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢", actionLabelOf(GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33), "食指与中指并拢伸直、其余手指收起：左右挥切歌；向上或向下拉动后保持姿势，可持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右挥动，切换上一曲/下一曲。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势，可持续增减音量；改变姿势后停止。", "🔊", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直、连点两下，控制播放/暂停。", "▶", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {

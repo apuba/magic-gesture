@@ -108,7 +108,7 @@ class OverlayIndicator(
         view?.post { view?.setIndicatorState(value) }
     }
 
-    fun showProtection(durationMs: Long = 2000L) {
+    fun showProtection(durationMs: Long = GlobalCooldownManager.DEFAULT_DURATION_MS) {
         view?.post { view?.startProtection(durationMs) }
     }
 

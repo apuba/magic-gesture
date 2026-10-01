@@ -88,6 +88,7 @@ class CameraProbeService : Service() {
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         featureConfig = GesturePreferences.features(this)
         mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
+        globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
         overlayIndicator = OverlayIndicator(this)
         preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when {
@@ -100,6 +101,10 @@ class CameraProbeService : Service() {
                 key?.startsWith("mapping_") == true -> {
                     mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
                     overlayIndicator.showFeedback("手势映射已即时更新")
+                }
+                key == GesturePreferences.COOLDOWN_MS -> {
+                    globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
+                    overlayIndicator.showFeedback("冷却时长已更新")
                 }
             }
         }.also {
@@ -506,7 +511,7 @@ class CameraProbeService : Service() {
             pipeline?.pause()
             handler.removeCallbacks(resumeAfterCooldown)
             handler.postDelayed(resumeAfterCooldown, globalCooldown.remainingMs())
-            overlayIndicator.showProtection(GlobalCooldownManager.DEFAULT_DURATION_MS)
+            overlayIndicator.showProtection(globalCooldown.currentDurationMs())
         }
         overlayIndicator.showFeedback(if (success) successMessage else failureMessage)
     }
