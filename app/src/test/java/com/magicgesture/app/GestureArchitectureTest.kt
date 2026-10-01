@@ -228,4 +228,23 @@ class GestureArchitectureTest {
         assertEquals(.75f, drag.endX)
         assertEquals(.80f, drag.endY)
     }
+
+    @Test fun g29AndG30DefaultToMediaTrackControl() {
+        val previous = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(left = true)))
+        assertEquals(GestureCode.G29, previous.mapping.code)
+        assertEquals(GestureAction.MEDIA_PREVIOUS, previous.mapping.action)
+        assertEquals(GestureType.DYNAMIC, previous.mapping.type)
+        assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, previous.mapping.cooldownPolicy)
+
+        val next = requireNotNull(mappings.resolve(GestureEvent.TwoFingerSwipe(left = false)))
+        assertEquals(GestureCode.G30, next.mapping.code)
+        assertEquals(GestureAction.MEDIA_NEXT, next.mapping.action)
+
+        // Both directions share one feature switch and are remappable.
+        assertFalse(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = false)))
+        assertTrue(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = true)))
+        assertTrue(gate.allows(next.mapping, GestureFeatureConfig(twoFingerMedia = true)))
+        assertTrue(mappings.isRemappable(GestureCode.G29))
+        assertTrue(mappings.isRemappable(GestureCode.G30))
+    }
 }

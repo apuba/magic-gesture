@@ -40,7 +40,9 @@ class CalibrationActivity : Activity() {
         GestureCode.G25 to "L 手形",
         GestureCode.G26 to "爪形拖动",
         GestureCode.G27 to "C 手形",
-        GestureCode.G28 to "Love 手形"
+        GestureCode.G28 to "Love 手形",
+        GestureCode.G29 to "两指左挥",
+        GestureCode.G30 to "两指右挥"
     )
 
     /** Actions offered in the picker. Cursor/likes-duplicate variants are excluded on purpose. */
@@ -77,6 +79,7 @@ class CalibrationActivity : Activity() {
     private lateinit var clawDragSwitch: Switch
     private lateinit var cShapeSwitch: Switch
     private lateinit var loveLockSwitch: Switch
+    private lateinit var twoFingerMediaSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,7 +176,8 @@ class CalibrationActivity : Activity() {
             clawDragSwitch = featureSwitch("爪形拖动", "五指向内弯成爪形保持约 0.6 秒开始拖动，移动手掌后张开手指完成拖动。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
-            listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch).forEach {
+            twoFingerMediaSwitch = featureSwitch("两指切换曲目", "食指与中指并拢伸直、其余手指收起，整只手向左挥动为上一曲、向右挥动为下一曲。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
+            listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
                 addView(it, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
@@ -218,7 +222,8 @@ class CalibrationActivity : Activity() {
                             lShape = lShapeSwitch.isChecked,
                             clawDrag = clawDragSwitch.isChecked,
                             cShape = cShapeSwitch.isChecked,
-                            loveLock = loveLockSwitch.isChecked
+                            loveLock = loveLockSwitch.isChecked,
+                            twoFingerMedia = twoFingerMediaSwitch.isChecked
                         )
                     )
                     Toast.makeText(this@CalibrationActivity, "设置已保存，下次启动手势控制时生效", Toast.LENGTH_SHORT).show()

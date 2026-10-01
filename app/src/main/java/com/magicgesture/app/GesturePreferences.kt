@@ -20,7 +20,8 @@ data class GestureFeatureConfig(
     val lShape: Boolean = true,
     val clawDrag: Boolean = true,
     val cShape: Boolean = true,
-    val loveLock: Boolean = true
+    val loveLock: Boolean = true,
+    val twoFingerMedia: Boolean = true
 )
 
 object GesturePreferences {
@@ -64,7 +65,8 @@ object GesturePreferences {
             lShape = prefs.getBoolean("feature_l_shape", true),
             clawDrag = prefs.getBoolean("feature_claw_drag", true),
             cShape = prefs.getBoolean("feature_c_shape", true),
-            loveLock = prefs.getBoolean("feature_love_lock", true)
+            loveLock = prefs.getBoolean("feature_love_lock", true),
+            twoFingerMedia = prefs.getBoolean("feature_two_finger_media", true)
         )
     }
 
@@ -124,6 +126,7 @@ object GesturePreferences {
             .putBoolean("feature_claw_drag", features.clawDrag)
             .putBoolean("feature_c_shape", features.cShape)
             .putBoolean("feature_love_lock", features.loveLock)
+            .putBoolean("feature_two_finger_media", features.twoFingerMedia)
             .apply()
     }
 }

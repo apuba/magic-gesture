@@ -28,6 +28,7 @@ sealed interface GestureEvent {
     data object CShape : GestureEvent
     data object LoveLock : GestureEvent
     data class ClawDrag(val startX: Float, val startY: Float, val endX: Float, val endY: Float) : GestureEvent
+    data class TwoFingerSwipe(val left: Boolean) : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -39,6 +40,7 @@ class GestureEngine(
     private enum class PalmAxis { NONE, HORIZONTAL, VERTICAL }
     private enum class StaticHold { READY, CANDIDATE, FIRED }
     private enum class ClawDragState { READY, CONFIRMING, DRAGGING }
+    private enum class TwoFingerSwipeState { IDLE, TRACKING, WAIT_RELEASE }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
         WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
@@ -82,6 +84,9 @@ class GestureEngine(
     private var clawConfirmAt = 0L
     private var clawAnchor: Point? = null
     private var clawPalmAt: Point? = null
+    private var twoFingerState = TwoFingerSwipeState.IDLE
+    private var twoFingerStart: Point? = null
+    private var twoFingerStageAt = 0L
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
@@ -179,6 +184,9 @@ class GestureEngine(
         // G27: fingers half-bent forming a C, more open than the claw.
         val cShapePose = !fist && !clawPose && !fourFingersOpen && thumbOpen &&
             tipPalmRatios.all { it in .85f..1.35f }
+        // G29/G30: index and middle extended and touching (not a spread V), ring and pinky folded.
+        val twoFingerTogetherPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
+            vectorAngleDegrees(points[5], points[8], points[9], points[12]) <= 8f
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded && dist(points[8], points[12]) / handScale > .28f
         if (features.selfie && vPose) {
             pinch = Pinch.READY
@@ -210,6 +218,7 @@ class GestureEngine(
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
+        advanceTwoFingerSwipe(twoFingerTogetherPose, palm, now, output)
         if (features.click) {
             when (indexClick) {
                 IndexClick.READY -> if (indexOnlyPose) {
@@ -417,6 +426,58 @@ class GestureEngine(
             }
         }
         return false
+    }
+    /**
+     * G29/G30 track switching: hold the index+middle-together pose, then wave the whole hand
+     * left for the previous track or right for the next one. The pose is also a common
+     * "neutral" hand shape, so this machine never consumes frames — every other detector
+     * keeps observing them; it only emits events on its own transitions.
+     */
+    private fun advanceTwoFingerSwipe(
+        pose: Boolean,
+        palm: Point,
+        now: Long,
+        output: MutableList<GestureEvent>
+    ) {
+        if (!features.twoFingerMedia) {
+            twoFingerState = TwoFingerSwipeState.IDLE
+            twoFingerStart = null
+            return
+        }
+        when (twoFingerState) {
+            TwoFingerSwipeState.IDLE -> if (pose) {
+                twoFingerState = TwoFingerSwipeState.TRACKING
+                twoFingerStart = palm
+                twoFingerStageAt = now
+            }
+            TwoFingerSwipeState.TRACKING -> {
+                if (!pose) {
+                    twoFingerState = TwoFingerSwipeState.IDLE
+                    twoFingerStart = null
+                    return
+                }
+                val start = twoFingerStart
+                if (start != null) {
+                    val dx = palm.x - start.x
+                    val dy = palm.y - start.y
+                    val elapsed = now - twoFingerStageAt
+                    val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f
+                    if (dx <= -.09f * movementScale && horizontal && elapsed <= 5000) {
+                        output += GestureEvent.TwoFingerSwipe(left = true)
+                        twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
+                        twoFingerStart = null
+                    } else if (dx >= .09f * movementScale && horizontal && elapsed <= 5000) {
+                        output += GestureEvent.TwoFingerSwipe(left = false)
+                        twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
+                        twoFingerStart = null
+                    } else if (elapsed > 5000) {
+                        twoFingerState = TwoFingerSwipeState.WAIT_RELEASE
+                        twoFingerStart = null
+                    }
+                }
+            }
+            TwoFingerSwipeState.WAIT_RELEASE -> if (!pose) twoFingerState = TwoFingerSwipeState.IDLE
+        }
     }
     private fun advanceOpenPalmSequence(
         directionOpen: Boolean,
@@ -682,6 +743,9 @@ class GestureEngine(
         clawConfirmAt = 0L
         clawAnchor = null
         clawPalmAt = null
+        twoFingerState = TwoFingerSwipeState.IDLE
+        twoFingerStart = null
+        twoFingerStageAt = 0L
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)

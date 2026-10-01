@@ -153,6 +153,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_fist, "爪形拖动", "拖动操作", "五指向内弯成爪形保持约 0.6 秒开始拖动，移动手掌后张开手指完成拖动。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_palm, "C 手形", "最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。识别阈值待真机校准。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_v, "两指并拢挥动", "上一曲 / 下一曲", "食指与中指并拢伸直、其余手指收起，整只手向左挥动为上一曲、向右挥动为下一曲。识别阈值待真机校准。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -316,6 +317,7 @@ class MainActivity : Activity() {
         "claw_drag" -> "爪形拖动"
         "c_shape" -> "C 手形最近任务"
         "love_lock" -> "Love 手形锁屏"
+        "two_finger_media" -> "两指切换曲目"
         else -> "手势"
     }
 
@@ -339,7 +341,8 @@ class MainActivity : Activity() {
             "l_shape" to features.lShape,
             "claw_drag" to features.clawDrag,
             "c_shape" to features.cShape,
-            "love_lock" to features.loveLock
+            "love_lock" to features.loveLock,
+            "two_finger_media" to features.twoFingerMedia
         )
         updatingFeatureSwitches = true
         values.forEach { (key, value) -> featureSwitches[key]?.forEach { it.isChecked = value } }
