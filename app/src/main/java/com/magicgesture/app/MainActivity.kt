@@ -166,7 +166,7 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(15), dp(16), dp(15))
             background = rounded(Color.rgb(239, 240, 255), 16)
             addView(label("使用提示", 15f, Color.rgb(66, 63, 160), true))
-            addView(label("• 保持环境光线充足，手掌距离手机约 40–80 厘米\n• 动作清晰但不需要用力，完成后先让手势复位\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, Color.rgb(78, 77, 111), false).apply {
+            addView(label("• 保持环境光线充足，避免逆光，手掌距离手机约 40–80 厘米\n• 屏幕顶部出现文字提示时，请在 5 秒内完成对应动作，超时后需重新进入准备姿势\n• 动作清晰但不需要用力，完成后先让手势复位\n• 手腕避免被袖口、手套或过宽的饰品遮挡，否则识别会明显变差\n• 识别不到或容易误触时，可到“手势练习与校准”中调整灵敏度\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, Color.rgb(78, 77, 111), false).apply {
                 setPadding(0, dp(7), 0, 0)
                 setLineSpacing(0f, 1.2f)
             })
