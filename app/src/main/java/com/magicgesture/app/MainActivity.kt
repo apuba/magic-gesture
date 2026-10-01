@@ -113,7 +113,9 @@ class MainActivity : Activity() {
         content.addView(setupGuideContainer)
 
         if (isHonorOrHuaweiDevice()) {
-            content.addView(powerManagementCard(), margins(bottom = 10))
+            content.addView(actionButton("⚡  保持授权不丢失（荣耀 / 华为机型）", Color.rgb(255, 247, 226), Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 216, 157)) {
+                showPowerManagementDialog()
+            }, margins(bottom = 10, height = 48))
         }
 
         startControlButton = actionButton("✦  启动手势控制", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
@@ -311,27 +313,24 @@ class MainActivity : Activity() {
             brand.contains("HONOR") || brand.contains("HUAWEI")
     }
 
-    private fun powerManagementCard(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(15), dp(15), dp(15), dp(15))
-        background = rounded(Color.WHITE, 18, Color.rgb(244, 200, 138))
-        elevation = dp(2).toFloat()
-        addView(label("⚡  保持授权不丢失（荣耀 / 华为机型必看）", 16f, Color.rgb(157, 92, 20), true))
-        addView(label("荣耀、华为系统会在上划清理后台或强行停止 App 时，一并撤销无障碍授权，导致手势控制失效并需要重新授权。请完成以下设置，避免日常清理后台后授权丢失：", 12.5f, Color.rgb(122, 90, 40), false).apply {
-            setPadding(0, dp(10), 0, dp(7))
-            setLineSpacing(0f, 1.12f)
-        })
-        addView(label("设置 → 应用 → 魔法手势 → 电池：关闭“自动管理”，改为“手动管理”，并开启“允许自启动”“允许关联启动”“允许后台活动”。", 12.5f, Color.rgb(122, 90, 40), true).apply {
-            setPadding(0, 0, 0, dp(10))
-            setLineSpacing(0f, 1.12f)
-        })
-        addView(actionButton("去应用详情设置", Color.WHITE, Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 200, 138)) {
-            try {
-                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-            } catch (e: Exception) {
-                status.text = "●  无法打开应用详情：${e.javaClass.simpleName}"
+    private fun showPowerManagementDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("保持授权不丢失（荣耀 / 华为机型）")
+            .setMessage(
+                "荣耀、华为系统会在上划清理后台或强行停止 App 时，一并撤销无障碍授权，导致手势控制失效并需要重新授权。\n\n" +
+                    "建议完成以下设置，避免日常清理后台后授权丢失：\n\n" +
+                    "设置 → 应用 → 魔法手势 → 电池\n" +
+                    "关闭“自动管理”，改为“手动管理”，并开启“允许自启动”“允许关联启动”“允许后台活动”。"
+            )
+            .setPositiveButton("去应用详情设置") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    status.text = "●  无法打开应用详情：${e.javaClass.simpleName}"
+                }
             }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)))
+            .setNegativeButton("我知道了", null)
+            .show()
     }
 
     private fun refreshFeatureSwitches() {
