@@ -5,7 +5,8 @@ import android.view.KeyEvent
 
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
-    G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23
+    G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23,
+    G24, G25, G26, G27, G28
 }
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
@@ -13,7 +14,8 @@ enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
-    NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT;
+    NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
+    DRAG;
 
     fun successMessage(): String = when (this) {
         MOVE_CURSOR -> ""
@@ -36,6 +38,7 @@ enum class GestureAction {
         MEDIA_PREVIOUS -> "已切换上一曲"
         LOCK_SCREEN -> "已锁屏"
         VOICE_ASSISTANT -> "已唤起语音助手"
+        DRAG -> "拖动完成"
     }
 
     fun failureMessage(): String = when (this) {
@@ -44,6 +47,7 @@ enum class GestureAction {
         CONFIRM -> "请先启用并移动光标"
         LOCK_SCREEN -> "锁屏需要 Android 9 或更高版本"
         VOICE_ASSISTANT -> "未找到可用的语音助手"
+        DRAG -> "拖动距离太短或执行失败"
         else -> "动作执行失败"
     }
 
@@ -68,6 +72,7 @@ enum class GestureAction {
         MEDIA_PREVIOUS -> "上一曲"
         LOCK_SCREEN -> "锁屏"
         VOICE_ASSISTANT -> "语音助手"
+        DRAG -> "拖动"
     }
 }
 
@@ -108,6 +113,11 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureEvent.ThumbsUp -> GestureCode.G20
             GestureEvent.Ok -> GestureCode.G21
             GestureEvent.PlayPause -> GestureCode.G22
+            GestureEvent.LeftLBack -> GestureCode.G24
+            GestureEvent.LShape -> GestureCode.G25
+            is GestureEvent.ClawDrag -> GestureCode.G26
+            GestureEvent.CShape -> GestureCode.G27
+            GestureEvent.LoveLock -> GestureCode.G28
             else -> return null
         }
         val base = defaultMappings[code] ?: return null
@@ -200,6 +210,36 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureType.HOLD,
             GestureAction.PLAY_PAUSE,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G24 to GestureMapping(
+            GestureCode.G24,
+            GestureType.HOLD,
+            GestureAction.BACK,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G25 to GestureMapping(
+            GestureCode.G25,
+            GestureType.HOLD,
+            GestureAction.NOTIFICATIONS,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G26 to GestureMapping(
+            GestureCode.G26,
+            GestureType.HOLD,
+            GestureAction.DRAG,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G27 to GestureMapping(
+            GestureCode.G27,
+            GestureType.HOLD,
+            GestureAction.RECENTS,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G28 to GestureMapping(
+            GestureCode.G28,
+            GestureType.HOLD,
+            GestureAction.LOCK_SCREEN,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
         )
     )
     }
@@ -220,6 +260,11 @@ class GestureFeatureGate {
         GestureCode.G20 -> features.thumbsUp
         GestureCode.G21 -> features.ok
         GestureCode.G22 -> features.playPause
+        GestureCode.G24 -> features.leftL
+        GestureCode.G25 -> features.lShape
+        GestureCode.G26 -> features.clawDrag
+        GestureCode.G27 -> features.cShape
+        GestureCode.G28 -> features.loveLock
         else -> false
     }
 }
@@ -277,6 +322,13 @@ class GestureActionExecutor(
             }
             GestureAction.SELFIE -> {
                 selfieCapture(callback)
+                true
+            }
+            GestureAction.DRAG -> {
+                val service = accessibilityService() ?: return false
+                // Only the claw gesture produces the start/end coordinates a drag needs.
+                val drag = mapped.event as? GestureEvent.ClawDrag ?: return false
+                service.injectDrag(drag.startX, drag.startY, drag.endX, drag.endY, callback)
                 true
             }
             GestureAction.LIKE, GestureAction.THUMBS_UP_LIKE -> {

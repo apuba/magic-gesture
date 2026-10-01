@@ -132,7 +132,9 @@ class CameraProbeService : Service() {
                             is GestureEvent.Swipe, is GestureEvent.HorizontalSwipe,
                             GestureEvent.Selfie, GestureEvent.Like, GestureEvent.Screenshot,
                             GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
-                            GestureEvent.LotusRecents, GestureEvent.OrchidBack -> Unit // Migrated gestures use the mapping pipeline above.
+                            GestureEvent.LotusRecents, GestureEvent.OrchidBack,
+                            GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
+                            GestureEvent.LoveLock, is GestureEvent.ClawDrag -> Unit // Migrated gestures use the mapping pipeline above.
                             is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                             GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
                                 ?: finishAction(false, "返回", "无障碍服务未连接")

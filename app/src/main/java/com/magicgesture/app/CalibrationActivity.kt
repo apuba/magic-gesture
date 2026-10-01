@@ -35,7 +35,12 @@ class CalibrationActivity : Activity() {
         GestureCode.G15 to "兰花指",
         GestureCode.G20 to "大拇指",
         GestureCode.G21 to "OK 手势",
-        GestureCode.G22 to "握拳"
+        GestureCode.G22 to "握拳",
+        GestureCode.G24 to "左 L 手形",
+        GestureCode.G25 to "L 手形",
+        GestureCode.G26 to "爪形拖动",
+        GestureCode.G27 to "C 手形",
+        GestureCode.G28 to "Love 手形"
     )
 
     /** Actions offered in the picker. Cursor/likes-duplicate variants are excluded on purpose. */
@@ -67,6 +72,11 @@ class CalibrationActivity : Activity() {
     private lateinit var playPauseSwitch: Switch
     private lateinit var lotusRecentsSwitch: Switch
     private lateinit var orchidBackSwitch: Switch
+    private lateinit var leftLSwitch: Switch
+    private lateinit var lShapeSwitch: Switch
+    private lateinit var clawDragSwitch: Switch
+    private lateinit var cShapeSwitch: Switch
+    private lateinit var loveLockSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,7 +168,12 @@ class CalibrationActivity : Activity() {
             playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持约 0.6 秒，发送系统媒体播放/暂停指令。", savedFeatures.playPause)
             lotusRecentsSwitch = featureSwitch("莲花指最近任务", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指返回", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
-            listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch).forEach {
+            leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)
+            lShapeSwitch = featureSwitch("L 手形通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.lShape)
+            clawDragSwitch = featureSwitch("爪形拖动", "五指向内弯成爪形保持约 0.6 秒开始拖动，移动手掌后张开手指完成拖动。", savedFeatures.clawDrag)
+            cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
+            loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
+            listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch).forEach {
                 addView(it, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
@@ -198,7 +213,12 @@ class CalibrationActivity : Activity() {
                             ok = okSwitch.isChecked,
                             playPause = playPauseSwitch.isChecked,
                             lotusRecents = lotusRecentsSwitch.isChecked,
-                            orchidBack = orchidBackSwitch.isChecked
+                            orchidBack = orchidBackSwitch.isChecked,
+                            leftL = leftLSwitch.isChecked,
+                            lShape = lShapeSwitch.isChecked,
+                            clawDrag = clawDragSwitch.isChecked,
+                            cShape = cShapeSwitch.isChecked,
+                            loveLock = loveLockSwitch.isChecked
                         )
                     )
                     Toast.makeText(this@CalibrationActivity, "设置已保存，下次启动手势控制时生效", Toast.LENGTH_SHORT).show()

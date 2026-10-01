@@ -184,4 +184,48 @@ class GestureArchitectureTest {
             if (action != GestureAction.MOVE_CURSOR) assertTrue(action.successMessage().isNotBlank())
         }
     }
+
+    @Test fun g24ThroughG28DefaultToTheirSpecifiedActions() {
+        assertEquals(GestureAction.BACK, GestureMappingManager.defaultActionOf(GestureCode.G24))
+        assertEquals(GestureAction.NOTIFICATIONS, GestureMappingManager.defaultActionOf(GestureCode.G25))
+        assertEquals(GestureAction.DRAG, GestureMappingManager.defaultActionOf(GestureCode.G26))
+        assertEquals(GestureAction.RECENTS, GestureMappingManager.defaultActionOf(GestureCode.G27))
+        assertEquals(GestureAction.LOCK_SCREEN, GestureMappingManager.defaultActionOf(GestureCode.G28))
+    }
+
+    @Test fun g24ThroughG28EventsResolveWithHoldTypeAndOwnFeatureGates() {
+        val cases = listOf(
+            GestureEvent.LeftLBack to GestureCode.G24,
+            GestureEvent.LShape to GestureCode.G25,
+            GestureEvent.ClawDrag(.2f, .3f, .6f, .7f) to GestureCode.G26,
+            GestureEvent.CShape to GestureCode.G27,
+            GestureEvent.LoveLock to GestureCode.G28
+        )
+        cases.forEach { (event, code) ->
+            val mapped = requireNotNull(mappings.resolve(event))
+            assertEquals(code, mapped.mapping.code)
+            assertEquals(GestureType.HOLD, mapped.mapping.type)
+            assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.mapping.cooldownPolicy)
+            assertTrue(gate.allows(mapped.mapping, GestureFeatureConfig()))
+        }
+        // Each new gesture is gated by its own switch.
+        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LeftLBack)).mapping, GestureFeatureConfig(leftL = false)))
+        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LShape)).mapping, GestureFeatureConfig(lShape = false)))
+        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f))).mapping, GestureFeatureConfig(clawDrag = false)))
+        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.CShape)).mapping, GestureFeatureConfig(cShape = false)))
+        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LoveLock)).mapping, GestureFeatureConfig(loveLock = false)))
+        // The new codes are remappable like the rest.
+        assertTrue(mappings.isRemappable(GestureCode.G24))
+        assertTrue(mappings.isRemappable(GestureCode.G28))
+    }
+
+    @Test fun dragEventKeepsItsCoordinatesThroughThePipeline() {
+        val mapped = requireNotNull(mappings.resolve(GestureEvent.ClawDrag(.25f, .30f, .75f, .80f)))
+        assertEquals(GestureAction.DRAG, mapped.mapping.action)
+        val drag = mapped.event as GestureEvent.ClawDrag
+        assertEquals(.25f, drag.startX)
+        assertEquals(.30f, drag.startY)
+        assertEquals(.75f, drag.endX)
+        assertEquals(.80f, drag.endY)
+    }
 }

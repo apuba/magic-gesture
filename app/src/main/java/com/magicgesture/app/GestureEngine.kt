@@ -23,6 +23,11 @@ sealed interface GestureEvent {
     data object PlayPause : GestureEvent
     data object LotusRecents : GestureEvent
     data object OrchidBack : GestureEvent
+    data object LeftLBack : GestureEvent
+    data object LShape : GestureEvent
+    data object CShape : GestureEvent
+    data object LoveLock : GestureEvent
+    data class ClawDrag(val startX: Float, val startY: Float, val endX: Float, val endY: Float) : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -33,6 +38,7 @@ class GestureEngine(
     private enum class IndexClick { READY, STABILIZING, ARMED, BENT }
     private enum class PalmAxis { NONE, HORIZONTAL, VERTICAL }
     private enum class StaticHold { READY, CANDIDATE, FIRED }
+    private enum class ClawDragState { READY, CONFIRMING, DRAGGING }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
         WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
@@ -64,6 +70,18 @@ class GestureEngine(
     private var lotusHoldAt = 0L
     private var orchidHold = StaticHold.READY
     private var orchidHoldAt = 0L
+    private var leftLHold = StaticHold.READY
+    private var leftLHoldAt = 0L
+    private var lShapeHold = StaticHold.READY
+    private var lShapeHoldAt = 0L
+    private var cShapeHold = StaticHold.READY
+    private var cShapeHoldAt = 0L
+    private var loveHold = StaticHold.READY
+    private var loveHoldAt = 0L
+    private var clawDragState = ClawDragState.READY
+    private var clawConfirmAt = 0L
+    private var clawAnchor: Point? = null
+    private var clawPalmAt: Point? = null
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
@@ -141,6 +159,26 @@ class GestureEngine(
                 kotlin.math.abs(points[8].x - points[5].x).coerceAtLeast(.001f).toDouble()
             )
         ).toFloat()
+        // Provisional G24-G28 poses; thresholds must be calibrated on real devices.
+        // The two L-shapes are 90-degree rotations of each other: the thumb direction tells them apart.
+        val thumbUpStrong = thumbOpen && points[4].y < points[2].y - handScale * .15f
+        val thumbSideways = thumbOpen && kotlin.math.abs(points[4].y - points[2].y) < handScale * .35f &&
+            dist(points[4], points[5]) / handScale > .45f
+        // G24: index horizontal pointing to the user's left (mirrored view), thumb up.
+        val leftLPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
+            kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x
+        // G25: index vertical, thumb stretched sideways.
+        val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
+            kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
+        // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
+        val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
+        // Claw vs C live on a curl continuum measured by fingertip distance to the palm centre.
+        val tipPalmRatios = listOf(8, 12, 16, 20).map { dist(points[it], palm) / handScale }
+        // G26: fingers bent inward (deeper curl), clearly not a fist.
+        val clawPose = !fist && tipPalmRatios.all { it in .55f..1.00f } && tipPalmRatios.average() < .85f
+        // G27: fingers half-bent forming a C, more open than the claw.
+        val cShapePose = !fist && !clawPose && !fourFingersOpen && thumbOpen &&
+            tipPalmRatios.all { it in .85f..1.35f }
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded && dist(points[8], points[12]) / handScale > .28f
         if (features.selfie && vPose) {
             pinch = Pinch.READY
@@ -165,6 +203,13 @@ class GestureEngine(
             vHoldAt = 0L
             vLatched = false
         }
+        // G24-G28 checked before the click/swipe chains: their index-based poses would
+        // otherwise arm click or horizontal-swipe detection while the L shapes are held.
+        if (features.leftL && advanceStaticHold(leftLPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
+        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output)) return output
+        if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
+        if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
+        if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
         if (features.click) {
             when (indexClick) {
                 IndexClick.READY -> if (indexOnlyPose) {
@@ -303,6 +348,70 @@ class GestureEngine(
                 if (!pose) {
                     setState(StaticHold.READY)
                     setStartedAt(0L)
+                }
+                return true
+            }
+        }
+        return false
+    }
+    /**
+     * G26 claw drag: hold the claw ~600ms to anchor at the current cursor, move the palm,
+     * then open the hand to dispatch one press-move-release stroke from anchor to end.
+     */
+    private fun advanceClawDrag(
+        pose: Boolean,
+        palm: Point,
+        cursor: Point,
+        now: Long,
+        output: MutableList<GestureEvent>
+    ): Boolean {
+        if (!features.clawDrag) {
+            clawDragState = ClawDragState.READY
+            clawAnchor = null
+            clawPalmAt = null
+            return false
+        }
+        when (clawDragState) {
+            ClawDragState.READY -> if (pose) {
+                clawDragState = ClawDragState.CONFIRMING
+                clawConfirmAt = now
+                return true
+            }
+            ClawDragState.CONFIRMING -> {
+                if (!pose) {
+                    clawDragState = ClawDragState.READY
+                    return true
+                }
+                if (now - clawConfirmAt >= 600L) {
+                    clawDragState = ClawDragState.DRAGGING
+                    clawAnchor = cursor
+                    clawPalmAt = palm
+                    output += GestureEvent.Feedback("拖动已开始：移动手掌，张开手指完成拖动", 100)
+                }
+                return true
+            }
+            ClawDragState.DRAGGING -> {
+                if (!pose) {
+                    val anchor = clawAnchor
+                    val palmAt = clawPalmAt
+                    if (anchor != null && palmAt != null) {
+                        // The palm travels less than a fingertip; amplify to keep drags reachable.
+                        val dx = (palm.x - palmAt.x) * 1.5f
+                        val dy = (palm.y - palmAt.y) * 1.5f
+                        if (hypot(dx, dy) >= .03f) {
+                            output += GestureEvent.ClawDrag(
+                                anchor.x, anchor.y,
+                                (anchor.x + dx).coerceIn(0f, 1f),
+                                (anchor.y + dy).coerceIn(0f, 1f)
+                            )
+                        } else output += GestureEvent.Feedback("拖动距离太短，已取消")
+                    }
+                    clawDragState = ClawDragState.READY
+                    clawAnchor = null
+                    clawPalmAt = null
+                } else if (now - lastFeedbackAt >= 600) {
+                    output += GestureEvent.Feedback("拖动中：张开手指结束拖动")
+                    lastFeedbackAt = now
                 }
                 return true
             }
@@ -561,6 +670,18 @@ class GestureEngine(
         lotusHoldAt = 0L
         orchidHold = StaticHold.READY
         orchidHoldAt = 0L
+        leftLHold = StaticHold.READY
+        leftLHoldAt = 0L
+        lShapeHold = StaticHold.READY
+        lShapeHoldAt = 0L
+        cShapeHold = StaticHold.READY
+        cShapeHoldAt = 0L
+        loveHold = StaticHold.READY
+        loveHoldAt = 0L
+        clawDragState = ClawDragState.READY
+        clawConfirmAt = 0L
+        clawAnchor = null
+        clawPalmAt = null
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)

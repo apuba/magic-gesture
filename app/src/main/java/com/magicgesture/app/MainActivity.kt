@@ -148,6 +148,11 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持约 0.6 秒，控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", "最近任务", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "Ⅱ", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "返回", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "←", "orchid_back", features.orchidBack), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "左 L 手形", "返回", "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "L 手形", "下拉通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_fist, "爪形拖动", "拖动操作", "五指向内弯成爪形保持约 0.6 秒开始拖动，移动手掌后张开手指完成拖动。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "C 手形", "最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。识别阈值待真机校准。", "C", "c_shape", features.cShape), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_lotus, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -306,6 +311,11 @@ class MainActivity : Activity() {
         "play_pause" -> "握拳播放/暂停"
         "lotus_recents" -> "莲花指最近任务"
         "orchid_back" -> "兰花指返回"
+        "left_l" -> "左 L 手形返回"
+        "l_shape" -> "L 手形通知栏"
+        "claw_drag" -> "爪形拖动"
+        "c_shape" -> "C 手形最近任务"
+        "love_lock" -> "Love 手形锁屏"
         else -> "手势"
     }
 
@@ -324,7 +334,12 @@ class MainActivity : Activity() {
             "ok" to features.ok,
             "play_pause" to features.playPause,
             "lotus_recents" to features.lotusRecents,
-            "orchid_back" to features.orchidBack
+            "orchid_back" to features.orchidBack,
+            "left_l" to features.leftL,
+            "l_shape" to features.lShape,
+            "claw_drag" to features.clawDrag,
+            "c_shape" to features.cShape,
+            "love_lock" to features.loveLock
         )
         updatingFeatureSwitches = true
         values.forEach { (key, value) -> featureSwitches[key]?.forEach { it.isChecked = value } }

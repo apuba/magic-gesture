@@ -25,6 +25,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /** Injection and cursor boundary. Called only while user-started control is active. */
 class ControlAccessibilityService : AccessibilityService() {
@@ -91,6 +92,20 @@ class ControlAccessibilityService : AccessibilityService() {
             lineTo(m.widthPixels * .5f, m.heightPixels * (if (up) .22f else .82f))
         }
         dispatch(path, if (up) 300 else 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
+
+    /** Press-move-release stroke between two normalized screen points (G26 claw drag). */
+    fun injectDrag(startX: Float, startY: Float, endX: Float, endY: Float, callback: (Boolean) -> Unit = {}) = main.post {
+        if (busy) { callback(false); return@post }
+        val m = resources.displayMetrics
+        val x1 = startX * m.widthPixels
+        val y1 = startY * m.heightPixels
+        val x2 = endX * m.widthPixels
+        val y2 = endY * m.heightPixels
+        val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
+        // Longer drags take proportionally longer so the target app can follow the movement.
+        val duration = (hypot(x2 - x1, y2 - y1) * 1.2f).toLong().coerceIn(350L, 900L)
+        dispatch(path, duration, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
     }
 
     /** System screenshot; mirrors the API-28 guard inside inject(). */

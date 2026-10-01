@@ -15,7 +15,12 @@ data class GestureFeatureConfig(
     val ok: Boolean = true,
     val playPause: Boolean = true,
     val lotusRecents: Boolean = true,
-    val orchidBack: Boolean = true
+    val orchidBack: Boolean = true,
+    val leftL: Boolean = true,
+    val lShape: Boolean = true,
+    val clawDrag: Boolean = true,
+    val cShape: Boolean = true,
+    val loveLock: Boolean = true
 )
 
 object GesturePreferences {
@@ -54,7 +59,12 @@ object GesturePreferences {
             ok = prefs.getBoolean("feature_ok", true),
             playPause = prefs.getBoolean("feature_play_pause", true),
             lotusRecents = prefs.getBoolean("feature_lotus_recents", true),
-            orchidBack = prefs.getBoolean("feature_orchid_back", true)
+            orchidBack = prefs.getBoolean("feature_orchid_back", true),
+            leftL = prefs.getBoolean("feature_left_l", true),
+            lShape = prefs.getBoolean("feature_l_shape", true),
+            clawDrag = prefs.getBoolean("feature_claw_drag", true),
+            cShape = prefs.getBoolean("feature_c_shape", true),
+            loveLock = prefs.getBoolean("feature_love_lock", true)
         )
     }
 
@@ -109,6 +119,11 @@ object GesturePreferences {
             .putBoolean("feature_play_pause", features.playPause)
             .putBoolean("feature_lotus_recents", features.lotusRecents)
             .putBoolean("feature_orchid_back", features.orchidBack)
+            .putBoolean("feature_left_l", features.leftL)
+            .putBoolean("feature_l_shape", features.lShape)
+            .putBoolean("feature_claw_drag", features.clawDrag)
+            .putBoolean("feature_c_shape", features.cShape)
+            .putBoolean("feature_love_lock", features.loveLock)
             .apply()
     }
 }
