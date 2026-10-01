@@ -44,6 +44,7 @@ class CameraProbeService : Service() {
     private var cameraOpening = false
     private var cameraGeneration = 0
     private var stopped = false
+    private var firstFrameLogged = false
     private var pipeline: HandPipeline? = null
     private var sensorRotation = 0
     private var lastFrameRotation = Int.MIN_VALUE
@@ -120,55 +121,65 @@ class CameraProbeService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) startForeground(7, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         else startForeground(7, notification)
         overlayIndicator.show()
-        if (camera == null && reader == null) handler.post {
+        if (camera == null && reader == null) {
+            val startedAt = SystemClock.uptimeMillis()
             if (controlMode && pipeline == null) {
-                try {
-                    pipeline = HandPipeline(this) { event ->
-                        val service = ControlAccessibilityService.active
-                        if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
-                        if (event is GestureEvent.TwoFingerVolumeHold) {
-                            handleContinuousVolume(event, event.raise, event.phase)
-                            return@HandPipeline
+                // Model initialization is CPU-heavy (several seconds on mid-range devices).
+                // Run it on its own thread so camera opening and auto-exposure warm-up overlap
+                // with it instead of running back to back on the camera-probe thread.
+                Thread({
+                    val t0 = SystemClock.uptimeMillis()
+                    try {
+                        pipeline = HandPipeline(this) { event ->
+                            val service = ControlAccessibilityService.active
+                            if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
+                            if (event is GestureEvent.TwoFingerVolumeHold) {
+                                handleContinuousVolume(event, event.raise, event.phase)
+                                return@HandPipeline
+                            }
+                            if (event is GestureEvent.CircleVolume) {
+                                handleContinuousVolume(event, event.raise, event.phase)
+                                return@HandPipeline
+                            }
+                            if (!globalCooldown.allows(event)) return@HandPipeline
+                            val mapped = mappingManager.resolve(event)
+                            if (mapped != null) {
+                                executeMapped(mapped)
+                                return@HandPipeline
+                            }
+                            when (event) {
+                                is GestureEvent.Cursor, is GestureEvent.Click,
+                                is GestureEvent.Swipe, is GestureEvent.HorizontalSwipe,
+                                GestureEvent.Selfie, GestureEvent.Like, GestureEvent.Screenshot,
+                                GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
+                                GestureEvent.LotusRecents, GestureEvent.OrchidBack,
+                                GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
+                                GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
+                                GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
+                                is GestureEvent.CircleVolume -> Unit // Migrated gestures use the mapping pipeline above.
+                                is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
+                                is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
+                                GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
+                                    ?: finishAction(false, "返回", "无障碍服务未连接")
+                                GestureEvent.Home -> service?.inject(event) { finishAction(it, "返回桌面") }
+                                    ?: finishAction(false, "返回桌面", "无障碍服务未连接")
+                                GestureEvent.Recents -> service?.inject(event) { finishAction(it, "打开最近任务") }
+                                    ?: finishAction(false, "最近任务", "无障碍服务未连接")
+                            }
                         }
-                        if (event is GestureEvent.CircleVolume) {
-                            handleContinuousVolume(event, event.raise, event.phase)
-                            return@HandPipeline
-                        }
-                        if (!globalCooldown.allows(event)) return@HandPipeline
-                        val mapped = mappingManager.resolve(event)
-                        if (mapped != null) {
-                            executeMapped(mapped)
-                            return@HandPipeline
-                        }
-                        when (event) {
-                            is GestureEvent.Cursor, is GestureEvent.Click,
-                            is GestureEvent.Swipe, is GestureEvent.HorizontalSwipe,
-                            GestureEvent.Selfie, GestureEvent.Like, GestureEvent.Screenshot,
-                            GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
-                            GestureEvent.LotusRecents, GestureEvent.OrchidBack,
-                            GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
-                            GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
-                            GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
-                            is GestureEvent.CircleVolume -> Unit // Migrated gestures use the mapping pipeline above.
-                            is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
-                            is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
-                            GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
-                                ?: finishAction(false, "返回", "无障碍服务未连接")
-                            GestureEvent.Home -> service?.inject(event) { finishAction(it, "返回桌面") }
-                                ?: finishAction(false, "返回桌面", "无障碍服务未连接")
-                            GestureEvent.Recents -> service?.inject(event) { finishAction(it, "打开最近任务") }
-                                ?: finishAction(false, "最近任务", "无障碍服务未连接")
-                        }
+                        Log.d("CameraProbe", "startup: model ready ${SystemClock.uptimeMillis() - t0} ms after thread start")
+                    } catch (e: Exception) {
+                        Log.e("CameraProbe", "model init failed", e)
+                        controlMode = false
+                        val reason = if (e is java.io.FileNotFoundException) "模型文件缺失：hand_landmarker.task" else "模型初始化失败：${e.javaClass.simpleName}"
+                        mainHandler.post { fail(reason) }
                     }
-                } catch (e: Exception) {
-                    Log.e("CameraProbe", "model init failed", e)
-                    controlMode = false
-                    val reason = if (e is java.io.FileNotFoundException) "模型文件缺失：hand_landmarker.task" else "模型初始化失败：${e.javaClass.simpleName}"
-                    fail(reason)
-                    return@post
-                }
+                }, "model-init").start()
             }
-            openCamera()
+            handler.post {
+                Log.d("CameraProbe", "startup: opening camera ${SystemClock.uptimeMillis() - startedAt} ms after start request")
+                openCamera()
+            }
         }
         return START_NOT_STICKY
     }
@@ -183,6 +194,10 @@ class CameraProbeService : Service() {
             val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
                 setOnImageAvailableListener({ r -> r.acquireLatestImage()?.use { image ->
+                    if (!firstFrameLogged) {
+                        firstFrameLogged = true
+                        Log.d("CameraProbe", "startup: first camera frame received")
+                    }
                     if (controlMode && !globalCooldown.isActive()) try {
                         val frameRotation = CameraFrameOrientation.relativeRotationDegrees(
                             sensorOrientationDegrees = sensorRotation,
@@ -200,6 +215,7 @@ class CameraProbeService : Service() {
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     cameraOpening = false
+                    Log.d("CameraProbe", "startup: camera opened")
                     if (stopped || generation != cameraGeneration) { device.close(); return }
                     camera = device
                     configure(device)

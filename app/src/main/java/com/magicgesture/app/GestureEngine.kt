@@ -259,11 +259,13 @@ class GestureEngine(
             )
         // All geometry is normalized and rotation-invariant, so the hand may be tilted in
         // front of the camera. The four curved fingers must still remain visibly grouped.
+        // 2026-10-01 real-device feedback: a plain open palm was firing the C, so the curl
+        // envelope is narrowed on every axis (tip gaps, reach ratios, tip-to-palm ratios).
         val cShapePose = !fist && !clawPose && cThumbOpen && cFourFingersTogether &&
-            fingerReachRatios.count { it in .58f..1.85f } >= 3 &&
-            fingerReachRatios.count { it < 1.45f } >= 2 &&
-            tipPalmRatios.count { it in .48f..2.05f } >= 3 &&
-            tipPalmRatios.average() < 1.92f
+            fingerReachRatios.count { it in .58f..1.62f } >= 3 &&
+            fingerReachRatios.count { it < 1.30f } >= 2 &&
+            tipPalmRatios.count { it in .48f..1.72f } >= 3 &&
+            tipPalmRatios.average() < 1.55f
         // G29/G30: index and middle extended and roughly parallel (not a spread V), ring and pinky folded.
         // On a real hand, pressed-together fingertips still sit ~0.3 palm-widths apart, so distance
         // alone cannot separate this pose from the V — the splay angle is the discriminator.

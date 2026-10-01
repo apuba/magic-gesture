@@ -21,6 +21,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     private var lastResultAt = 0L
     private val closed = AtomicBoolean(false)
     @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
+    @Volatile private var firstDetectionLogged = false
     init {
         engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.features(context))
         reverseHorizontal = GesturePreferences.reverseHorizontal(context)
@@ -37,6 +38,10 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
                 val hand = result.landmarks().firstOrNull()
                 if (hand == null) engine.lost(now).forEach(onEvent)
                 else {
+                    if (!firstDetectionLogged) {
+                        firstDetectionLogged = true
+                        Log.d("HandPipeline", "startup: first hand detected")
+                    }
                     val points = hand.map { Point(if (reverseHorizontal) 1f - it.x() else it.x(), it.y()) }
                     engine.consume(points, now).forEach(onEvent)
                 }

@@ -168,12 +168,16 @@ class GestureEngineReplayTest {
         .withLandmark(16, Point(.51f, .46f))
         .withLandmark(20, Point(.55f, .48f))
 
-    /** A wider, less-curled C that must remain valid without becoming an open-palm match. */
+    /**
+     * A slightly wider C that still stays inside the narrowed curl envelope. The old
+     * near-extended wide pose no longer fires since the 2026-10-01 real-device tightening
+     * (an open palm must never match the C).
+     */
     private fun wideCShapePose(): List<Point> = cShapePose()
-        .withLandmark(8, Point(.40f, .41f))
-        .withLandmark(12, Point(.45f, .42f))
-        .withLandmark(16, Point(.50f, .44f))
-        .withLandmark(20, Point(.55f, .47f))
+        .withLandmark(8, Point(.42f, .46f))
+        .withLandmark(12, Point(.465f, .46f))
+        .withLandmark(16, Point(.515f, .46f))
+        .withLandmark(20, Point(.555f, .48f))
 
     /** One edge fingertip drifts sideways, as commonly happens when fingers overlap on camera. */
     private fun noisyCShapePose(): List<Point> = cShapePose()
