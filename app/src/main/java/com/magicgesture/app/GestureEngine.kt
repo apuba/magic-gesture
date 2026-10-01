@@ -275,12 +275,22 @@ class GestureEngine(
         if (advanceActiveVolumeHold(twoFingerTogetherPose, now, output)) return output
         // G16-G19 run before cursor emission so the folded index pose cannot move the cursor;
         // while the palm is still open the sequence stays transparent for the G13 pipeline.
+        // Slot poses use the same 1.08 boundary as the folded checks (complementary split),
+        // so every finger is classified unambiguously and a slightly curled finger that the
+        // strict 1.12 "open" detectors would reject still counts as extended.
+        fun slotExt(tipIdx: Int, pipIdx: Int) =
+            dist(points[tipIdx], points[0]) > dist(points[pipIdx], points[0]) * 1.08f
+        val fingersSeen = listOf(
+            "拇指" to thumbOpen, "食指" to indexOpen, "中指" to middleOpen,
+            "无名指" to ringOpen, "小指" to pinkyOpen
+        ).filter { it.second }.joinToString("、") { it.first }.ifEmpty { "收拢的手" }
         if (advanceAppSequence(
                 screenshotPalmOpen,
-                indexOpen && middleFolded && ringFolded && pinkyFolded && !thumbOpen,
-                indexOpen && middleOpen && ringFolded && pinkyFolded && !thumbOpen,
-                indexOpen && middleOpen && ringOpen && pinkyFolded && !thumbOpen,
-                fourFingersOpen && !thumbOpen,
+                slotExt(8, 6) && middleFolded && ringFolded && pinkyFolded && !thumbOpen,
+                slotExt(8, 6) && slotExt(12, 10) && ringFolded && pinkyFolded && !thumbOpen,
+                slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && pinkyFolded && !thumbOpen,
+                slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && slotExt(20, 18) && !thumbOpen,
+                fingersSeen,
                 now,
                 output
             )
@@ -705,6 +715,7 @@ class GestureEngine(
         twoFinger: Boolean,
         threeFinger: Boolean,
         fourFinger: Boolean,
+        fingersSeen: String,
         now: Long,
         output: MutableList<GestureEvent>
     ): Boolean {
@@ -778,10 +789,11 @@ class GestureEngine(
                     return true
                 }
                 // No slot pose anymore (fist, half-folded hand, palm...): cancel after grace.
+                // Diagnose which fingers were still seen so the user knows what to adjust.
                 if (now - appHoldAt > 500) {
                     appSequence = AppSequence.WAIT_RELEASE
                     appHoldAt = now
-                    output += GestureEvent.Feedback("姿势已改变，已取消")
+                    output += GestureEvent.Feedback("姿势已改变，已取消（识别到：$fingersSeen）")
                 }
                 return true
             }
