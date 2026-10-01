@@ -261,7 +261,7 @@ class GestureEngineReplayTest {
     @Test fun fingerHeartHoldFiresLikeOnce() {
         // Directional features stay off so the vertical index of the heart pose
         // is not swallowed by the horizontal-index swipe state machine first.
-        val r = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        val r = Replay(GestureFeatureConfig(scroll = false))
         r.feed(14, ::fingerHeartPose)
         assertEquals(1, r.events.countOf<GestureEvent.Like>())
         r.feed(20, ::fingerHeartPose)
@@ -417,7 +417,7 @@ class GestureEngineReplayTest {
     }
 
     @Test fun clawAndCShapeFireTheirOwnEventsOnTolerantThreeFingerGeometry() {
-        val r = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        val r = Replay(GestureFeatureConfig(scroll = false))
         r.feed(14, ::clawPose)
         assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("拖动已开始") })
         assertEquals(0, r.events.countOf<GestureEvent.CShape>())
@@ -428,11 +428,11 @@ class GestureEngineReplayTest {
     }
 
     @Test fun widerCShapeStillFiresButSpreadPalmDoesNot() {
-        val wide = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        val wide = Replay(GestureFeatureConfig(scroll = false))
         wide.feed(14, ::wideCShapePose)
         assertEquals(1, wide.events.countOf<GestureEvent.CShape>())
 
-        val open = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        val open = Replay(GestureFeatureConfig(scroll = false))
         open.feed(14, ::spreadPalm)
         assertEquals(0, open.events.countOf<GestureEvent.CShape>())
     }

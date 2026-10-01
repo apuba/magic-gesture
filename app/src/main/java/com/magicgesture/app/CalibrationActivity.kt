@@ -72,8 +72,6 @@ class CalibrationActivity : Activity() {
     private lateinit var cursorSwitch: Switch
     private lateinit var clickSwitch: Switch
     private lateinit var scrollSwitch: Switch
-    private lateinit var backSwitch: Switch
-    private lateinit var homeSwitch: Switch
     private lateinit var screenshotSwitch: Switch
     private lateinit var selfieSwitch: Switch
     private lateinit var likeSwitch: Switch
@@ -168,9 +166,7 @@ class CalibrationActivity : Activity() {
             })
             cursorSwitch = featureSwitch("食指光标", "显示并移动青色光标。", savedFeatures.cursor)
             clickSwitch = featureSwitch("食指弯曲点击", "只伸出食指稳定约 0.2 秒，弯曲后在 1 秒内重新伸直执行点击。", savedFeatures.click)
-            scrollSwitch = featureSwitch("上下滚动", "可使用水平食指上下挑动，或将食指、中指、无名指和小指并拢后整只手上下挥动；拇指不限。", savedFeatures.scroll)
-            backSwitch = featureSwitch("向左滑动", "食指、中指、无名指和小指并拢后左挥，拇指不限；也可竖起食指后整只手左移。", savedFeatures.back)
-            homeSwitch = featureSwitch("向右滑动", "食指、中指、无名指和小指并拢后右挥，拇指不限；也可竖起食指后整只手右移。", savedFeatures.home)
+            scrollSwitch = featureSwitch("页面滚动", "水平食指上下挑动、竖直食指左右轻挑，或将食指、中指、无名指和小指并拢后整只手四向挥动；拇指不限。", savedFeatures.scroll)
             screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面。", savedFeatures.selfie)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
@@ -185,7 +181,7 @@ class CalibrationActivity : Activity() {
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
             twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起，整只手左挥为上一曲、右挥为下一曲、上挥增大音量、下挥降低音量；两指快速弯下再伸直、连点两下为播放/暂停。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
-            listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
+            listOf(cursorSwitch, clickSwitch, scrollSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
                 addView(it, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
@@ -216,8 +212,6 @@ class CalibrationActivity : Activity() {
                             cursor = cursorSwitch.isChecked,
                             click = clickSwitch.isChecked,
                             scroll = scrollSwitch.isChecked,
-                            back = backSwitch.isChecked,
-                            home = homeSwitch.isChecked,
                             screenshot = screenshotSwitch.isChecked,
                             selfie = selfieSwitch.isChecked,
                             like = likeSwitch.isChecked,

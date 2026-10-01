@@ -138,9 +138,9 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", "上下滚动页面", "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", "上下滚动页面", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向左", "返回", "只竖起食指，整只手向左移动。", "←", "back", features.back), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", "页面向左滑动", "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指向右", "返回桌面", "只竖起食指，整只手向右移动。", "→", "home", features.home), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", "页面向右滑动", "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "scroll", features.scroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -301,9 +301,7 @@ class MainActivity : Activity() {
     private fun featureName(feature: String) = when (feature) {
         "cursor" -> "食指光标"
         "click" -> "食指弯曲点击"
-        "scroll" -> "上下滚动"
-        "back" -> "向左滑动"
-        "home" -> "向右滑动"
+        "scroll" -> "页面滚动"
         "screenshot" -> "截图"
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
@@ -327,8 +325,6 @@ class MainActivity : Activity() {
             "cursor" to features.cursor,
             "click" to features.click,
             "scroll" to features.scroll,
-            "back" to features.back,
-            "home" to features.home,
             "screenshot" to features.screenshot,
             "selfie" to features.selfie,
             "like" to features.like,

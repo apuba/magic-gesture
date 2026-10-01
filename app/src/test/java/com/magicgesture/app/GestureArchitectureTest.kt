@@ -108,32 +108,32 @@ class GestureArchitectureTest {
     @Test fun directionFeatureGatesUseExistingUserSettings() {
         val scroll = requireNotNull(mappings.resolve(GestureEvent.Swipe(true, GestureEvent.MotionSource.PALM))).mapping
         val palmLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
-        val back = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
-        val home = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexRightScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
         assertFalse(gate.allows(scroll, GestureFeatureConfig(scroll = false)))
-        // G07/G08 now scroll horizontally, so they follow the scroll switch, not back/home.
+        // Every horizontal wave scrolls, so they all follow the scroll switch.
         assertFalse(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = false)))
         assertTrue(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = true)))
-        assertFalse(gate.allows(back, GestureFeatureConfig(back = false)))
-        assertFalse(gate.allows(home, GestureFeatureConfig(home = false)))
+        assertFalse(gate.allows(indexLeftScroll, GestureFeatureConfig(scroll = false)))
+        assertFalse(gate.allows(indexRightScroll, GestureFeatureConfig(scroll = false)))
         assertTrue(gate.allows(scroll, GestureFeatureConfig(scroll = true)))
     }
 
-    @Test fun palmWavesOwnHorizontalScrollWhileIndexWavesKeepNavigation() {
+    @Test fun allHorizontalWavesScrollLeftAndRight() {
         val left = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
         val right = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.PALM))).mapping
-        val back = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
-        val home = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexLeft = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexRight = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
         assertEquals(GestureCode.G07, left.code)
         assertEquals(GestureAction.SCROLL_LEFT, left.action)
         assertEquals(GestureCode.G08, right.code)
         assertEquals(GestureAction.SCROLL_RIGHT, right.action)
-        assertEquals(GestureCode.G09, back.code)
-        assertEquals(GestureAction.BACK, back.action)
-        assertEquals(GestureCode.G10, home.code)
-        assertEquals(GestureAction.HOME, home.action)
+        assertEquals(GestureCode.G09, indexLeft.code)
+        assertEquals(GestureAction.SCROLL_LEFT, indexLeft.action)
+        assertEquals(GestureCode.G10, indexRight.code)
+        assertEquals(GestureAction.SCROLL_RIGHT, indexRight.action)
     }
 
     @Test fun userOverridesReplaceTheActionButKeepGestureTypeAndCooldown() {

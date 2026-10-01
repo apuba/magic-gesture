@@ -6,8 +6,6 @@ data class GestureFeatureConfig(
     val cursor: Boolean = true,
     val click: Boolean = true,
     val scroll: Boolean = true,
-    val back: Boolean = true,
-    val home: Boolean = true,
     val screenshot: Boolean = true,
     val selfie: Boolean = true,
     val like: Boolean = true,
@@ -51,8 +49,6 @@ object GesturePreferences {
             cursor = prefs.getBoolean("feature_cursor", true),
             click = prefs.getBoolean("feature_click", true),
             scroll = prefs.getBoolean("feature_scroll", true),
-            back = prefs.getBoolean("feature_back", true),
-            home = prefs.getBoolean("feature_home", true),
             screenshot = prefs.getBoolean("feature_screenshot", true),
             selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
             like = prefs.getBoolean("feature_like", true),
@@ -111,8 +107,6 @@ object GesturePreferences {
             .putBoolean("feature_cursor", features.cursor)
             .putBoolean("feature_click", features.click)
             .putBoolean("feature_scroll", features.scroll)
-            .putBoolean("feature_back", features.back)
-            .putBoolean("feature_home", features.home)
             .putBoolean("feature_screenshot", features.screenshot)
             .putBoolean("feature_selfie", features.selfie)
             .putBoolean("feature_like", features.like)

@@ -183,12 +183,12 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G04 to dynamicMapping(GestureCode.G04, GestureAction.SCROLL_DOWN),
         GestureCode.G05 to dynamicMapping(GestureCode.G05, GestureAction.SCROLL_UP),
         GestureCode.G06 to dynamicMapping(GestureCode.G06, GestureAction.SCROLL_DOWN),
-        // The four-finger wave family G05-G08 owns all four scroll directions;
-        // navigation (back/home) stays with the index-finger waves G09/G10.
+        // The four-finger wave family G05-G08 and the index waves G09/G10 own all four
+        // scroll directions; back/home stay with G24/G14.
         GestureCode.G07 to dynamicMapping(GestureCode.G07, GestureAction.SCROLL_LEFT),
         GestureCode.G08 to dynamicMapping(GestureCode.G08, GestureAction.SCROLL_RIGHT),
-        GestureCode.G09 to dynamicMapping(GestureCode.G09, GestureAction.BACK),
-        GestureCode.G10 to dynamicMapping(GestureCode.G10, GestureAction.HOME),
+        GestureCode.G09 to dynamicMapping(GestureCode.G09, GestureAction.SCROLL_LEFT),
+        GestureCode.G10 to dynamicMapping(GestureCode.G10, GestureAction.SCROLL_RIGHT),
         GestureCode.G11 to GestureMapping(
             GestureCode.G11,
             GestureType.HOLD,
@@ -277,9 +277,7 @@ class GestureFeatureGate {
         GestureCode.G01 -> features.cursor
         GestureCode.G02 -> features.click
         GestureCode.G03, GestureCode.G04, GestureCode.G05, GestureCode.G06,
-        GestureCode.G07, GestureCode.G08 -> features.scroll
-        GestureCode.G09 -> features.back
-        GestureCode.G10 -> features.home
+        GestureCode.G07, GestureCode.G08, GestureCode.G09, GestureCode.G10 -> features.scroll
         GestureCode.G11 -> features.selfie
         GestureCode.G12 -> features.like
         GestureCode.G13 -> features.screenshot
