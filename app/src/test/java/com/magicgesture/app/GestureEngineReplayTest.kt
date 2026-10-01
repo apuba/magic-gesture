@@ -365,6 +365,25 @@ class GestureEngineReplayTest {
         assertEquals(GestureEvent.TwoFingerDirection.DOWN, all[1].direction)
     }
 
+    @Test fun twoFingerDoubleTapTogglesPlayPause() {
+        val r = Replay()
+        r.feed(6) { twoFingerHand() }   // hold the pose (300ms)
+        r.feed(2, ::fistPose)           // bend both fingers
+        r.feed(6) { twoFingerHand() }   // re-extend and hold -> tap 1
+        r.feed(2, ::fistPose)           // bend again
+        r.feed(6) { twoFingerHand() }   // re-extend -> tap 2 fires play/pause
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+    }
+
+    @Test fun aSingleTwoFingerBendNeverTogglesPlayPause() {
+        val r = Replay()
+        r.feed(6) { twoFingerHand() }
+        r.feed(2, ::fistPose)           // one bend only
+        r.feed(6) { twoFingerHand() }
+        r.feed(20, ::fistPose)          // then the hand leaves for good
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+    }
+
     @Test fun holdingTheTwoFingerPoseAloneNeverFires() {
         val r = Replay()
         r.feed(50, ::restPose)                       // restPose IS the two-finger pose; 2.5s > selfie hold

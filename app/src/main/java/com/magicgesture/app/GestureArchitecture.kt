@@ -6,7 +6,7 @@ import android.view.KeyEvent
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
     G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23,
-    G24, G25, G26, G27, G28, G29, G30, G31, G32
+    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33
 }
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
@@ -122,6 +122,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             is GestureEvent.ClawDrag -> GestureCode.G26
             GestureEvent.CShape -> GestureCode.G27
             GestureEvent.LoveLock -> GestureCode.G28
+            GestureEvent.TwoFingerDoubleTap -> GestureCode.G33
             is GestureEvent.TwoFingerSwipe -> when (event.direction) {
                 GestureEvent.TwoFingerDirection.LEFT -> GestureCode.G29
                 GestureEvent.TwoFingerDirection.RIGHT -> GestureCode.G30
@@ -265,7 +266,8 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G29 to dynamicMapping(GestureCode.G29, GestureAction.MEDIA_PREVIOUS),
         GestureCode.G30 to dynamicMapping(GestureCode.G30, GestureAction.MEDIA_NEXT),
         GestureCode.G31 to dynamicMapping(GestureCode.G31, GestureAction.VOLUME_UP),
-        GestureCode.G32 to dynamicMapping(GestureCode.G32, GestureAction.VOLUME_DOWN)
+        GestureCode.G32 to dynamicMapping(GestureCode.G32, GestureAction.VOLUME_DOWN),
+        GestureCode.G33 to dynamicMapping(GestureCode.G33, GestureAction.PLAY_PAUSE)
     )
     }
 }
@@ -291,7 +293,7 @@ class GestureFeatureGate {
         GestureCode.G26 -> features.clawDrag
         GestureCode.G27 -> features.cShape
         GestureCode.G28 -> features.loveLock
-        GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32 -> features.twoFingerMedia
+        GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33 -> features.twoFingerMedia
         else -> false
     }
 }

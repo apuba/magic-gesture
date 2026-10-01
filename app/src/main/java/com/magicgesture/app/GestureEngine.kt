@@ -31,6 +31,8 @@ sealed interface GestureEvent {
     /** Four-direction wave of the two-finger (index+middle together) pose. */
     enum class TwoFingerDirection { LEFT, RIGHT, UP, DOWN }
     data class TwoFingerSwipe(val direction: TwoFingerDirection) : GestureEvent
+    /** Both fingers bend and re-extend twice in a row while in the two-finger pose. */
+    data object TwoFingerDoubleTap : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -43,6 +45,7 @@ class GestureEngine(
     private enum class StaticHold { READY, CANDIDATE, FIRED }
     private enum class ClawDragState { READY, CONFIRMING, DRAGGING }
     private enum class TwoFingerSwipeState { IDLE, TRACKING, WAIT_RELEASE }
+    private enum class TwoFingerTapState { IDLE, HELD, BENT_ONCE, POSED_SECOND, BENT_TWICE, FIRED_WAIT }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
         WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
@@ -89,6 +92,10 @@ class GestureEngine(
     private var twoFingerState = TwoFingerSwipeState.IDLE
     private var twoFingerStart: Point? = null
     private var twoFingerStageAt = 0L
+    private var twoFingerTapState = TwoFingerTapState.IDLE
+    private var twoFingerTapPoseAt = 0L
+    private var twoFingerTapBentAt = 0L
+    private var twoFingerTapFirstCycleAt = 0L
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
@@ -252,6 +259,7 @@ class GestureEngine(
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
+        advanceTwoFingerTap(twoFingerTogetherPose, now, output)
         advanceTwoFingerSwipe(twoFingerTogetherPose, palm, now, output)
         if (features.click) {
             when (indexClick) {
@@ -483,7 +491,12 @@ class GestureEngine(
                 twoFingerState = TwoFingerSwipeState.TRACKING
                 twoFingerStart = palm
                 twoFingerStageAt = now
-                output += GestureEvent.Feedback("两指并拢已识别：左右挥切歌，上下挥调音量")
+                // Stay quiet while the tap machine is mid double-tap or has just fired.
+                if (twoFingerTapState == TwoFingerTapState.IDLE ||
+                    twoFingerTapState == TwoFingerTapState.HELD
+                ) {
+                    output += GestureEvent.Feedback("两指并拢已识别：左右挥切歌，上下挥调音量，点两下播放暂停")
+                }
             }
             TwoFingerSwipeState.TRACKING -> {
                 if (!pose) {
@@ -519,6 +532,60 @@ class GestureEngine(
                 }
             }
             TwoFingerSwipeState.WAIT_RELEASE -> if (!pose) twoFingerState = TwoFingerSwipeState.IDLE
+        }
+    }
+    /**
+     * G33 play/pause toggle: with the index+middle-together pose held, bend both fingers
+     * and re-extend twice in a row ("tap twice"). Like the sibling swipe machine it never
+     * consumes frames. Each pose segment must be held >= 250ms (a casual drop/raise never
+     * counts) and each bend must resolve within 450ms, so the whole gesture stays snappy.
+     */
+    private fun advanceTwoFingerTap(
+        pose: Boolean,
+        now: Long,
+        output: MutableList<GestureEvent>
+    ) {
+        if (!features.twoFingerMedia) {
+            twoFingerTapState = TwoFingerTapState.IDLE
+            return
+        }
+        when (twoFingerTapState) {
+            TwoFingerTapState.IDLE -> if (pose) {
+                twoFingerTapState = TwoFingerTapState.HELD
+                twoFingerTapPoseAt = now
+            }
+            TwoFingerTapState.HELD -> if (!pose) {
+                if (now - twoFingerTapPoseAt >= 250) {
+                    twoFingerTapState = TwoFingerTapState.BENT_ONCE
+                    twoFingerTapBentAt = now
+                } else {
+                    twoFingerTapState = TwoFingerTapState.IDLE
+                }
+            }
+            TwoFingerTapState.BENT_ONCE -> when {
+                pose && now - twoFingerTapBentAt <= 450 -> {
+                    twoFingerTapState = TwoFingerTapState.POSED_SECOND
+                    twoFingerTapPoseAt = now
+                    twoFingerTapFirstCycleAt = now
+                }
+                now - twoFingerTapBentAt > 450 -> twoFingerTapState = TwoFingerTapState.IDLE
+            }
+            TwoFingerTapState.POSED_SECOND -> when {
+                !pose && now - twoFingerTapPoseAt >= 250 && now - twoFingerTapFirstCycleAt <= 1200 -> {
+                    twoFingerTapState = TwoFingerTapState.BENT_TWICE
+                    twoFingerTapBentAt = now
+                }
+                !pose -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapFirstCycleAt > 1500 -> twoFingerTapState = TwoFingerTapState.IDLE
+            }
+            TwoFingerTapState.BENT_TWICE -> when {
+                pose && now - twoFingerTapBentAt <= 450 -> {
+                    output += GestureEvent.TwoFingerDoubleTap
+                    twoFingerTapState = TwoFingerTapState.FIRED_WAIT
+                }
+                now - twoFingerTapBentAt > 450 -> twoFingerTapState = TwoFingerTapState.IDLE
+            }
+            TwoFingerTapState.FIRED_WAIT -> if (!pose) twoFingerTapState = TwoFingerTapState.IDLE
         }
     }
     private fun advanceOpenPalmSequence(
@@ -788,6 +855,10 @@ class GestureEngine(
         twoFingerState = TwoFingerSwipeState.IDLE
         twoFingerStart = null
         twoFingerStageAt = 0L
+        twoFingerTapState = TwoFingerTapState.IDLE
+        twoFingerTapPoseAt = 0L
+        twoFingerTapBentAt = 0L
+        twoFingerTapFirstCycleAt = 0L
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)

@@ -153,7 +153,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", "未设置动作", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在校准页映射中指定。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", "最近任务", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", "锁屏", "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢挥动", "切歌 / 音量", "食指与中指并拢伸直、其余手指收起，整只手左挥上一曲、右挥下一曲、上挥音量加、下挥音量减。识别阈值待真机校准。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢", "切歌 / 音量 / 播放暂停", "食指与中指并拢伸直、其余手指收起：左挥上一曲、右挥下一曲、上挥音量加、下挥音量减；两指快速弯下再伸直、连点两下为播放/暂停。识别阈值待真机校准。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {

@@ -44,7 +44,8 @@ class CalibrationActivity : Activity() {
         GestureCode.G29 to "两指左挥",
         GestureCode.G30 to "两指右挥",
         GestureCode.G31 to "两指上挥",
-        GestureCode.G32 to "两指下挥"
+        GestureCode.G32 to "两指下挥",
+        GestureCode.G33 to "两指双击"
     )
 
     /**
@@ -183,7 +184,7 @@ class CalibrationActivity : Activity() {
             clawDragSwitch = featureSwitch("爪形手势", "五指向内弯成爪形保持约 0.6 秒锁定起点，移动手掌后张开手指结束。当前无默认动作，可在上方映射中指定。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
-            twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起，整只手左挥为上一曲、右挥为下一曲、上挥增大音量、下挥降低音量。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
+            twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起，整只手左挥为上一曲、右挥为下一曲、上挥增大音量、下挥降低音量；两指快速弯下再伸直、连点两下为播放/暂停。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
             listOf(cursorSwitch, clickSwitch, scrollSwitch, backSwitch, homeSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
                 addView(it, blockMargins(8))
             }

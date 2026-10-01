@@ -290,5 +290,13 @@ class GestureArchitectureTest {
         assertTrue(mappings.isRemappable(GestureCode.G30))
         assertTrue(mappings.isRemappable(GestureCode.G31))
         assertTrue(mappings.isRemappable(GestureCode.G32))
+
+        // G33 double-tap toggles play/pause and shares the same switch.
+        val toggle = requireNotNull(mappings.resolve(GestureEvent.TwoFingerDoubleTap)).mapping
+        assertEquals(GestureCode.G33, toggle.code)
+        assertEquals(GestureAction.PLAY_PAUSE, toggle.action)
+        assertFalse(gate.allows(toggle, GestureFeatureConfig(twoFingerMedia = false)))
+        assertTrue(gate.allows(toggle, GestureFeatureConfig(twoFingerMedia = true)))
+        assertTrue(mappings.isRemappable(GestureCode.G33))
     }
 }
