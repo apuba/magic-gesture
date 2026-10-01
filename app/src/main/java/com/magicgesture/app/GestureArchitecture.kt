@@ -12,7 +12,7 @@ enum class GestureCode {
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 
 enum class GestureAction {
-    MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
+    NONE, MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
     DRAG, ROLLING_SCREENSHOT, OPEN_APP, FAVORITE_CURRENT,
@@ -20,6 +20,7 @@ enum class GestureAction {
     OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
 
     fun successMessage(): String = when (this) {
+        NONE -> "未绑定动作"
         MOVE_CURSOR -> ""
         CLICK -> "点击"
         SCROLL_UP -> "向上滑动"
@@ -49,6 +50,7 @@ enum class GestureAction {
     }
 
     fun failureMessage(): String = when (this) {
+        NONE -> "未绑定动作"
         SELFIE -> "自拍保存失败"
         LIKE, THUMBS_UP_LIKE -> "未找到可用的点赞按钮"
         CONFIRM -> "请先启用并移动光标"
@@ -63,6 +65,7 @@ enum class GestureAction {
 
     /** Short label shown in the mapping configuration UI. */
     fun displayLabel(): String = when (this) {
+        NONE -> "暂不绑定动作"
         MOVE_CURSOR -> "移动光标"
         CLICK -> "点击"
         SCROLL_UP -> "向上滚动"
@@ -152,6 +155,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         val base = defaultMappings[code]
         val overridden = overrides[code]
         val mapping = when {
+            overridden == GestureAction.NONE -> return null
             base != null && overridden != null && overridden != base.action -> base.copy(action = overridden)
             base != null -> base
             // A deliberately unbound gesture (e.g. G26) can still carry a user override; all
@@ -163,7 +167,11 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
     }
 
     /** The action a gesture currently performs; null for an unbound gesture without override. */
-    fun actionFor(code: GestureCode): GestureAction? = overrides[code] ?: defaultActionOf(code)
+    fun actionFor(code: GestureCode): GestureAction? = when (val override = overrides[code]) {
+        GestureAction.NONE -> null
+        null -> defaultActionOf(code)
+        else -> override
+    }
 
     /** Only gestures with a real detection pipeline may be remapped; the cursor stays fixed. */
     fun isRemappable(code: GestureCode): Boolean =
@@ -367,6 +375,7 @@ class GestureActionExecutor(
      */
     fun execute(mapped: MappedGesture, callback: (Boolean) -> Unit): Boolean {
         return when (mapped.mapping.action) {
+            GestureAction.NONE -> false
             GestureAction.MOVE_CURSOR -> {
                 val service = accessibilityService() ?: return false
                 val cursor = mapped.event as? GestureEvent.Cursor ?: return false

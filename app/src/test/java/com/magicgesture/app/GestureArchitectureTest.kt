@@ -200,6 +200,13 @@ class GestureArchitectureTest {
         assertEquals(GestureAction.MEDIA_NEXT, nextTrack.mapping.action)
     }
 
+    @Test fun explicitNoneOverrideLeavesGestureUnbound() {
+        val manager = GestureMappingManager(mapOf(GestureCode.G21 to GestureAction.NONE))
+        assertNull(manager.resolve(GestureEvent.Ok))
+        assertNull(manager.actionFor(GestureCode.G21))
+        assertTrue(manager.isRemappable(GestureCode.G21))
+    }
+
     @Test fun everyActionHasUILabelsAndOutcomeMessages() {
         for (action in GestureAction.entries) {
             assertTrue(action.displayLabel().isNotBlank())

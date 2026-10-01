@@ -64,6 +64,7 @@ class CalibrationActivity : Activity() {
      * currently unbound by default.
      */
     private val selectableActions = listOf(
+        GestureAction.NONE,
         GestureAction.CLICK, GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
         GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT,
         GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
