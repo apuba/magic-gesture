@@ -2,7 +2,7 @@ package com.magicgesture.app
 
 import android.os.SystemClock
 
-/** Controls the post-action lock independently from gesture recognition state. */
+/** Controls the post-action lock. No gesture recognition or event may pass while active. */
 class GlobalCooldownManager(
     private val durationMs: Long = DEFAULT_DURATION_MS,
     private val now: () -> Long = SystemClock::uptimeMillis
@@ -12,8 +12,10 @@ class GlobalCooldownManager(
     private var lockedUntil = 0L
 
     @Synchronized
-    fun allows(event: GestureEvent): Boolean =
-        event is GestureEvent.Cursor || event is GestureEvent.Feedback || now() >= lockedUntil
+    fun allows(@Suppress("UNUSED_PARAMETER") event: GestureEvent): Boolean = now() >= lockedUntil
+
+    @Synchronized
+    fun isActive(): Boolean = now() < lockedUntil
 
     @Synchronized
     fun actionSucceeded() {

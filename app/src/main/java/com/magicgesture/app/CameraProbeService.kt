@@ -64,6 +64,14 @@ class CameraProbeService : Service() {
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()
     }
+    private val resumeAfterCooldown = object : Runnable {
+        override fun run() {
+            if (stopped) return
+            val remaining = globalCooldown.remainingMs()
+            if (remaining > 0L) handler.postDelayed(this, remaining)
+            else pipeline?.resume()
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         worker.start(); handler = Handler(worker.looper)
@@ -168,7 +176,7 @@ class CameraProbeService : Service() {
             val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
                 setOnImageAvailableListener({ r -> r.acquireLatestImage()?.use { image ->
-                    if (controlMode) try { pipeline?.submit(image, sensorRotation) }
+                    if (controlMode && !globalCooldown.isActive()) try { pipeline?.submit(image, sensorRotation) }
                     catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
                 } }, handler)
             }
@@ -339,6 +347,11 @@ class CameraProbeService : Service() {
     private fun finishAction(success: Boolean, successMessage: String, failureMessage: String = "动作执行失败") {
         if (success) {
             globalCooldown.actionSucceeded()
+            // Freeze recognition itself, not only emitted actions. Clearing partial state here
+            // prevents a hold or swipe accumulated during cooldown from firing immediately after it.
+            pipeline?.pause()
+            handler.removeCallbacks(resumeAfterCooldown)
+            handler.postDelayed(resumeAfterCooldown, globalCooldown.remainingMs())
             overlayIndicator.showProtection(GlobalCooldownManager.DEFAULT_DURATION_MS)
         }
         overlayIndicator.showFeedback(if (success) successMessage else failureMessage)

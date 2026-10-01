@@ -147,6 +147,29 @@ class GestureEngineReplayTest {
     private fun horizontalIndexFlicked(): List<Point> = horizontalIndex()
         .withLandmark(8, Point(.65f, .45f))
 
+    /** Deeply curled fingers with one tip slightly farther out, so this is a claw rather than a fist. */
+    private fun clawPose(): List<Point> = baseHand(
+        FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
+    ).withLandmark(8, Point(.40f, .45f))
+        .withLandmark(12, Point(.47f, .50f))
+        .withLandmark(16, Point(.54f, .50f))
+        .withLandmark(20, Point(.59f, .52f))
+
+    /** Moderately curled fingers forming a broad C; wrist-distance alone can look almost extended. */
+    private fun cShapePose(): List<Point> = baseHand(
+        FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
+    ).withLandmark(8, Point(.40f, .46f))
+        .withLandmark(12, Point(.47f, .46f))
+        .withLandmark(16, Point(.54f, .46f))
+        .withLandmark(20, Point(.60f, .48f))
+
+    /** A wider, less-curled C that must remain valid without becoming an open-palm match. */
+    private fun wideCShapePose(): List<Point> = cShapePose()
+        .withLandmark(8, Point(.39f, .41f))
+        .withLandmark(12, Point(.47f, .42f))
+        .withLandmark(16, Point(.55f, .44f))
+        .withLandmark(20, Point(.62f, .47f))
+
     // ---------------------------------------------------------------- replay driver
 
     private class Replay(features: GestureFeatureConfig = GestureFeatureConfig()) {
@@ -291,6 +314,21 @@ class GestureEngineReplayTest {
         ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX
     ).withLandmark(12, Point(.44f + offsetX, .35f))
 
+    /** Pressed fingers with a small real-device splay that exceeded the former 15-degree limit. */
+    private fun slightlySplayedTwoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX
+    ).withLandmark(11, Point(.49f + offsetX, .41f))
+        .withLandmark(12, Point(.47f + offsetX, .35f))
+
+    /** Middle fingertip is partly hidden beside the index and fails the old wrist-open test. */
+    private fun occludedMiddleTwoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX
+    ).withLandmark(10, Point(.47f + offsetX, .42f))
+        .withLandmark(11, Point(.46f + offsetX, .405f))
+        .withLandmark(12, Point(.45f + offsetX, .39f))
+
     @Test fun twoFingerSwipeLeftFiresPreviousAndRightFiresNext() {
         val r = Replay()
         r.feed(4) { twoFingerHand() }                // settle into the pose
@@ -316,6 +354,49 @@ class GestureEngineReplayTest {
         // Pressed-together fingers (gap slightly over the old 0.28 threshold, parallel) must
         // never be mistaken for a spread V and start the selfie countdown.
         assertEquals(0, r.events.countOf<GestureEvent.Selfie>())
-        assertEquals(0, r.events.countOf<GestureEvent.Feedback>())
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢已识别") })
+    }
+
+    @Test fun slightlySplayedTwoFingerPoseDoesNotArmTheSingleIndexPipeline() {
+        val r = Replay()
+        r.feed(5, ::slightlySplayedTwoFingerHand)
+        var dx = 0f
+        r.feed(6) { dx += .03f; slightlySplayedTwoFingerHand(dx) }
+        assertEquals(1, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+        assertEquals(0, r.events.countOf<GestureEvent.Click>())
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.HorizontalSwipe>().size)
+    }
+
+    @Test fun occludedMiddleFingerStillTracksAsTwoFingersInsteadOfOneIndex() {
+        val r = Replay()
+        r.feed(5, ::occludedMiddleTwoFingerHand)
+        var dx = 0f
+        r.feed(6) { dx -= .03f; occludedMiddleTwoFingerHand(dx) }
+        val swipes = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(1, swipes.size)
+        assertEquals(true, swipes.single().left)
+        assertEquals(0, r.events.countOf<GestureEvent.Click>())
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢已识别") })
+    }
+
+    @Test fun clawAndCShapeFireTheirOwnEventsOnTolerantThreeFingerGeometry() {
+        val r = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        r.feed(14, ::clawPose)
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("拖动已开始") })
+        assertEquals(0, r.events.countOf<GestureEvent.CShape>())
+
+        r.feed(8, ::spreadPalm)
+        r.feed(14, ::cShapePose)
+        assertEquals(1, r.events.countOf<GestureEvent.CShape>())
+    }
+
+    @Test fun widerCShapeStillFiresButSpreadPalmDoesNot() {
+        val wide = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        wide.feed(14, ::wideCShapePose)
+        assertEquals(1, wide.events.countOf<GestureEvent.CShape>())
+
+        val open = Replay(GestureFeatureConfig(scroll = false, back = false, home = false))
+        open.feed(14, ::spreadPalm)
+        assertEquals(0, open.events.countOf<GestureEvent.CShape>())
     }
 }

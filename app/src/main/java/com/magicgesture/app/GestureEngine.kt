@@ -153,7 +153,6 @@ class GestureEngine(
             indexOpen && middleOpen && pinkyOpen && dist(points[4], points[12]) / handScale > .38f
         val orchidPose = dist(points[4], points[12]) / handScale < .30f &&
             indexOpen && ringOpen && pinkyOpen && dist(points[4], points[8]) / handScale > .38f
-        val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded
         val indexBentPose = middleFolded && ringFolded && pinkyFolded && (
             dist(points[8], points[0]) < dist(points[6], points[0]) * 1.05f ||
                 dist(points[8], points[5]) / handScale < .75f
@@ -177,21 +176,50 @@ class GestureEngine(
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
         // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
         val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
-        // Claw vs C live on a curl continuum measured by fingertip distance to the palm centre.
+        // Claw vs C live on a curl continuum. Use each finger's own reach from wrist and
+        // tolerate one noisy/occluded finger; requiring all four tips inside a narrow band
+        // made both poses practically unreachable with real MediaPipe frames.
         val tipPalmRatios = listOf(8, 12, 16, 20).map { dist(points[it], palm) / handScale }
+        val fingerReachRatios = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).map { (tipIndex, pipIndex) ->
+            dist(points[tipIndex], points[0]) / dist(points[pipIndex], points[0]).coerceAtLeast(.001f)
+        }
+        val cFingerTipGaps = listOf(8 to 12, 12 to 16, 16 to 20).map { (a, b) ->
+            dist(points[a], points[b]) / handScale
+        }
         // G26: fingers bent inward (deeper curl), clearly not a fist.
-        val clawPose = !fist && tipPalmRatios.all { it in .55f..1.00f } && tipPalmRatios.average() < .85f
+        val clawPose = !fist &&
+            fingerReachRatios.count { it in .55f..1.12f } >= 3 &&
+            tipPalmRatios.count { it in .45f..1.25f } >= 3 &&
+            tipPalmRatios.average() < 1.10f
         // G27: fingers half-bent forming a C, more open than the claw.
-        val cShapePose = !fist && !clawPose && !fourFingersOpen && thumbOpen &&
-            tipPalmRatios.all { it in .85f..1.35f }
+        val cFourFingersTogether = cFingerTipGaps.all { it <= .44f }
+        val cThumbOpen = thumbOpen || (
+            dist(points[4], palm) / handScale > .75f &&
+                dist(points[4], points[8]) / handScale > .65f
+            )
+        // All geometry is normalized and rotation-invariant, so the hand may be tilted in
+        // front of the camera. The four curved fingers must still remain visibly grouped.
+        val cShapePose = !fist && !clawPose && cThumbOpen && cFourFingersTogether &&
+            fingerReachRatios.count { it in .65f..1.60f } >= 3 &&
+            fingerReachRatios.count { it < 1.45f } >= 2 &&
+            tipPalmRatios.count { it in .55f..1.90f } >= 3 &&
+            tipPalmRatios.average() < 1.75f
         // G29/G30: index and middle extended and roughly parallel (not a spread V), ring and pinky folded.
         // On a real hand, pressed-together fingertips still sit ~0.3 palm-widths apart, so distance
         // alone cannot separate this pose from the V — the splay angle is the discriminator.
         val twoFingerIndexMiddleAngle = vectorAngleDegrees(points[5], points[8], points[9], points[12])
-        val twoFingerTogetherPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
-            dist(points[8], points[12]) / handScale <= .42f && twoFingerIndexMiddleAngle <= 15f
+        val twoFingerTipGap = dist(points[8], points[12]) / handScale
+        val middleAlongsideIndex = middleOpen || (
+            dist(points[12], points[9]) > dist(points[10], points[9]).coerceAtLeast(.001f) * 1.10f &&
+                dist(points[12], points[0]) > dist(points[9], points[0]) * .95f
+            )
+        val twoFingerTogetherPose = indexOpen && middleAlongsideIndex && ringFolded && pinkyFolded &&
+            twoFingerTipGap <= .60f && twoFingerIndexMiddleAngle <= 25f
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
-            dist(points[8], points[12]) / handScale > .28f && twoFingerIndexMiddleAngle > 15f
+            twoFingerTipGap > .32f && (twoFingerTipGap > .60f || twoFingerIndexMiddleAngle > 25f)
+        // A close, parallel middle finger may look folded relative to the wrist when hidden
+        // behind the index finger. Never let that valid two-finger candidate arm G02/G09/G10.
+        val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded && !twoFingerTogetherPose
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
             candidateAt = 0L
@@ -453,6 +481,7 @@ class GestureEngine(
                 twoFingerState = TwoFingerSwipeState.TRACKING
                 twoFingerStart = palm
                 twoFingerStageAt = now
+                output += GestureEvent.Feedback("两指并拢已识别：请向左或向右挥动")
             }
             TwoFingerSwipeState.TRACKING -> {
                 if (!pose) {
