@@ -230,12 +230,14 @@ class GestureEngineReplayTest {
 
     @Test fun fistHoldFiresPlayPauseOnceAndRequiresRelease() {
         val r = Replay()
-        r.feed(14, ::fistPose)
+        r.feed(20, ::fistPose)                   // 1s: below the 2s hold, must not fire yet
+        assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
+        r.feed(25, ::fistPose)                   // 2.25s total -> PlayPause at 2s
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
-        r.feed(20, ::fistPose)
+        r.feed(20, ::fistPose)                   // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(8, ::restPose)
-        r.feed(14, ::fistPose)
+        r.feed(45, ::fistPose)                   // re-enter: fires again
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 

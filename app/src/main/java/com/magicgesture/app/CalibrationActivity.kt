@@ -172,7 +172,7 @@ class CalibrationActivity : Activity() {
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
             okSwitch = featureSwitch("OK 确认", "做出 OK 手势并保持约 0.6 秒，点击当前光标位置。", savedFeatures.ok)
-            playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持约 0.6 秒，发送系统媒体播放/暂停指令。", savedFeatures.playPause)
+            playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持 2 秒（有倒计时提示），发送系统媒体播放/暂停指令。", savedFeatures.playPause)
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
             leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)

@@ -329,7 +329,7 @@ class GestureEngine(
         }
         if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
         if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
-        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output)) return output
+        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 2000L, label = "握拳保持")) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
         // Finger-heart uses thumb/index proximity independently from index-bend clicking.
