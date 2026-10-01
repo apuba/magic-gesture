@@ -112,6 +112,13 @@ class GestureEngineReplayTest {
         .withLandmark(3, Point(.44f, .47f))
         .withLandmark(4, Point(.46f, .35f)) // touches middle tip (0.47, 0.33)
 
+    /**
+     * OK with the middle, ring and pinky reading as curled: the wobble frame that drops
+     * [okPose] while the thumb/index contact stays well inside the finger-heart distance.
+     */
+    private fun okPoseWobble(): List<Point> = okPose()
+        .withLandmark(20, Point(.61f, .49f))
+
     private fun fingerHeartPose(): List<Point> = baseHand(
         index = FingerPose.EXTENDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED
     ).withLandmark(6, Point(.40f, .51f))
@@ -297,6 +304,29 @@ class GestureEngineReplayTest {
         r.feed(14, ::orchidPose)
         assertEquals(1, r.events.countOf<GestureEvent.OrchidBack>())
         assertEquals(1, r.events.countOf<GestureEvent.LotusRecents>())
+    }
+
+    @Test fun cleanOkHoldFiresOkWithoutLiking() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::okPose)
+        assertEquals(1, r.events.countOf<GestureEvent.Ok>())
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+    }
+
+    /**
+     * OK is the same thumb/index contact as the finger heart, only with three fingers extended.
+     * Frames where those fingers wobble below the extension threshold must never let the heart
+     * state machine accumulate a like — that was firing "已点赞" instead of the OK action.
+     */
+    @Test fun okPoseWobbleDoesNotTurnIntoALike() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        // Two consecutive wobble frames are needed for the heart to get a frame at all: the
+        // first one is still swallowed while the OK hold state machine resets itself.
+        repeat(12) {
+            r.feed(1, ::okPose)
+            r.feed(2, ::okPoseWobble)
+        }
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
     }
 
     @Test fun fingerHeartHoldFiresLikeOnce() {

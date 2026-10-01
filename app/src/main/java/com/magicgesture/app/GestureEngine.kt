@@ -75,6 +75,8 @@ class GestureEngine(
     private var thumbsUpHoldAt = 0L
     private var okHold = StaticHold.READY
     private var okHoldAt = 0L
+    /** Last frame the OK shape was seen; keeps the finger heart from claiming wobbling frames. */
+    private var okPoseAt = 0L
     private var fistHold = StaticHold.READY
     private var fistHoldAt = 0L
     private var lotusHold = StaticHold.READY
@@ -396,12 +398,20 @@ class GestureEngine(
             return output
         }
         if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
+        if (features.ok && okPose) okPoseAt = now
         if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
         if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1500L, label = "握拳保持")) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
-        // Finger-heart uses thumb/index proximity independently from index-bend clicking.
-        val fingerHeartPose = ratio < .40f
+        // Finger-heart uses thumb/index proximity independently from index-bend clicking, but
+        // OK is the very same thumb/index contact *with* the other three fingers extended, so:
+        //  - the heart requires those fingers to be curled (matches the "其余三指收拢" wording);
+        //  - OK keeps ownership for a short grace window, because the frames where OK drops out
+        //    are exactly the frames where the three fingers read as curled — without this the
+        //    heart arms on those wobble frames and fires a like instead of the OK action.
+        val threeFingersExtended = middleOpen && ringOpen && pinkyOpen
+        val okOwnsHand = features.ok && okPoseAt > 0L && now - okPoseAt < 500L
+        val fingerHeartPose = ratio < .40f && !threeFingersExtended && !okOwnsHand
         val fingersClearlyReleased = ratio > .58f
         if (features.like) when (pinch) {
             Pinch.READY -> if (fingerHeartPose) {
@@ -410,6 +420,11 @@ class GestureEngine(
                 releaseAt = 0L
             }
             Pinch.CANDIDATE -> when {
+                okOwnsHand || threeFingersExtended -> {
+                    pinch = Pinch.READY
+                    candidateAt = 0L
+                    releaseAt = 0L
+                }
                 fingersClearlyReleased -> {
                     if (releaseAt == 0L) releaseAt = now
                     if (now - releaseAt >= 220) {
