@@ -68,7 +68,7 @@ class CalibrationActivity : Activity() {
         GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT,
         GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
         GestureAction.ROLLING_SCREENSHOT,
-        GestureAction.OPEN_APP,
+        GestureAction.OPEN_APP, GestureAction.FAVORITE_CURRENT,
         GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE,
         GestureAction.NOTIFICATIONS, GestureAction.LOCK_SCREEN, GestureAction.VOICE_ASSISTANT,
         GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS
@@ -183,6 +183,10 @@ class CalibrationActivity : Activity() {
             gestureNames.forEach { (code, _) -> addView(mappingRow(code), blockMargins(8)) }
             addView(body("提示：功能开关控制的是手势本身（是否参与识别），映射控制的是触发后执行什么动作，两者相互独立。"), blockMargins(18))
 
+            addView(title("收藏按钮位置"))
+            addView(body("在第三方 App 中首次触发“收藏当前内容”时，按提示标记收藏按钮。这里可以查看或删除已保存的位置；重新定义请回到目标 App 再次触发。"), blockMargins(10))
+            addView(favoriteProfilesView(), blockMargins(18))
+
             addView(title("手势功能开关"))
             addView(body("测试时可只开启一个手势，关闭的功能不会参与判断，也不会影响其他动作。").apply {
                 setPadding(0, dp(5), 0, dp(12))
@@ -199,7 +203,7 @@ class CalibrationActivity : Activity() {
             selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面。", savedFeatures.selfie)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
-            okSwitch = featureSwitch("OK 确认", "做出 OK 手势并保持约 0.6 秒，点击当前光标位置。", savedFeatures.ok)
+            okSwitch = featureSwitch("OK 收藏当前内容", "做出 OK 手势并保持约 0.6 秒，点击当前 App 已标定的收藏按钮位置。", savedFeatures.ok)
             playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持 1.5 秒（有倒计时提示），发送系统媒体播放/暂停指令。", savedFeatures.playPause)
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
@@ -424,6 +428,44 @@ class CalibrationActivity : Activity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun favoriteProfilesView() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val profiles = GesturePreferences.favoriteProfiles(this@CalibrationActivity)
+        if (profiles.isEmpty()) {
+            addView(body("暂未定义任何应用的收藏按钮位置。"))
+        } else {
+            profiles.forEach { profile ->
+                addView(LinearLayout(this@CalibrationActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(14), dp(8), dp(9), dp(8))
+                    background = rounded(Color.WHITE, 14, Color.rgb(226, 232, 240))
+                    addView(TextView(this@CalibrationActivity).apply {
+                        text = "${profile.appLabel}\n${if (profile.portrait) "竖屏" else "横屏"} · 已定义"
+                        textSize = 14f
+                        setTextColor(Color.rgb(30, 41, 59))
+                    }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(Button(this@CalibrationActivity).apply {
+                        text = "删除"
+                        isAllCaps = false
+                        setTextColor(Color.rgb(190, 51, 67))
+                        background = pressable(Color.rgb(255, 241, 242), Color.rgb(255, 228, 230), 10, Color.rgb(254, 205, 211))
+                        setOnClickListener {
+                            AlertDialog.Builder(this@CalibrationActivity)
+                                .setTitle("删除收藏位置")
+                                .setMessage("确定删除 ${profile.appLabel} 的${if (profile.portrait) "竖屏" else "横屏"}收藏位置吗？")
+                                .setNegativeButton("取消", null)
+                                .setPositiveButton("删除") { _, _ ->
+                                    GesturePreferences.deleteFavoriteProfile(this@CalibrationActivity, profile.packageName, profile.portrait)
+                                    Toast.makeText(this@CalibrationActivity, "已删除，请重新进入本页刷新", Toast.LENGTH_SHORT).show()
+                                }.show()
+                        }
+                    }, LinearLayout.LayoutParams(dp(76), dp(42)))
+                }, blockMargins(7))
+            }
+        }
     }
 
     private fun sensitivityButton(label: String, value: String) = Button(this).apply {

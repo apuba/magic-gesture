@@ -66,7 +66,7 @@ class GestureArchitectureTest {
         assertEquals(GestureCode.G20, thumbsUp.code)
         assertEquals(GestureAction.THUMBS_UP_LIKE, thumbsUp.action)
         assertEquals(GestureCode.G21, ok.code)
-        assertEquals(GestureAction.CONFIRM, ok.action)
+        assertEquals(GestureAction.FAVORITE_CURRENT, ok.action)
         assertEquals(GestureCode.G22, playPause.code)
         assertEquals(GestureAction.PLAY_PAUSE, playPause.action)
         assertFalse(gate.allows(thumbsUp, GestureFeatureConfig(thumbsUp = false)))

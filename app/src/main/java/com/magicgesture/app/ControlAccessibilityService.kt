@@ -45,9 +45,24 @@ class ControlAccessibilityService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private val imageWorker = Executors.newSingleThreadExecutor()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    @Volatile private var foregroundPackageName: String? = null
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName }
+        if (pkg != null) foregroundPackageName = pkg
+    }
     override fun onInterrupt() { hideCursor(); busy = false }
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
+
+    fun foregroundPackage(): String? = foregroundPackageName
+
+    fun tapNormalized(x: Float, y: Float, callback: (Boolean) -> Unit) = main.post {
+        if (busy) { callback(false); return@post }
+        val m = resources.displayMetrics
+        val path = Path().apply {
+            moveTo(x.coerceIn(0f, 1f) * m.widthPixels, y.coerceIn(0f, 1f) * m.heightPixels)
+        }
+        dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
 
     fun render(x: Float, y: Float) = main.post {
         cursorX = x.coerceIn(0f, 1f)

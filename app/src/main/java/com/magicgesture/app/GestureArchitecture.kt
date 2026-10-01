@@ -15,7 +15,7 @@ enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
-    DRAG, ROLLING_SCREENSHOT, OPEN_APP,
+    DRAG, ROLLING_SCREENSHOT, OPEN_APP, FAVORITE_CURRENT,
     /** Legacy values retained only so existing saved mappings continue to load after upgrade. */
     OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
 
@@ -45,6 +45,7 @@ enum class GestureAction {
         DRAG -> "拖动完成"
         ROLLING_SCREENSHOT -> "长截图已保存"
         OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "已打开应用"
+        FAVORITE_CURRENT -> "已点击收藏位置"
     }
 
     fun failureMessage(): String = when (this) {
@@ -56,6 +57,7 @@ enum class GestureAction {
         DRAG -> "拖动距离太短或执行失败"
         ROLLING_SCREENSHOT -> "滚动截图需要 Android 11 或更高版本"
         OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "未选择应用，请重新设置该手势"
+        FAVORITE_CURRENT -> "当前应用未定义收藏位置或点击失败"
         else -> "动作执行失败"
     }
 
@@ -85,6 +87,7 @@ enum class GestureAction {
         DRAG -> "拖动"
         ROLLING_SCREENSHOT -> "滚动长截图"
         OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "打开应用"
+        FAVORITE_CURRENT -> "收藏当前内容"
     }
 }
 
@@ -271,7 +274,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G21 to GestureMapping(
             GestureCode.G21,
             GestureType.HOLD,
-            GestureAction.CONFIRM,
+            GestureAction.FAVORITE_CURRENT,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G22 to GestureMapping(
@@ -354,7 +357,8 @@ class GestureActionExecutor(
     private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
     private val actionProgress: ((String) -> Unit)? = null,
     /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
-    private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) }
+    private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) },
+    private val favoriteCurrent: ((Boolean) -> Unit) -> Unit = { callback -> callback(false) }
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -410,6 +414,7 @@ class GestureActionExecutor(
             GestureAction.OPEN_APP_2 -> { launchApp(GestureCode.G17, callback); true }
             GestureAction.OPEN_APP_3 -> { launchApp(GestureCode.G18, callback); true }
             GestureAction.OPEN_APP_4 -> { launchApp(GestureCode.G19, callback); true }
+            GestureAction.FAVORITE_CURRENT -> { favoriteCurrent(callback); true }
             GestureAction.LOCK_SCREEN -> {
                 val service = accessibilityService() ?: return false
                 service.lockScreenAction(callback)

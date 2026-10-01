@@ -34,6 +34,16 @@ data class GestureFeatureConfig(
     val openApp4: Boolean = true
 )
 
+data class FavoriteButtonProfile(
+    val packageName: String,
+    val appLabel: String,
+    val portrait: Boolean,
+    val normalizedX: Float,
+    val normalizedY: Float,
+    val appVersion: String,
+    val updatedAt: Long
+)
+
 object GesturePreferences {
     const val FILE = "gesture_settings"
     private const val SENSITIVITY = "sensitivity"
@@ -106,6 +116,64 @@ object GesturePreferences {
     }
 
     private fun openAppGestureKey(code: GestureCode) = "open_app_package_${code.name}"
+
+    private const val FAVORITE_PACKAGES = "favorite_position_packages"
+    private fun favoritePrefix(packageName: String, portrait: Boolean) =
+        "favorite_position_${packageName}_${if (portrait) "portrait" else "landscape"}"
+
+    fun favoriteProfile(context: Context, packageName: String, portrait: Boolean): FavoriteButtonProfile? {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val prefix = favoritePrefix(packageName, portrait)
+        if (!prefs.contains("${prefix}_x") || !prefs.contains("${prefix}_y")) return null
+        return FavoriteButtonProfile(
+            packageName = packageName,
+            appLabel = prefs.getString("${prefix}_label", packageName) ?: packageName,
+            portrait = portrait,
+            normalizedX = prefs.getFloat("${prefix}_x", .5f).coerceIn(0f, 1f),
+            normalizedY = prefs.getFloat("${prefix}_y", .5f).coerceIn(0f, 1f),
+            appVersion = prefs.getString("${prefix}_version", "") ?: "",
+            updatedAt = prefs.getLong("${prefix}_updated", 0L)
+        )
+    }
+
+    fun favoriteProfiles(context: Context): List<FavoriteButtonProfile> {
+        val packages = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getStringSet(FAVORITE_PACKAGES, emptySet()).orEmpty()
+        return packages.flatMap { pkg ->
+            listOfNotNull(favoriteProfile(context, pkg, true), favoriteProfile(context, pkg, false))
+        }.sortedWith(compareBy({ it.appLabel.lowercase() }, { !it.portrait }))
+    }
+
+    fun saveFavoriteProfile(context: Context, profile: FavoriteButtonProfile) {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val prefix = favoritePrefix(profile.packageName, profile.portrait)
+        val packages = prefs.getStringSet(FAVORITE_PACKAGES, emptySet()).orEmpty().toMutableSet().apply {
+            add(profile.packageName)
+        }
+        prefs.edit()
+            .putStringSet(FAVORITE_PACKAGES, packages)
+            .putString("${prefix}_label", profile.appLabel)
+            .putFloat("${prefix}_x", profile.normalizedX.coerceIn(0f, 1f))
+            .putFloat("${prefix}_y", profile.normalizedY.coerceIn(0f, 1f))
+            .putString("${prefix}_version", profile.appVersion)
+            .putLong("${prefix}_updated", profile.updatedAt)
+            .apply()
+    }
+
+    fun deleteFavoriteProfile(context: Context, packageName: String, portrait: Boolean) {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val prefix = favoritePrefix(packageName, portrait)
+        val editor = prefs.edit()
+        listOf("label", "x", "y", "version", "updated").forEach { editor.remove("${prefix}_$it") }
+        val otherExists = favoriteProfile(context, packageName, !portrait) != null
+        if (!otherExists) {
+            val packages = prefs.getStringSet(FAVORITE_PACKAGES, emptySet()).orEmpty().toMutableSet().apply {
+                remove(packageName)
+            }
+            editor.putStringSet(FAVORITE_PACKAGES, packages)
+        }
+        editor.apply()
+    }
 
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

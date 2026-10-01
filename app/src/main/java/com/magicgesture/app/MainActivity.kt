@@ -147,7 +147,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。需要先启用并移动光标。", "OK", "ok", features.ok), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。首次在某个 App 使用时，按提示标记该 App 的收藏按钮位置。", "OK", "ok", features.ok), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1.5 秒（有倒计时提示），控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
@@ -297,31 +297,89 @@ class MainActivity : Activity() {
         addView(label("收成 1–4 指 · 打开指定应用", 14f, Color.rgb(66, 63, 160), true).apply {
             setPadding(0, dp(2), 0, dp(9))
         })
-        addView(gestureCard(R.drawable.gesture_palm, "张掌后收成食指", actionLabelOf(GestureCode.G16), "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。目标应用在“手势练习与校准”的动作映射中直接绑定。", "1", "open_app_1", features.openApp1, R.drawable.gesture_open_app_1), margins(bottom = 10))
-        addView(gestureCard(R.drawable.gesture_palm, "张掌后收成两指", actionLabelOf(GestureCode.G17), "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", "2", "open_app_2", features.openApp2, R.drawable.gesture_open_app_2), margins(bottom = 10))
-        addView(gestureCard(R.drawable.gesture_palm, "张掌后收成三指", actionLabelOf(GestureCode.G18), "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。", "3", "open_app_3", features.openApp3, R.drawable.gesture_open_app_3), margins(bottom = 10))
-        addView(gestureCard(R.drawable.gesture_palm, "张掌后收成四指", actionLabelOf(GestureCode.G19), "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。", "4", "open_app_4", features.openApp4, R.drawable.gesture_open_app_4), margins(bottom = 2))
+        addView(sequenceCard(
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_1), "张掌后收成食指",
+            actionLabelOf(GestureCode.G16),
+            "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。目标应用在“手势练习与校准”的动作映射中直接绑定。",
+            "open_app_1", features.openApp1
+        ), margins(bottom = 10))
+        addView(sequenceCard(
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_2), "张掌后收成两指",
+            actionLabelOf(GestureCode.G17),
+            "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。",
+            "open_app_2", features.openApp2
+        ), margins(bottom = 10))
+        addView(sequenceCard(
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_3), "张掌后收成三指",
+            actionLabelOf(GestureCode.G18),
+            "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。",
+            "open_app_3", features.openApp3
+        ), margins(bottom = 10))
+        addView(sequenceCard(
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_4), "张掌后收成四指",
+            actionLabelOf(GestureCode.G19),
+            "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。",
+            "open_app_4", features.openApp4
+        ), margins(bottom = 2))
     }
 
-    private fun screenshotCard(enabled: Boolean): View = LinearLayout(this).apply {
+    /** G13: spread → fist → spread, so the open palm is shown twice. */
+    private fun screenshotCard(enabled: Boolean): View = sequenceCard(
+        listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm),
+        "五指张开 → 握拳 → 五指张开",
+        null,
+        "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持完成截图。手指并拢时不会触发。",
+        "screenshot",
+        enabled
+    )
+
+    /**
+     * Sequence gestures (G13, G16-G19) put the step illustrations on top, then the title row,
+     * the live action label and the description — the same layout the screenshot card uses.
+     * [actionText] is null when the gesture has a fixed action.
+     */
+    private fun sequenceCard(
+        steps: List<Int>,
+        title: String,
+        actionText: (() -> String)?,
+        description: String,
+        feature: String,
+        enabled: Boolean
+    ): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(14), dp(14), dp(14), dp(15))
         background = rounded(Color.WHITE, 20)
         elevation = dp(2).toFloat()
+        // Three-step sequences need narrower frames so the whole row still fits a phone.
+        val frameWidth = if (steps.size >= 3) dp(60) else dp(78)
+        val arrowWidth = if (steps.size >= 3) dp(26) else dp(38)
         addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.gesture_palm); scaleType = ImageView.ScaleType.CENTER_INSIDE }, LinearLayout.LayoutParams(dp(72), dp(80)))
-            addView(label("→", 18f, Color.rgb(91, 87, 218), true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(38), dp(76)))
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.gesture_fist); scaleType = ImageView.ScaleType.CENTER_INSIDE }, LinearLayout.LayoutParams(dp(72), dp(80)))
+            steps.forEachIndexed { index, image ->
+                if (index > 0) {
+                    addView(label("→", 18f, Color.rgb(91, 87, 218), true).apply {
+                        gravity = Gravity.CENTER
+                    }, LinearLayout.LayoutParams(arrowWidth, dp(76)))
+                }
+                addView(ImageView(this@MainActivity).apply {
+                    setImageResource(image)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                }, LinearLayout.LayoutParams(frameWidth, dp(80)))
+            }
         })
         addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(label("五指张开 → 握拳 → 五指张开", 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(featureToggle("screenshot", enabled), LinearLayout.LayoutParams(dp(56), dp(48)))
+            addView(label(title, 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
         })
-        addView(label("五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持完成截图。手指并拢时不会触发。", 12.5f, Color.rgb(105, 103, 124), false).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(8), dp(6), dp(8), 0)
+        if (actionText != null) {
+            val actionView = label(actionText(), 13f, Color.rgb(91, 87, 218), true).apply { setPadding(0, dp(4), 0, 0) }
+            actionLabelViews += actionView to actionText
+            addView(actionView)
+        }
+        addView(label(description, 12.5f, Color.rgb(105, 103, 124), false).apply {
+            setPadding(0, dp(7), 0, 0)
+            setLineSpacing(0f, 1.1f)
         })
     }
 
@@ -381,7 +439,7 @@ class MainActivity : Activity() {
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
         "thumbs_up" -> "大拇指点赞"
-        "ok" -> "OK 确认"
+        "ok" -> "OK 收藏当前内容"
         "play_pause" -> "握拳播放/暂停"
         "lotus_recents" -> "莲花指最近任务"
         "orchid_back" -> "兰花指最近任务"

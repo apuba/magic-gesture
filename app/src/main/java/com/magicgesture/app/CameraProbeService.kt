@@ -57,6 +57,7 @@ class CameraProbeService : Service() {
     private var volumeHoldActive = false
     private var volumeHoldRaise = false
     private var volumeHoldChanged = false
+    @Volatile private var favoriteFlowActive = false
     private var mappingManager = GestureMappingManager()
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
@@ -70,8 +71,24 @@ class CameraProbeService : Service() {
         volumeAdjust = ::adjustVolume,
         // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
         actionProgress = { message -> overlayIndicator.showFeedback(message) },
-        launchApp = ::launchAppForGesture
+        launchApp = ::launchAppForGesture,
+        favoriteCurrent = ::favoriteCurrentContent
     )
+    private val favoriteController by lazy {
+        FavoriteButtonController(
+            context = this,
+            accessibilityService = { ControlAccessibilityService.active },
+            onFlowStateChanged = { favoriteFlowActive = it }
+        )
+    }
+
+    private fun favoriteCurrentContent(callback: (Boolean) -> Unit) {
+        favoriteFlowActive = true
+        favoriteController.execute { success ->
+            favoriteFlowActive = false
+            callback(success)
+        }
+    }
 
     /** Launches the app bound directly to the gesture; the package is read live from preferences. */
     private fun launchAppForGesture(code: GestureCode, callback: (Boolean) -> Unit) {
@@ -160,6 +177,7 @@ class CameraProbeService : Service() {
                     try {
                         pipeline = HandPipeline(this) { event ->
                             val service = ControlAccessibilityService.active
+                            if (favoriteFlowActive) return@HandPipeline
                             if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
                             if (event is GestureEvent.TwoFingerVolumeHold) {
                                 handleContinuousVolume(event, event.raise, event.phase)
@@ -222,7 +240,7 @@ class CameraProbeService : Service() {
                         firstFrameLogged = true
                         Log.d("CameraProbe", "startup: first camera frame received")
                     }
-                    if (controlMode && !globalCooldown.isActive()) try {
+                    if (controlMode && !globalCooldown.isActive() && !favoriteFlowActive) try {
                         val frameRotation = CameraFrameOrientation.relativeRotationDegrees(
                             sensorOrientationDegrees = sensorRotation,
                             displayRotationDegrees = currentDisplayRotationDegrees(),
@@ -553,6 +571,7 @@ class CameraProbeService : Service() {
     override fun onDestroy() {
         isControlRunning = false
         stopped = true
+        if (::overlayIndicator.isInitialized) favoriteController.dismiss()
         globalCooldown.reset()
         cameraGeneration++
         mainHandler.removeCallbacksAndMessages(null)
