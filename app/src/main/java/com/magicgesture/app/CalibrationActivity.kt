@@ -33,6 +33,10 @@ class CalibrationActivity : Activity() {
         GestureCode.G13 to "张掌→握拳→张掌",
         GestureCode.G14 to "莲花指",
         GestureCode.G15 to "兰花指",
+        GestureCode.G16 to "张掌后收成食指",
+        GestureCode.G17 to "张掌后收成两指",
+        GestureCode.G18 to "张掌后收成三指",
+        GestureCode.G19 to "张掌后收成四指",
         GestureCode.G20 to "大拇指",
         GestureCode.G21 to "OK 手势",
         GestureCode.G22 to "握拳",
@@ -58,12 +62,18 @@ class CalibrationActivity : Activity() {
         GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT,
         GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
         GestureAction.ROLLING_SCREENSHOT,
+        GestureAction.OPEN_APP_1, GestureAction.OPEN_APP_2, GestureAction.OPEN_APP_3, GestureAction.OPEN_APP_4,
         GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE,
         GestureAction.NOTIFICATIONS, GestureAction.LOCK_SCREEN, GestureAction.VOICE_ASSISTANT,
         GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS
     )
 
     private val mappingButtons = mutableMapOf<GestureCode, Button>()
+    private val openAppButtons = mutableMapOf<Int, Button>()
+    private lateinit var openApp1Switch: Switch
+    private lateinit var openApp2Switch: Switch
+    private lateinit var openApp3Switch: Switch
+    private lateinit var openApp4Switch: Switch
     private var selectedSensitivity = "normal"
     private lateinit var lowButton: Button
     private lateinit var normalButton: Button
@@ -168,6 +178,19 @@ class CalibrationActivity : Activity() {
             gestureNames.forEach { (code, _) -> addView(mappingRow(code), blockMargins(8)) }
             addView(body("提示：功能开关控制的是手势本身（是否参与识别），映射控制的是触发后执行什么动作，两者相互独立。"), blockMargins(18))
 
+            addView(title("打开指定应用"))
+            addView(body("张掌后收成 1–4 指的四个手势各打开一个应用；点击右侧按钮选择该手势要打开的应用，修改立即生效。").apply {
+                setPadding(0, dp(5), 0, dp(12))
+            })
+            openAppButtons.clear()
+            listOf(
+                1 to "张掌后收成食指（应用一）",
+                2 to "张掌后收成两指（应用二）",
+                3 to "张掌后收成三指（应用三）",
+                4 to "张掌后收成四指（应用四）"
+            ).forEach { (slot, name) -> addView(openAppRow(slot, name), blockMargins(8)) }
+            addView(body("未选择应用时手势仍可触发，但会提示设置。"), blockMargins(18))
+
             addView(title("手势功能开关"))
             addView(body("测试时可只开启一个手势，关闭的功能不会参与判断，也不会影响其他动作。").apply {
                 setPadding(0, dp(5), 0, dp(12))
@@ -194,11 +217,16 @@ class CalibrationActivity : Activity() {
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
             twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起：左右挥切歌；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
+            openApp1Switch = featureSwitch("张掌后收成食指", "五指张开稳定后，收起其他手指只保留食指，保持约 0.6 秒打开应用一。", savedFeatures.openApp1)
+            openApp2Switch = featureSwitch("张掌后收成两指", "五指张开稳定后，收起其他手指保留食指与中指，保持约 0.6 秒打开应用二。", savedFeatures.openApp2)
+            openApp3Switch = featureSwitch("张掌后收成三指", "五指张开稳定后，收起其他手指保留食指、中指与无名指，保持约 0.6 秒打开应用三。", savedFeatures.openApp3)
+            openApp4Switch = featureSwitch("张掌后收成四指", "五指张开稳定后，收起大拇指保留四指，保持约 0.6 秒打开应用四。", savedFeatures.openApp4)
             listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
                 palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
                 screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch,
                 lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
-                cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
+                cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch,
+                openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach {
                 addView(it, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
@@ -250,7 +278,11 @@ class CalibrationActivity : Activity() {
                             clawDrag = clawDragSwitch.isChecked,
                             cShape = cShapeSwitch.isChecked,
                             loveLock = loveLockSwitch.isChecked,
-                            twoFingerMedia = twoFingerMediaSwitch.isChecked
+                            twoFingerMedia = twoFingerMediaSwitch.isChecked,
+                            openApp1 = openApp1Switch.isChecked,
+                            openApp2 = openApp2Switch.isChecked,
+                            openApp3 = openApp3Switch.isChecked,
+                            openApp4 = openApp4Switch.isChecked
                         )
                     )
                     Toast.makeText(this@CalibrationActivity, "设置已保存，下次启动手势控制时生效", Toast.LENGTH_SHORT).show()
@@ -293,6 +325,63 @@ class CalibrationActivity : Activity() {
 
     private fun currentActionLabel(code: GestureCode): String =
         currentAction(code)?.displayLabel() ?: "未设置"
+
+    /** One open-app slot row: gesture name on the left, bound app (picker) on the right. */
+    private fun openAppRow(slot: Int, name: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(16), dp(8), dp(10), dp(8))
+        background = rounded(Color.WHITE, 16, Color.rgb(226, 232, 240))
+        addView(TextView(this@CalibrationActivity).apply {
+            text = name
+            textSize = 14.5f
+            setTextColor(Color.rgb(30, 41, 59))
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val button = Button(this@CalibrationActivity).apply {
+            textSize = 13f
+            isAllCaps = false
+            minWidth = dp(104)
+            minHeight = dp(36)
+            setPadding(dp(10), 0, dp(10), 0)
+            setTextColor(Color.rgb(51, 65, 85))
+            background = pressable(Color.WHITE, Color.rgb(241, 245, 249), 12, Color.rgb(203, 213, 225))
+            stateListAnimator = null
+            text = openAppLabel(slot)
+            setOnClickListener { showAppPicker(slot) }
+        }
+        openAppButtons[slot] = button
+        addView(button)
+    }
+
+    private fun openAppLabel(slot: Int): String {
+        val pkg = GesturePreferences.openAppPackage(this, slot) ?: return "选择应用"
+        return try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (e: Exception) {
+            "已卸载应用"
+        }
+    }
+
+    /** Lists launchable apps; first option clears the binding. Saved immediately, live-effective. */
+    private fun showAppPicker(slot: Int) {
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null)
+            .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(intent, 0)
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        val current = GesturePreferences.openAppPackage(this, slot)
+        val labels = (listOf("未选择应用") + apps.map { it.loadLabel(packageManager).toString() }).toTypedArray()
+        val checked = apps.indexOfFirst { it.activityInfo.packageName == current }.takeIf { it >= 0 }?.plus(1) ?: 0
+        AlertDialog.Builder(this)
+            .setTitle("应用${arrayOf("", "一", "二", "三", "四")[slot]} · 选择要打开的应用")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                GesturePreferences.saveOpenAppPackage(this, slot, if (which == 0) null else apps[which - 1].activityInfo.packageName)
+                openAppButtons[slot]?.text = openAppLabel(slot)
+                Toast.makeText(this, "应用已更新，运行中即时生效", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
 
     private fun showActionPicker(code: GestureCode) {
         // First option is null = restore the factory default for this gesture.

@@ -151,6 +151,10 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1.5 秒（有倒计时提示），控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成食指", actionLabelOf(GestureCode.G16), "五指张开稳定后，收起其他手指只保留食指，保持约 0.6 秒打开应用一（在“手势练习与校准”中选择应用）。", "1", "open_app_1", features.openApp1), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成两指", actionLabelOf(GestureCode.G17), "五指张开稳定后，收起其他手指保留食指与中指，保持约 0.6 秒打开应用二。", "2", "open_app_2", features.openApp2), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成三指", actionLabelOf(GestureCode.G18), "五指张开稳定后，收起其他手指保留食指、中指与无名指，保持约 0.6 秒打开应用三。", "3", "open_app_3", features.openApp3), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成四指", actionLabelOf(GestureCode.G19), "五指张开稳定后，收起大拇指保留四指，保持约 0.6 秒打开应用四。", "4", "open_app_4", features.openApp4), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", actionLabelOf(GestureCode.G24), "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 2 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
@@ -339,6 +343,10 @@ class MainActivity : Activity() {
         "c_shape" -> "C 手形最近任务"
         "love_lock" -> "Love 手形锁屏"
         "two_finger_media" -> "两指媒体控制"
+        "open_app_1" -> "张掌后收成食指"
+        "open_app_2" -> "张掌后收成两指"
+        "open_app_3" -> "张掌后收成三指"
+        "open_app_4" -> "张掌后收成四指"
         else -> "手势"
     }
 
@@ -366,7 +374,11 @@ class MainActivity : Activity() {
             "claw_drag" to features.clawDrag,
             "c_shape" to features.cShape,
             "love_lock" to features.loveLock,
-            "two_finger_media" to features.twoFingerMedia
+            "two_finger_media" to features.twoFingerMedia,
+            "open_app_1" to features.openApp1,
+            "open_app_2" to features.openApp2,
+            "open_app_3" to features.openApp3,
+            "open_app_4" to features.openApp4
         )
         updatingFeatureSwitches = true
         values.forEach { (key, value) -> featureSwitches[key]?.forEach { it.isChecked = value } }

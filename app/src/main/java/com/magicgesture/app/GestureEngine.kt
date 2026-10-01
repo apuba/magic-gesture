@@ -35,6 +35,8 @@ sealed interface GestureEvent {
     data class TwoFingerVolumeHold(val raise: Boolean, val phase: VolumeHoldPhase) : GestureEvent
     /** Both fingers bend and re-extend twice in a row while in the two-finger pose. */
     data object TwoFingerDoubleTap : GestureEvent
+    /** Open-palm-then-fold sequence fired slot N (1..4): 1=index, 2=index+middle, 3=+ring, 4=+pinky. */
+    data class OpenApp(val slot: Int) : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
@@ -103,6 +105,14 @@ class GestureEngine(
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
+    // G16-G19: open-palm then fold to N fingers opens the app bound to that slot.
+    private enum class AppSequence { IDLE, ARMED, HOLDING, WAIT_RELEASE }
+    private var appSequence = AppSequence.IDLE
+    private var appStageAt = 0L
+    private var appOpenPalmAt = 0L
+    private var appHoldSlot = 0
+    private var appHoldAt = 0L
+    private var appCooldownUntil = 0L
     private var lastSeenAt = 0L
     private var smoothed: Point? = null
     private var paused = false
@@ -263,6 +273,18 @@ class GestureEngine(
         // behind the index finger. Never let that valid two-finger candidate arm index gestures.
         val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded && !twoFingerTogetherPose
         if (advanceActiveVolumeHold(twoFingerTogetherPose, now, output)) return output
+        // G16-G19 run before cursor emission so the folded index pose cannot move the cursor;
+        // while the palm is still open the sequence stays transparent for the G13 pipeline.
+        if (advanceAppSequence(
+                screenshotPalmOpen,
+                indexOpen && middleFolded && ringFolded && pinkyFolded && !thumbOpen,
+                indexOpen && middleOpen && ringFolded && pinkyFolded && !thumbOpen,
+                indexOpen && middleOpen && ringOpen && pinkyFolded && !thumbOpen,
+                fourFingersOpen && !thumbOpen,
+                now,
+                output
+            )
+        ) return output
         output += GestureEvent.Cursor(cursor.x, cursor.y)
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
@@ -671,6 +693,95 @@ class GestureEngine(
             TwoFingerTapState.FIRED_WAIT -> if (!pose) twoFingerTapState = TwoFingerTapState.IDLE
         }
     }
+    /**
+     * G16-G19: open palm, then fold to exactly N fingers (thumb closed). Holding the folded
+     * pose for ~600ms fires [GestureEvent.OpenApp] with the matching slot. The open-palm stage
+     * never swallows frames, so the G13 screenshot sequence can arm in parallel; once a target
+     * pose is detected the sequence owns the hand until the pose is released.
+     */
+    private fun advanceAppSequence(
+        palmOpen: Boolean,
+        oneFinger: Boolean,
+        twoFinger: Boolean,
+        threeFinger: Boolean,
+        fourFinger: Boolean,
+        now: Long,
+        output: MutableList<GestureEvent>
+    ): Boolean {
+        val anyOpen = features.openApp1 || features.openApp2 || features.openApp3 || features.openApp4
+        if (!anyOpen) {
+            appSequence = AppSequence.IDLE
+            return false
+        }
+        val slotPose = when {
+            features.openApp1 && oneFinger -> 1
+            features.openApp2 && twoFinger -> 2
+            features.openApp3 && threeFinger -> 3
+            features.openApp4 && fourFinger -> 4
+            else -> 0
+        }
+        when (appSequence) {
+            AppSequence.IDLE -> {
+                if (palmOpen && now >= appCooldownUntil) {
+                    appSequence = AppSequence.ARMED
+                    appStageAt = now
+                    appOpenPalmAt = now
+                    // The G13 screenshot arm hint wins when both families share the open palm.
+                    if (!features.screenshot) {
+                        output += GestureEvent.Feedback("五指张开已识别：收起手指保留 1–4 指打开应用")
+                    }
+                }
+                return false
+            }
+            AppSequence.ARMED -> {
+                if (palmOpen) {
+                    appOpenPalmAt = now
+                    if (now - appStageAt > 5000) appSequence = AppSequence.WAIT_RELEASE
+                    return false
+                }
+                if (now - appOpenPalmAt > 600) {
+                    // The open palm was lost for too long: this frame belongs to other gestures.
+                    appSequence = AppSequence.IDLE
+                    return false
+                }
+                if (slotPose != 0) {
+                    appSequence = AppSequence.HOLDING
+                    appHoldSlot = slotPose
+                    appHoldAt = now
+                    val names = arrayOf("", "食指", "两指", "三指", "四指")
+                    output += GestureEvent.Feedback("已保留${names[slotPose]}：请保持")
+                    return true
+                }
+                // Transitional pose while folding (including the fist of the G13 sequence).
+                return false
+            }
+            AppSequence.HOLDING -> {
+                if (slotPose == appHoldSlot) {
+                    if (now - appHoldAt >= 600) {
+                        output += GestureEvent.OpenApp(appHoldSlot)
+                        appSequence = AppSequence.WAIT_RELEASE
+                        appHoldAt = now
+                        appCooldownUntil = now + localRepeatGuardMs
+                    }
+                    return true
+                }
+                if (now - appHoldAt > 260) {
+                    appSequence = AppSequence.WAIT_RELEASE
+                    appHoldAt = now
+                    output += GestureEvent.Feedback("姿势已改变，已取消")
+                }
+                return true
+            }
+            AppSequence.WAIT_RELEASE -> {
+                // Wait for the hand to relax (no folded slot pose, no open palm) before re-arming.
+                if (now - appHoldAt > 600 && !palmOpen && slotPose == 0) {
+                    appSequence = AppSequence.IDLE
+                }
+                return true
+            }
+        }
+    }
+
     private fun advanceOpenPalmSequence(
         directionOpen: Boolean,
         screenshotOpen: Boolean,
@@ -907,6 +1018,7 @@ class GestureEngine(
         indexClickAt = 0
         indexClickPoint = null
         screenshotSequence = ScreenshotSequence.IDLE
+        appSequence = AppSequence.IDLE
         candidateAt = 0
         releaseAt = 0
         screenshotStageAt = 0

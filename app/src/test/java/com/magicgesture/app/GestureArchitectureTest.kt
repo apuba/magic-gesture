@@ -162,13 +162,13 @@ class GestureArchitectureTest {
         assertTrue(manager.isRemappable(GestureCode.G22))
         // G26 is unbound by default but its pipeline exists, so it stays bindable.
         assertTrue(manager.isRemappable(GestureCode.G26))
-        // G01 is the continuous cursor; G16/G17/G19/G18/G23 have no pipeline (G18/G19 circle
-        // volume was removed on 2026-10-01 after real-device pose-conflict feedback).
+        // G01 is the continuous cursor; G23 has no pipeline. G16-G19 were revived on
+        // 2026-10-02 as open-app sequences, so they are remappable again.
         assertFalse(manager.isRemappable(GestureCode.G01))
-        assertFalse(manager.isRemappable(GestureCode.G16))
-        assertFalse(manager.isRemappable(GestureCode.G17))
-        assertFalse(manager.isRemappable(GestureCode.G18))
-        assertFalse(manager.isRemappable(GestureCode.G19))
+        assertTrue(manager.isRemappable(GestureCode.G16))
+        assertTrue(manager.isRemappable(GestureCode.G17))
+        assertTrue(manager.isRemappable(GestureCode.G18))
+        assertTrue(manager.isRemappable(GestureCode.G19))
         assertFalse(manager.isRemappable(GestureCode.G23))
     }
 
@@ -206,6 +206,27 @@ class GestureArchitectureTest {
             assertTrue(action.failureMessage().isNotBlank())
             if (action != GestureAction.MOVE_CURSOR) assertTrue(action.successMessage().isNotBlank())
         }
+    }
+
+    @Test fun g16ThroughG19DefaultToOpenAppSlotsAndResolve() {
+        assertEquals(GestureAction.OPEN_APP_1, GestureMappingManager.defaultActionOf(GestureCode.G16))
+        assertEquals(GestureAction.OPEN_APP_2, GestureMappingManager.defaultActionOf(GestureCode.G17))
+        assertEquals(GestureAction.OPEN_APP_3, GestureMappingManager.defaultActionOf(GestureCode.G18))
+        assertEquals(GestureAction.OPEN_APP_4, GestureMappingManager.defaultActionOf(GestureCode.G19))
+        val mappings = GestureMappingManager()
+        val events = listOf(
+            GestureEvent.OpenApp(1) to GestureCode.G16,
+            GestureEvent.OpenApp(2) to GestureCode.G17,
+            GestureEvent.OpenApp(3) to GestureCode.G18,
+            GestureEvent.OpenApp(4) to GestureCode.G19
+        )
+        for ((event, code) in events) {
+            val mapped = mappings.resolve(event)
+            assertEquals(code, mapped?.mapping?.code)
+            assertEquals(GestureType.SEQUENCE, mapped?.mapping?.type)
+        }
+        assertTrue(mappings.isRemappable(GestureCode.G16))
+        assertTrue(mappings.isRemappable(GestureCode.G19))
     }
 
     @Test fun g24ThroughG28DefaultToTheirSpecifiedActions() {

@@ -15,7 +15,7 @@ enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
-    DRAG, ROLLING_SCREENSHOT;
+    DRAG, ROLLING_SCREENSHOT, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
 
     fun successMessage(): String = when (this) {
         MOVE_CURSOR -> ""
@@ -42,6 +42,10 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "已唤起语音助手"
         DRAG -> "拖动完成"
         ROLLING_SCREENSHOT -> "长截图已保存"
+        OPEN_APP_1 -> "已打开应用一"
+        OPEN_APP_2 -> "已打开应用二"
+        OPEN_APP_3 -> "已打开应用三"
+        OPEN_APP_4 -> "已打开应用四"
     }
 
     fun failureMessage(): String = when (this) {
@@ -52,6 +56,7 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "未找到可用的语音助手"
         DRAG -> "拖动距离太短或执行失败"
         ROLLING_SCREENSHOT -> "滚动截图需要 Android 11 或更高版本"
+        OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "未选择应用，请到“手势练习与校准”中设置"
         else -> "动作执行失败"
     }
 
@@ -80,6 +85,10 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "语音助手"
         DRAG -> "拖动"
         ROLLING_SCREENSHOT -> "滚动长截图"
+        OPEN_APP_1 -> "打开应用一"
+        OPEN_APP_2 -> "打开应用二"
+        OPEN_APP_3 -> "打开应用三"
+        OPEN_APP_4 -> "打开应用四"
     }
 }
 
@@ -133,6 +142,12 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
                 GestureEvent.TwoFingerDirection.DOWN -> GestureCode.G32
             }
             is GestureEvent.TwoFingerVolumeHold -> if (event.raise) GestureCode.G31 else GestureCode.G32
+            is GestureEvent.OpenApp -> when (event.slot) {
+                1 -> GestureCode.G16
+                2 -> GestureCode.G17
+                3 -> GestureCode.G18
+                else -> GestureCode.G19
+            }
             else -> return null
         }
         val base = defaultMappings[code]
@@ -158,9 +173,10 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
     companion object {
         /** Codes that only exist in the enum as placeholders; no detector, no event. */
         private val NO_PIPELINE_CODES = setOf(
-            // G18/G19 (index-circle volume) were removed on 2026-10-01: the circling pose
-            // conflicted too much with everyday index gestures on real devices.
-            GestureCode.G16, GestureCode.G17, GestureCode.G18, GestureCode.G19, GestureCode.G23
+            // G16-G19 were revived on 2026-10-02 as open-app sequences (palm open, then fold
+            // to 1-4 fingers). G18/G19 (index-circle volume) were removed on 2026-10-01:
+            // the circling pose conflicted too much with everyday index gestures.
+            GestureCode.G23
         )
 
         fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
@@ -223,6 +239,32 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureCode.G15,
             GestureType.HOLD,
             GestureAction.RECENTS,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        // G16-G19: open-palm then fold to N fingers; each slot launches its own app
+        // (the target app is configured per slot in the calibration page).
+        GestureCode.G16 to GestureMapping(
+            GestureCode.G16,
+            GestureType.SEQUENCE,
+            GestureAction.OPEN_APP_1,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G17 to GestureMapping(
+            GestureCode.G17,
+            GestureType.SEQUENCE,
+            GestureAction.OPEN_APP_2,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G18 to GestureMapping(
+            GestureCode.G18,
+            GestureType.SEQUENCE,
+            GestureAction.OPEN_APP_3,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        GestureCode.G19 to GestureMapping(
+            GestureCode.G19,
+            GestureType.SEQUENCE,
+            GestureAction.OPEN_APP_4,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G20 to GestureMapping(
@@ -293,6 +335,10 @@ class GestureFeatureGate {
         GestureCode.G13 -> features.screenshot
         GestureCode.G14 -> features.lotusRecents
         GestureCode.G15 -> features.orchidBack
+        GestureCode.G16 -> features.openApp1
+        GestureCode.G17 -> features.openApp2
+        GestureCode.G18 -> features.openApp3
+        GestureCode.G19 -> features.openApp4
         GestureCode.G20 -> features.thumbsUp
         GestureCode.G21 -> features.ok
         GestureCode.G22 -> features.playPause
@@ -311,7 +357,9 @@ class GestureActionExecutor(
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
     private val mediaKey: (Int, (Boolean) -> Unit) -> Unit,
     private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
-    private val actionProgress: ((String) -> Unit)? = null
+    private val actionProgress: ((String) -> Unit)? = null,
+    /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
+    private val launchApp: (Int, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) }
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -362,6 +410,10 @@ class GestureActionExecutor(
                 )
                 true
             }
+            GestureAction.OPEN_APP_1 -> { launchApp(1, callback); true }
+            GestureAction.OPEN_APP_2 -> { launchApp(2, callback); true }
+            GestureAction.OPEN_APP_3 -> { launchApp(3, callback); true }
+            GestureAction.OPEN_APP_4 -> { launchApp(4, callback); true }
             GestureAction.LOCK_SCREEN -> {
                 val service = accessibilityService() ?: return false
                 service.lockScreenAction(callback)

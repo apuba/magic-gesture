@@ -127,6 +127,27 @@ class GestureEngineReplayTest {
     /** Five fingers spread: the open palm that arms the screenshot sequence. */
     private fun spreadPalm() = baseHand(fan = true)
 
+    /** Thumb resting against the palm ridge (thumbOpen == false), used by the open-app folds. */
+    private val thumbFolded = ThumbSpec(Point(.44f, .74f), Point(.42f, .70f), Point(.42f, .66f), Point(.41f, .63f))
+
+    // G16-G19: open palm, then fold to exactly N fingers with the thumb closed.
+    private fun foldedIndexOnly() = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED,
+        pinky = FingerPose.FOLDED, thumb = thumbFolded
+    )
+
+    private fun foldedTwoFingers() = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED, ring = FingerPose.FOLDED,
+        pinky = FingerPose.FOLDED, thumb = thumbFolded
+    )
+
+    private fun foldedThreeFingers() = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED, ring = FingerPose.EXTENDED,
+        pinky = FingerPose.FOLDED, thumb = thumbFolded
+    )
+
+    private fun foldedFourFingers() = baseHand(fan = true, thumb = thumbFolded)
+
     private fun pointingIndex(): List<Point> = baseHand(
         index = FingerPose.EXTENDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED
     )
@@ -294,6 +315,35 @@ class GestureEngineReplayTest {
         r.feed(5, ::fistPose)                     // 250ms: fist acknowledged
         r.feed(7, ::spreadPalm)                   // 350ms: final open triggers Screenshot
         assertEquals(1, r.events.countOf<GestureEvent.Screenshot>())
+    }
+
+    /** G16-G19: open palm, then hold each folded pose ~1s; only the matching slot fires once. */
+    @Test fun openPalmThenFoldedFingersFireOpenAppSlots() {
+        val cases = listOf(
+            1 to ::foldedIndexOnly,
+            2 to ::foldedTwoFingers,
+            3 to ::foldedThreeFingers,
+            4 to ::foldedFourFingers
+        )
+        for ((slot, pose) in cases) {
+            val r = Replay()
+            r.feed(10, ::spreadPalm)              // 500ms: arm on the open palm
+            r.feed(20, pose)                      // 1s: folded pose confirmed and fired
+            val fired = r.events.filterIsInstance<GestureEvent.OpenApp>()
+            assertEquals(listOf(slot), fired.map { it.slot })
+        }
+    }
+
+    /** The open-app pipeline must stay dormant when all four switches are off. */
+    @Test fun openAppSequenceStaysDormantWhenSwitchesAreOff() {
+        val off = GestureFeatureConfig(
+            scroll = false,
+            openApp1 = false, openApp2 = false, openApp3 = false, openApp4 = false
+        )
+        val r = Replay(off)
+        r.feed(10, ::spreadPalm)
+        r.feed(20, ::foldedIndexOnly)
+        assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
     }
 
     @Test fun closedPalmWaveDownFiresOneSwipeAndReturnPathStaysSilent() {

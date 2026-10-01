@@ -10,7 +10,7 @@
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 下 13 个类，全部单层包结构
-- **测试**：`app/src/test/` 下 4 个测试类，共 48 个用例，当前全绿
+- **测试**：`app/src/test/` 下 4 个测试类，共 52 个用例，当前全绿
 
 ## 2. 核心架构
 
@@ -61,14 +61,16 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（28） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 1.5s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形锁屏、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停 |
-| 未实现/已移除（5） | G16/G17（保持 3 秒打开指定 App）、G23（张掌静止暂停识别）——仅枚举占位；**G18/G19 食指画圈音量已于 2026-10-01 彻底移除**（真机姿势冲突过高，检测管线、事件、开关、卡片、换绑全部删除，枚举保留占位进 NO_PIPELINE_CODES） |
+| 已实现（32） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、**G16-G19 张掌后收成 1/2/3/4 指→打开指定 App（2026-10-02 新增）**、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 1.5s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形锁屏、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停 |
+| 未实现/已移除（1） | G23（张掌静止暂停识别）——仅枚举占位。**G18/G19 食指画圈音量已于 2026-10-01 彻底移除**（真机姿势冲突过高）；G16-G19 枚举已于 2026-10-02 以"张掌后收指打开指定 App"重新启用 |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
 
-## 5. 动作目录（GestureAction，24 项）
+## 5. 动作目录（GestureAction，28 项）
 
-`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT`(滚动长截图，无默认绑定) / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
+`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT`(滚动长截图，无默认绑定) / `OPEN_APP_1..4`(打开应用一~四，G16-G19 默认绑定，目标 App 在校准页选择) / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
+
+**G16-G19 打开指定 App**（2026-10-02 新增）：张掌（五指张开，复用截图序列的 `screenshotPalmOpen` 判定）确认后收指到 1/2/3/4 指并保持约 0.6 秒，触发 `OpenApp(slot)`。四个独立功能开关 `open_app_1..4`（默认开）。张掌阶段不吞帧，G13 截图序列可并行进入；检测到目标收指姿势后独占（抑制光标/两指媒体等），触发后统一冷却。目标 App 包名存 `open_app_package_1..4`，校准页"打开指定应用"区即时配置；未配置时触发提示"未选择应用"。执行走 `getLaunchIntentForPackage` + `NEW_TASK`。
 
 音量动作实现：普通换绑动作仍由 `CameraProbeService.adjustVolume` 每次调整约 10%；G31/G32 两指保持会话约每 0.4 秒调整 5%，会话期间独占识别（不输出光标或其他手势），姿势改变或到达边界后结束并进入冷却（时长可配置，见下）。（G18/G19 食指画圈音量已移除。）
 
@@ -79,7 +81,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 1. **装机验收**（2026-10-01/02 真机：荣耀 ALP-AN00）：C 形张掌误触发已修复（收口收紧）；启动慢已做模型加载/相机打开并行化；G18/G19 画圈按真机反馈默认禁用（姿势冲突高）；冷却时长默认 1.5 秒并可在校准页拖动配置（0.6–4 秒，即时生效）——以上均经用户测试通过（2026-10-02）。首页两指并拢卡拆分为三张独立卡。剩余：G31/G32 持续音量独占态、G22 握拳 1.5 秒节奏、G33 双击、G29/G30 切歌、G14/G15 若有手感问题继续微调阈值。
 2. **真机阈值校准**：G14/G15（莲花/兰花 0.30 触碰阈值）、G24-G28、G29-G33 全部为合成初版阈值，按真机手感逐个微调，一次只改一个。
 3. ~~首页卡片动作标签是静态文案~~ **已解决**（2026-10-01）：卡片动作标签改为 `actionLabelOf(Gxx)` 实时读取 `GestureMappingManager.actionFor(code)`（含用户换绑），`onResume` 统一刷新；G01 光标固定不可换绑保持静态文案。
-4. G16/G17/G23 未开发（打开指定 App 需应用选择器 UI；G23 暂停识别是安全阀功能）。
+4. ~~G16/G17 未开发（打开指定 App 需应用选择器 UI）~~ **已实现**（2026-10-02）：G16-G19 张掌后收成 1-4 指打开指定 App，应用选择器已进入校准页；见 §5。剩余 **G23**（张掌静止暂停识别，安全阀功能）未开发。
 5. ~~`captureRollingScreenshot`（滚动长截图）已实现但未接入动作目录~~ **已接入**（2026-10-01）：新增动作 `ROLLING_SCREENSHOT`（滚动长截图），无默认绑定手势、已进入换绑选单；进度提示经悬浮反馈显示，需 Android 11+。
 6. G12/G20 双击点赞用固定屏幕坐标，换 App/布局即失效，考虑标注实验性或改为用户校准坐标。
 7. 保持授权引导仅有荣耀/华为方案，小米/OPPO/vivo 待补。

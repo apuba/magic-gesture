@@ -26,7 +26,12 @@ data class GestureFeatureConfig(
     val clawDrag: Boolean = true,
     val cShape: Boolean = true,
     val loveLock: Boolean = true,
-    val twoFingerMedia: Boolean = true
+    val twoFingerMedia: Boolean = true,
+    // G16-G19 open-app sequences: open palm, then fold to 1-4 fingers.
+    val openApp1: Boolean = true,
+    val openApp2: Boolean = true,
+    val openApp3: Boolean = true,
+    val openApp4: Boolean = true
 )
 
 object GesturePreferences {
@@ -66,6 +71,17 @@ object GesturePreferences {
             .apply()
     }
 
+    /** Package name of the app bound to an open-app slot (1..4); null when unbound. */
+    fun openAppPackage(context: Context, slot: Int): String? =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString("open_app_package_$slot", null)
+
+    fun saveOpenAppPackage(context: Context, slot: Int, packageName: String?) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().apply {
+            if (packageName == null) remove("open_app_package_$slot") else putString("open_app_package_$slot", packageName)
+        }.apply()
+    }
+
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val legacyScroll = prefs.getBoolean("feature_scroll", true)
@@ -92,7 +108,11 @@ object GesturePreferences {
             clawDrag = prefs.getBoolean("feature_claw_drag", true),
             cShape = prefs.getBoolean("feature_c_shape", true),
             loveLock = prefs.getBoolean("feature_love_lock", true),
-            twoFingerMedia = prefs.getBoolean("feature_two_finger_media", true)
+            twoFingerMedia = prefs.getBoolean("feature_two_finger_media", true),
+            openApp1 = prefs.getBoolean("feature_open_app_1", true),
+            openApp2 = prefs.getBoolean("feature_open_app_2", true),
+            openApp3 = prefs.getBoolean("feature_open_app_3", true),
+            openApp4 = prefs.getBoolean("feature_open_app_4", true)
         )
     }
 
@@ -157,6 +177,10 @@ object GesturePreferences {
             .putBoolean("feature_c_shape", features.cShape)
             .putBoolean("feature_love_lock", features.loveLock)
             .putBoolean("feature_two_finger_media", features.twoFingerMedia)
+            .putBoolean("feature_open_app_1", features.openApp1)
+            .putBoolean("feature_open_app_2", features.openApp2)
+            .putBoolean("feature_open_app_3", features.openApp3)
+            .putBoolean("feature_open_app_4", features.openApp4)
             .apply()
     }
 }

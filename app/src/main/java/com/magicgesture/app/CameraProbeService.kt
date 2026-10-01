@@ -69,8 +69,31 @@ class CameraProbeService : Service() {
         mediaKey = ::dispatchMediaKey,
         volumeAdjust = ::adjustVolume,
         // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
-        actionProgress = { message -> overlayIndicator.showFeedback(message) }
+        actionProgress = { message -> overlayIndicator.showFeedback(message) },
+        launchApp = ::launchAppForSlot
     )
+
+    /** Launches the app bound to an open-app slot; the package is read live from preferences. */
+    private fun launchAppForSlot(slot: Int, callback: (Boolean) -> Unit) {
+        val packageName = GesturePreferences.openAppPackage(this, slot)
+        if (packageName == null) {
+            callback(false)
+            return
+        }
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        if (intent == null) {
+            callback(false)
+            return
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(intent)
+            callback(true)
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "open app $packageName failed", e)
+            callback(false)
+        }
+    }
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()
     }
@@ -156,7 +179,8 @@ class CameraProbeService : Service() {
                                 GestureEvent.LotusRecents, GestureEvent.OrchidBack,
                                 GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
-                                GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold -> Unit // Migrated gestures use the mapping pipeline above.
+                                GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
+                                is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.
                                 is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                                 GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
