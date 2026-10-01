@@ -7,10 +7,16 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -322,24 +328,74 @@ class CalibrationActivity : Activity() {
         }
     }
 
-    /** Selects the target immediately after OPEN_APP is chosen, then saves both as one binding. */
+    /**
+     * Selects the target immediately after OPEN_APP is chosen, then saves both as one binding.
+     * A search box filters by app label or package name — launchable lists on a real phone run
+     * into the hundreds, and the plain single-choice list was unusable there.
+     */
     private fun showAppPicker(code: GestureCode, actionOverride: GestureAction?) {
         val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null)
             .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(intent, 0)
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         val current = GesturePreferences.openAppPackage(this, code)
-        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
-        val checked = apps.indexOfFirst { it.activityInfo.packageName == current }
-        AlertDialog.Builder(this)
-            .setTitle("${gestureNames.getValue(code)} · 选择要打开的应用")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                GesturePreferences.saveOpenAppPackage(this, code, apps[which].activityInfo.packageName)
-                GesturePreferences.setActionOverride(this, code, actionOverride)
-                mappingButtons[code]?.text = currentActionLabel(code)
-                Toast.makeText(this, "已绑定：${labels[which]}", Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
+        val list = ListView(this).apply { choiceMode = ListView.CHOICE_MODE_SINGLE }
+        var shown = apps
+        fun render(query: String) {
+            val q = query.trim().lowercase()
+            shown = if (q.isEmpty()) apps else apps.filter {
+                it.loadLabel(packageManager).toString().lowercase().contains(q) ||
+                    it.activityInfo.packageName.lowercase().contains(q)
             }
+            list.adapter = ArrayAdapter(
+                this,
+                android.R.layout.simple_list_item_single_choice,
+                shown.map { it.loadLabel(packageManager).toString() }
+            )
+            val index = shown.indexOfFirst { it.activityInfo.packageName == current }
+            if (index >= 0) {
+                list.setItemChecked(index, true)
+                list.setSelection(index)
+            }
+        }
+        render("")
+        val search = EditText(this).apply {
+            hint = "搜索应用名称或包名"
+            setSingleLine(true)
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    render(s?.toString().orEmpty())
+                }
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+        val empty = TextView(this).apply {
+            text = "没有匹配的应用"
+            gravity = Gravity.CENTER
+            setPadding(0, dp(20), 0, dp(20))
+            visibility = View.GONE
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(search)
+            addView(list, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(320)))
+            addView(empty)
+        }
+        list.emptyView = empty
+        lateinit var dialog: AlertDialog
+        list.setOnItemClickListener { _, _, position, _ ->
+            val resolved = shown[position]
+            GesturePreferences.saveOpenAppPackage(this, code, resolved.activityInfo.packageName)
+            GesturePreferences.setActionOverride(this, code, actionOverride)
+            mappingButtons[code]?.text = currentActionLabel(code)
+            Toast.makeText(this, "已绑定：${resolved.loadLabel(packageManager)}", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+        dialog = AlertDialog.Builder(this)
+            .setTitle("${gestureNames.getValue(code)} · 选择要打开的应用")
+            .setView(container)
             .setNegativeButton("取消", null)
             .show()
     }
