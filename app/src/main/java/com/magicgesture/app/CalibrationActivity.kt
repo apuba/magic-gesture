@@ -71,7 +71,12 @@ class CalibrationActivity : Activity() {
     private lateinit var feedbackSwitch: Switch
     private lateinit var cursorSwitch: Switch
     private lateinit var clickSwitch: Switch
-    private lateinit var scrollSwitch: Switch
+    private lateinit var indexVerticalScrollSwitch: Switch
+    private lateinit var palmVerticalScrollSwitch: Switch
+    private lateinit var palmLeftScrollSwitch: Switch
+    private lateinit var indexLeftScrollSwitch: Switch
+    private lateinit var palmRightScrollSwitch: Switch
+    private lateinit var indexRightScrollSwitch: Switch
     private lateinit var screenshotSwitch: Switch
     private lateinit var selfieSwitch: Switch
     private lateinit var likeSwitch: Switch
@@ -166,7 +171,12 @@ class CalibrationActivity : Activity() {
             })
             cursorSwitch = featureSwitch("食指光标", "显示并移动青色光标。", savedFeatures.cursor)
             clickSwitch = featureSwitch("食指弯曲点击", "只伸出食指稳定约 0.2 秒，弯曲后在 1 秒内重新伸直执行点击。", savedFeatures.click)
-            scrollSwitch = featureSwitch("页面滚动", "水平食指上下挑动、竖直食指左右轻挑，或将食指、中指、无名指和小指并拢后整只手四向挥动；拇指不限。", savedFeatures.scroll)
+            indexVerticalScrollSwitch = featureSwitch("食指上下挑", "伸出食指保持接近水平，上挑或下挑指尖。", savedFeatures.indexVerticalScroll)
+            palmVerticalScrollSwitch = featureSwitch("四指并拢上下挥", "四指并拢后整只手向上或向下挥动。", savedFeatures.palmVerticalScroll)
+            palmLeftScrollSwitch = featureSwitch("四指并拢左挥", "四指并拢后整只手向左挥动。", savedFeatures.palmLeftScroll)
+            indexLeftScrollSwitch = featureSwitch("竖直食指左挑", "只竖起食指，整只手向左轻挑。", savedFeatures.indexLeftScroll)
+            palmRightScrollSwitch = featureSwitch("四指并拢右挥", "四指并拢后整只手向右挥动。", savedFeatures.palmRightScroll)
+            indexRightScrollSwitch = featureSwitch("竖直食指右挑", "只竖起食指，整只手向右轻挑。", savedFeatures.indexRightScroll)
             screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面。", savedFeatures.selfie)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
@@ -181,7 +191,11 @@ class CalibrationActivity : Activity() {
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形锁屏", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", savedFeatures.loveLock)
             twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起，整只手左挥为上一曲、右挥为下一曲、上挥增大音量、下挥降低音量；两指快速弯下再伸直、连点两下为播放/暂停。初版阈值，待真机校准。", savedFeatures.twoFingerMedia)
-            listOf(cursorSwitch, clickSwitch, scrollSwitch, screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch, cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
+            listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
+                palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
+                screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch,
+                lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
+                cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
                 addView(it, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
@@ -211,7 +225,15 @@ class CalibrationActivity : Activity() {
                         GestureFeatureConfig(
                             cursor = cursorSwitch.isChecked,
                             click = clickSwitch.isChecked,
-                            scroll = scrollSwitch.isChecked,
+                            scroll = indexVerticalScrollSwitch.isChecked && palmVerticalScrollSwitch.isChecked &&
+                                palmLeftScrollSwitch.isChecked && indexLeftScrollSwitch.isChecked &&
+                                palmRightScrollSwitch.isChecked && indexRightScrollSwitch.isChecked,
+                            indexVerticalScroll = indexVerticalScrollSwitch.isChecked,
+                            palmVerticalScroll = palmVerticalScrollSwitch.isChecked,
+                            palmLeftScroll = palmLeftScrollSwitch.isChecked,
+                            indexLeftScroll = indexLeftScrollSwitch.isChecked,
+                            palmRightScroll = palmRightScrollSwitch.isChecked,
+                            indexRightScroll = indexRightScrollSwitch.isChecked,
                             screenshot = screenshotSwitch.isChecked,
                             selfie = selfieSwitch.isChecked,
                             like = likeSwitch.isChecked,

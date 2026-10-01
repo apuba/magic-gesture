@@ -47,15 +47,16 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     }
     @Synchronized fun resume() = engine.resume()
     @Synchronized fun pause() = engine.stop()
+    @Synchronized fun resetTracking() { engine.stop(); engine.resume() }
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
     fun captureNextFrame(callback: (Bitmap) -> Unit) { pendingFrameCapture = callback }
-    fun submit(image: Image, sensorRotation: Int) {
+    fun submit(image: Image, frameRotation: Int) {
         if (closed.get()) return
         val now = SystemClock.uptimeMillis()
         if (now - lastSentAt < 50) return // cap expensive conversion at ~20 fps
         lastSentAt = now
         val bitmap = yuvToBitmap(image)
-        val matrix = Matrix().apply { postRotate(sensorRotation.toFloat()); postScale(-1f, 1f) }
+        val matrix = Matrix().apply { postRotate(frameRotation.toFloat()); postScale(-1f, 1f) }
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         if (rotated !== bitmap) bitmap.recycle()
         pendingFrameCapture?.let { capture ->

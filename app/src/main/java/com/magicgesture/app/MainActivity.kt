@@ -135,12 +135,12 @@ class MainActivity : Activity() {
 
         content.addView(gestureCard(R.drawable.gesture_point, "食指移动", "控制光标", "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", "确认点击", "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", "上下滚动页面", "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", "上下滚动页面", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", "页面向左滑动", "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "scroll", features.scroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", "页面向右滑动", "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "scroll", features.scroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", "上下滚动页面", "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", "上下滚动页面", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", "页面向左滑动", "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", "页面向左滑动", "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", "页面向右滑动", "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -301,7 +301,12 @@ class MainActivity : Activity() {
     private fun featureName(feature: String) = when (feature) {
         "cursor" -> "食指光标"
         "click" -> "食指弯曲点击"
-        "scroll" -> "页面滚动"
+        "index_vertical_scroll" -> "食指上下挑"
+        "palm_vertical_scroll" -> "四指上下挥"
+        "palm_left_scroll" -> "四指左挥"
+        "index_left_scroll" -> "食指左挑"
+        "palm_right_scroll" -> "四指右挥"
+        "index_right_scroll" -> "食指右挑"
         "screenshot" -> "截图"
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
@@ -324,7 +329,12 @@ class MainActivity : Activity() {
         val values = mapOf(
             "cursor" to features.cursor,
             "click" to features.click,
-            "scroll" to features.scroll,
+            "index_vertical_scroll" to features.indexVerticalScroll,
+            "palm_vertical_scroll" to features.palmVerticalScroll,
+            "palm_left_scroll" to features.palmLeftScroll,
+            "index_left_scroll" to features.indexLeftScroll,
+            "palm_right_scroll" to features.palmRightScroll,
+            "index_right_scroll" to features.indexRightScroll,
             "screenshot" to features.screenshot,
             "selfie" to features.selfie,
             "like" to features.like,

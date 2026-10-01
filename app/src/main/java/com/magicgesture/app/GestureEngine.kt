@@ -611,17 +611,21 @@ class GestureEngine(
         now: Long,
         output: MutableList<GestureEvent>
     ): Boolean {
-        if (!features.scroll && !features.screenshot) return false
+        val anyDirectional = features.indexVerticalScroll || features.palmVerticalScroll ||
+            features.palmLeftScroll || features.indexLeftScroll ||
+            features.palmRightScroll || features.indexRightScroll
+        if (!anyDirectional && !features.screenshot) return false
         when (screenshotSequence) {
             ScreenshotSequence.IDLE -> {
-                if (features.scroll && indexOnly && kotlin.math.abs(indexAngleDegrees) <= 35f) {
+                if (features.indexVerticalScroll && indexOnly && kotlin.math.abs(indexAngleDegrees) <= 35f) {
                     screenshotSequence = ScreenshotSequence.INDEX_FINGER_SCROLL
                     screenshotStageAt = now
                     indexScrollStartAngle = indexAngleDegrees
                     output += GestureEvent.Feedback("水平食指已识别：请上挑或下挑")
                     return true
                 }
-                if (indexOnly && kotlin.math.abs(indexAngleDegrees) >= 65f && features.scroll) {
+                if (indexOnly && kotlin.math.abs(indexAngleDegrees) >= 65f &&
+                    (features.indexLeftScroll || features.indexRightScroll)) {
                     screenshotSequence = ScreenshotSequence.INDEX_HORIZONTAL_SWIPE
                     screenshotStageAt = now
                     openPalmStart = palm
@@ -636,7 +640,7 @@ class GestureEngine(
                     output += GestureEvent.Feedback("五指张开已识别：请保持")
                     return true
                 }
-                if (directionOpen && features.scroll) {
+                if (directionOpen && (features.palmVerticalScroll || features.palmLeftScroll || features.palmRightScroll)) {
                     screenshotSequence = ScreenshotSequence.OPEN_CANDIDATE
                     screenshotStageAt = now
                     openPalmStart = palm
@@ -675,27 +679,27 @@ class GestureEngine(
                             else -> PalmAxis.NONE
                         }
                     }
-                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.scroll && dx <= -.075f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmLeftScroll && dx <= -.075f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         backCooldownUntil = now + localRepeatGuardMs
                         return true
                     }
-                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.scroll && dx >= .075f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmRightScroll && dx >= .075f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         backCooldownUntil = now + localRepeatGuardMs
                         return true
                     }
-                    if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy <= -.065f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.VERTICAL && features.palmVerticalScroll && dy <= -.065f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         return true
                     }
-                    if (openPalmAxis == PalmAxis.VERTICAL && features.scroll && dy >= .055f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.VERTICAL && features.palmVerticalScroll && dy >= .055f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
@@ -719,13 +723,13 @@ class GestureEngine(
                     val dx = palm.x - start.x
                     val dy = palm.y - start.y
                     val elapsed = now - screenshotStageAt
-                    if (features.scroll && dx <= -.05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
+                    if (features.indexLeftScroll && dx <= -.05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         return true
                     }
-                    if (features.scroll && dx >= .05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
+                    if (features.indexRightScroll && dx >= .05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null

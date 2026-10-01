@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.Bitmap
 import android.hardware.camera2.*
+import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.media.MediaActionSound
 import android.media.ToneGenerator
@@ -17,6 +18,7 @@ import android.media.AudioManager
 import android.provider.MediaStore
 import android.os.*
 import android.util.Log
+import android.view.Display
 import android.view.Surface
 import android.view.KeyEvent
 import java.text.SimpleDateFormat
@@ -44,6 +46,7 @@ class CameraProbeService : Service() {
     private var stopped = false
     private var pipeline: HandPipeline? = null
     private var sensorRotation = 0
+    private var lastFrameRotation = Int.MIN_VALUE
     private var controlMode = false
     @Volatile private var selfieInProgress = false
     private var featureConfig = GestureFeatureConfig()
@@ -179,8 +182,18 @@ class CameraProbeService : Service() {
             val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
                 setOnImageAvailableListener({ r -> r.acquireLatestImage()?.use { image ->
-                    if (controlMode && !globalCooldown.isActive()) try { pipeline?.submit(image, sensorRotation) }
-                    catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
+                    if (controlMode && !globalCooldown.isActive()) try {
+                        val frameRotation = CameraFrameOrientation.relativeRotationDegrees(
+                            sensorOrientationDegrees = sensorRotation,
+                            displayRotationDegrees = currentDisplayRotationDegrees(),
+                            frontFacing = true
+                        )
+                        if (frameRotation != lastFrameRotation) {
+                            lastFrameRotation = frameRotation
+                            pipeline?.resetTracking()
+                        }
+                        pipeline?.submit(image, frameRotation)
+                    } catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
                 } }, handler)
             }
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
@@ -205,6 +218,15 @@ class CameraProbeService : Service() {
         } catch (e: Exception) {
             cameraOpening = false
             fail("相机启动失败：${e.javaClass.simpleName}")
+        }
+    }
+    private fun currentDisplayRotationDegrees(): Int {
+        val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        return when (displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_0) {
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
         }
     }
     private fun configure(device: CameraDevice) {

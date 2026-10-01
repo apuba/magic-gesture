@@ -276,8 +276,12 @@ class GestureFeatureGate {
     fun allows(mapping: GestureMapping, features: GestureFeatureConfig): Boolean = when (mapping.code) {
         GestureCode.G01 -> features.cursor
         GestureCode.G02 -> features.click
-        GestureCode.G03, GestureCode.G04, GestureCode.G05, GestureCode.G06,
-        GestureCode.G07, GestureCode.G08, GestureCode.G09, GestureCode.G10 -> features.scroll
+        GestureCode.G03, GestureCode.G04 -> features.indexVerticalScroll
+        GestureCode.G05, GestureCode.G06 -> features.palmVerticalScroll
+        GestureCode.G07 -> features.palmLeftScroll
+        GestureCode.G08 -> features.palmRightScroll
+        GestureCode.G09 -> features.indexLeftScroll
+        GestureCode.G10 -> features.indexRightScroll
         GestureCode.G11 -> features.selfie
         GestureCode.G12 -> features.like
         GestureCode.G13 -> features.screenshot

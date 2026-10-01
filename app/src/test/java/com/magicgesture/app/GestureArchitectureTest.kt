@@ -105,19 +105,19 @@ class GestureArchitectureTest {
         }
     }
 
-    @Test fun directionFeatureGatesUseExistingUserSettings() {
+    @Test fun directionFeatureGatesAreIndependentPerHomeCard() {
         val scroll = requireNotNull(mappings.resolve(GestureEvent.Swipe(true, GestureEvent.MotionSource.PALM))).mapping
         val palmLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
         val indexLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
         val indexRightScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
-        assertFalse(gate.allows(scroll, GestureFeatureConfig(scroll = false)))
-        // Every horizontal wave scrolls, so they all follow the scroll switch.
-        assertFalse(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = false)))
-        assertTrue(gate.allows(palmLeftScroll, GestureFeatureConfig(scroll = true)))
-        assertFalse(gate.allows(indexLeftScroll, GestureFeatureConfig(scroll = false)))
-        assertFalse(gate.allows(indexRightScroll, GestureFeatureConfig(scroll = false)))
-        assertTrue(gate.allows(scroll, GestureFeatureConfig(scroll = true)))
+        assertFalse(gate.allows(scroll, GestureFeatureConfig(palmVerticalScroll = false)))
+        assertTrue(gate.allows(scroll, GestureFeatureConfig(palmVerticalScroll = true)))
+        assertFalse(gate.allows(palmLeftScroll, GestureFeatureConfig(palmLeftScroll = false)))
+        assertTrue(gate.allows(palmLeftScroll, GestureFeatureConfig(palmLeftScroll = true)))
+        assertFalse(gate.allows(indexLeftScroll, GestureFeatureConfig(indexLeftScroll = false)))
+        assertFalse(gate.allows(indexRightScroll, GestureFeatureConfig(indexRightScroll = false)))
+        assertTrue(gate.allows(indexLeftScroll, GestureFeatureConfig(indexLeftScroll = true, indexRightScroll = false)))
     }
 
     @Test fun allHorizontalWavesScrollLeftAndRight() {

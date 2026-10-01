@@ -5,7 +5,14 @@ import android.content.Context
 data class GestureFeatureConfig(
     val cursor: Boolean = true,
     val click: Boolean = true,
+    /** Legacy aggregate value; retained so existing callers/settings migrate safely. */
     val scroll: Boolean = true,
+    val indexVerticalScroll: Boolean = scroll,
+    val palmVerticalScroll: Boolean = scroll,
+    val palmLeftScroll: Boolean = scroll,
+    val indexLeftScroll: Boolean = scroll,
+    val palmRightScroll: Boolean = scroll,
+    val indexRightScroll: Boolean = scroll,
     val screenshot: Boolean = true,
     val selfie: Boolean = true,
     val like: Boolean = true,
@@ -45,10 +52,17 @@ object GesturePreferences {
 
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val legacyScroll = prefs.getBoolean("feature_scroll", true)
         return GestureFeatureConfig(
             cursor = prefs.getBoolean("feature_cursor", true),
             click = prefs.getBoolean("feature_click", true),
-            scroll = prefs.getBoolean("feature_scroll", true),
+            scroll = legacyScroll,
+            indexVerticalScroll = prefs.getBoolean("feature_index_vertical_scroll", legacyScroll),
+            palmVerticalScroll = prefs.getBoolean("feature_palm_vertical_scroll", legacyScroll),
+            palmLeftScroll = prefs.getBoolean("feature_palm_left_scroll", legacyScroll),
+            indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", legacyScroll),
+            palmRightScroll = prefs.getBoolean("feature_palm_right_scroll", legacyScroll),
+            indexRightScroll = prefs.getBoolean("feature_index_right_scroll", legacyScroll),
             screenshot = prefs.getBoolean("feature_screenshot", true),
             selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
             like = prefs.getBoolean("feature_like", true),
@@ -107,6 +121,12 @@ object GesturePreferences {
             .putBoolean("feature_cursor", features.cursor)
             .putBoolean("feature_click", features.click)
             .putBoolean("feature_scroll", features.scroll)
+            .putBoolean("feature_index_vertical_scroll", features.indexVerticalScroll)
+            .putBoolean("feature_palm_vertical_scroll", features.palmVerticalScroll)
+            .putBoolean("feature_palm_left_scroll", features.palmLeftScroll)
+            .putBoolean("feature_index_left_scroll", features.indexLeftScroll)
+            .putBoolean("feature_palm_right_scroll", features.palmRightScroll)
+            .putBoolean("feature_index_right_scroll", features.indexRightScroll)
             .putBoolean("feature_screenshot", features.screenshot)
             .putBoolean("feature_selfie", features.selfie)
             .putBoolean("feature_like", features.like)
