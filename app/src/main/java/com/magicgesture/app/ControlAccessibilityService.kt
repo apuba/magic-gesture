@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -29,6 +30,13 @@ import kotlin.math.abs
 class ControlAccessibilityService : AccessibilityService() {
     companion object { @Volatile var active: ControlAccessibilityService? = null; private set }
     override fun onServiceConnected() { super.onServiceConnected(); active = this }
+    override fun onRebind(intent: Intent?) { super.onRebind(intent); active = this }
+    override fun onUnbind(intent: Intent?): Boolean {
+        active = null
+        hideCursor()
+        busy = false
+        return true
+    }
     private var cursor: View? = null
     private var cursorX = .5f
     private var cursorY = .5f

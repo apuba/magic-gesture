@@ -1,6 +1,7 @@
 package com.magicgesture.app
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -14,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -135,11 +137,11 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢或竖直食指向右", "页面向右滑动", "食指、中指、无名指和小指并拢后向右挥，拇指不限；也可只竖起食指后整只手右移。", "→", "home", features.home), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", "自拍", "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", "双击点赞视频", "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", "双击点赞视频", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", "确认当前光标", "拇指与食指相触，其余三指伸直并保持约 0.6 秒。需要先启用并移动光标。", "OK", "ok", features.ok), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", "播放 / 暂停", "四指收拢形成握拳并稳定保持约 0.6 秒，控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "莲花指", "最近任务", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "Ⅱ", "lotus_recents", features.lotusRecents), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_ok, "兰花指", "返回", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "←", "orchid_back", features.orchidBack), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", "最近任务", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "Ⅱ", "lotus_recents", features.lotusRecents), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", "返回", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "←", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(screenshotCard(features.screenshot), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -392,8 +394,7 @@ class MainActivity : Activity() {
         }
         if (waitingForAccessibilityPermission) {
             waitingForAccessibilityPermission = false
-            if (isAccessibilityServiceEnabled()) startProbe()
-            else status.text = "●  无障碍服务尚未开启，无法启动手势控制"
+            waitForAccessibilityAuthorization()
         }
         refreshFeatureSwitches()
         refreshControlButton()
@@ -450,9 +451,31 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun waitForAccessibilityAuthorization(attempt: Int = 0) {
+        if (isAccessibilityServiceEnabled()) {
+            status.text = if (ControlAccessibilityService.active != null) {
+                "●  无障碍服务已连接，正在启动手势控制"
+            } else {
+                "●  无障碍授权已保留，正在等待系统连接服务"
+            }
+            startProbe()
+            return
+        }
+        if (attempt < 5) {
+            status.postDelayed({ waitForAccessibilityAuthorization(attempt + 1) }, 300L)
+        } else {
+            status.text = "●  无障碍服务尚未开启，无法启动手势控制"
+        }
+    }
+
     private fun isAccessibilityServiceEnabled(): Boolean {
-        if (Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) != 1) return false
         val expected = ComponentName(this, ControlAccessibilityService::class.java)
+        val manager = getSystemService(AccessibilityManager::class.java)
+        val enabledByManager = manager
+            .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { ComponentName(it.resolveInfo.serviceInfo.packageName, it.resolveInfo.serviceInfo.name) == expected }
+        if (enabledByManager) return true
+        if (Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) != 1) return false
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return enabled.split(':').any { ComponentName.unflattenFromString(it) == expected }
     }
