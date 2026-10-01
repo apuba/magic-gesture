@@ -57,11 +57,33 @@ class FavoriteButtonController(
 
         val profile = GesturePreferences.favoriteProfile(context, packageName, portrait)
         if (profile != null) {
-            service.tapNormalized(profile.normalizedX, profile.normalizedY) { finish(it) }
+            tap(profile.normalizedX, profile.normalizedY) { finish(it) }
         } else {
             showFirstUsePrompt()
         }
     }
+
+    /**
+     * Saved coordinates are relative to the calibration overlay, which covers the whole display
+     * (status and navigation bars included). The tap must therefore use the same full-display
+     * pixel space — normalizing with the app-usable metrics makes every click land too high.
+     */
+    private fun tap(normalizedX: Float, normalizedY: Float, callback: (Boolean) -> Unit) {
+        val width = displaySize().first
+        val height = displaySize().second
+        accessibilityService()?.tapPixels(normalizedX * width, normalizedY * height, callback) ?: callback(false)
+    }
+
+    /** Full display size in pixels; matches what the calibration overlay actually covers. */
+    private fun displaySize(): Pair<Int, Int> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = window.maximumWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            val metrics = android.util.DisplayMetrics().also { window.defaultDisplay.getRealMetrics(it) }
+            metrics.widthPixels to metrics.heightPixels
+        }
 
     fun dismiss() = main.post { finish(false) }
 
@@ -116,11 +138,12 @@ class FavoriteButtonController(
         replaceOverlay(root)
     }
 
+    /** The crosshair stays on screen here so the user can still see what is about to be clicked. */
     private fun showTestWarning() {
-        replaceOverlay(fullScreenRoot().apply {
+        replaceOverlay(overlayRoot(showMarker = true).apply {
             addView(card().apply {
                 addView(heading("确认测试点击"))
-                addView(body("测试会真实点击一次收藏按钮，可能会收藏或取消收藏当前内容。"))
+                addView(body("测试会真实点击准星位置一次，可能会收藏或取消收藏当前内容。"))
                 addView(buttonRow(
                     button("返回调整") { showCalibration() },
                     button("继续测试", primary = true) { performTestClick() }
@@ -133,14 +156,15 @@ class FavoriteButtonController(
         removeOverlay()
         main.postDelayed({
             if (!sameTargetStillForeground()) { finish(false); return@postDelayed }
-            accessibilityService()?.tapNormalized(selectedX, selectedY) { success ->
+            tap(selectedX, selectedY) { success ->
                 if (success) main.postDelayed({ showTestResult() }, 350L) else finish(false)
-            } ?: finish(false)
+            }
         }, 180L)
     }
 
+    /** Keeps showing the tested crosshair so "位置不准" can be judged against the real button. */
     private fun showTestResult() {
-        replaceOverlay(fullScreenRoot().apply {
+        replaceOverlay(overlayRoot(showMarker = true).apply {
             addView(card().apply {
                 addView(heading("是否成功点击收藏按钮？"))
                 addView(body("只有确认位置正确后才会保存。以后在 $targetLabel 中触发收藏手势会直接点击此位置。"))
@@ -215,7 +239,9 @@ class FavoriteButtonController(
         WindowManager.LayoutParams.MATCH_PARENT,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        // FLAG_LAYOUT_NO_LIMITS lets the layer cover the status and navigation bar areas too, so
+        // its measured size equals the full display the saved coordinates are normalized against.
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT
     ).apply { gravity = Gravity.TOP or Gravity.START }
 
@@ -223,6 +249,17 @@ class FavoriteButtonController(
         setBackgroundColor(color)
         isClickable = true
     }
+
+    /** Same root, optionally keeping the selected crosshair visible behind the card. */
+    private fun overlayRoot(color: Int = Color.argb(105, 15, 23, 42), showMarker: Boolean) =
+        fullScreenRoot(color).apply {
+            if (showMarker) {
+                addView(CrosshairView(context).apply {
+                    normalizedX = selectedX
+                    normalizedY = selectedY
+                }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            }
+        }
 
     private fun card() = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL

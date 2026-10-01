@@ -16,6 +16,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -63,6 +64,33 @@ class ControlAccessibilityService : AccessibilityService() {
         }
         dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
     }
+
+    /**
+     * Taps raw display pixels in the full-display coordinate space (system bars included).
+     * The favorite calibration overlay covers the whole display, so its positions must never be
+     * scaled by [android.content.res.Resources.getSystem] style app-usable metrics: those drop
+     * the status and navigation bars and shifted every saved favorite position upwards.
+     */
+    fun tapPixels(xPx: Float, yPx: Float, callback: (Boolean) -> Unit) = main.post {
+        if (busy) { callback(false); return@post }
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val (width, height) = realDisplaySize(wm)
+        val path = Path().apply {
+            moveTo(xPx.coerceIn(0f, width.toFloat()), yPx.coerceIn(0f, height.toFloat()))
+        }
+        dispatch(path, 70, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+    }
+
+    /** Largest bounds an app window can occupy — the full display including system bar areas. */
+    private fun realDisplaySize(wm: WindowManager): Pair<Int, Int> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.maximumWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            val metrics = DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+            metrics.widthPixels to metrics.heightPixels
+        }
 
     fun render(x: Float, y: Float) = main.post {
         cursorX = x.coerceIn(0f, 1f)
