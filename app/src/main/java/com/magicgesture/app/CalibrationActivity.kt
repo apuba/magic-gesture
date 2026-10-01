@@ -33,8 +33,6 @@ class CalibrationActivity : Activity() {
         GestureCode.G13 to "张掌→握拳→张掌",
         GestureCode.G14 to "莲花指",
         GestureCode.G15 to "兰花指",
-        GestureCode.G18 to "食指顺时针画圈",
-        GestureCode.G19 to "食指逆时针画圈",
         GestureCode.G20 to "大拇指",
         GestureCode.G21 to "OK 手势",
         GestureCode.G22 to "握拳",
@@ -80,8 +78,6 @@ class CalibrationActivity : Activity() {
     private lateinit var indexLeftScrollSwitch: Switch
     private lateinit var palmRightScrollSwitch: Switch
     private lateinit var indexRightScrollSwitch: Switch
-    private lateinit var clockwiseCircleVolumeSwitch: Switch
-    private lateinit var counterClockwiseCircleVolumeSwitch: Switch
     private lateinit var screenshotSwitch: Switch
     private lateinit var selfieSwitch: Switch
     private lateinit var likeSwitch: Switch
@@ -182,8 +178,6 @@ class CalibrationActivity : Activity() {
             indexLeftScrollSwitch = featureSwitch("竖直食指左挑", "只竖起食指，整只手向左轻挑。", savedFeatures.indexLeftScroll)
             palmRightScrollSwitch = featureSwitch("四指并拢右挥", "四指并拢后整只手向右挥动。", savedFeatures.palmRightScroll)
             indexRightScrollSwitch = featureSwitch("竖直食指右挑", "只竖起食指，整只手向右轻挑。", savedFeatures.indexRightScroll)
-            clockwiseCircleVolumeSwitch = featureSwitch("食指顺时针画圈", "保持手掌相对稳定，用食指指尖连续顺时针画圈增加音量。", savedFeatures.clockwiseCircleVolume)
-            counterClockwiseCircleVolumeSwitch = featureSwitch("食指逆时针画圈", "保持手掌相对稳定，用食指指尖连续逆时针画圈降低音量。", savedFeatures.counterClockwiseCircleVolume)
             screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面。", savedFeatures.selfie)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
@@ -200,7 +194,6 @@ class CalibrationActivity : Activity() {
             twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起：左右挥切歌；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
             listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
                 palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
-                clockwiseCircleVolumeSwitch, counterClockwiseCircleVolumeSwitch,
                 screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch,
                 lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
                 cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch).forEach {
@@ -242,8 +235,6 @@ class CalibrationActivity : Activity() {
                             indexLeftScroll = indexLeftScrollSwitch.isChecked,
                             palmRightScroll = palmRightScrollSwitch.isChecked,
                             indexRightScroll = indexRightScrollSwitch.isChecked,
-                            clockwiseCircleVolume = clockwiseCircleVolumeSwitch.isChecked,
-                            counterClockwiseCircleVolume = counterClockwiseCircleVolumeSwitch.isChecked,
                             screenshot = screenshotSwitch.isChecked,
                             selfie = selfieSwitch.isChecked,
                             like = likeSwitch.isChecked,

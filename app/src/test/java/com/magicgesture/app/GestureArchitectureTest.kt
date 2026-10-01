@@ -162,12 +162,13 @@ class GestureArchitectureTest {
         assertTrue(manager.isRemappable(GestureCode.G22))
         // G26 is unbound by default but its pipeline exists, so it stays bindable.
         assertTrue(manager.isRemappable(GestureCode.G26))
-        // G01 is the continuous cursor; G16/G17/G23 have no pipeline yet.
+        // G01 is the continuous cursor; G16/G17/G19/G18/G23 have no pipeline (G18/G19 circle
+        // volume was removed on 2026-10-01 after real-device pose-conflict feedback).
         assertFalse(manager.isRemappable(GestureCode.G01))
         assertFalse(manager.isRemappable(GestureCode.G16))
         assertFalse(manager.isRemappable(GestureCode.G17))
-        assertTrue(manager.isRemappable(GestureCode.G18))
-        assertTrue(manager.isRemappable(GestureCode.G19))
+        assertFalse(manager.isRemappable(GestureCode.G18))
+        assertFalse(manager.isRemappable(GestureCode.G19))
         assertFalse(manager.isRemappable(GestureCode.G23))
     }
 

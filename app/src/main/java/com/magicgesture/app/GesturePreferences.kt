@@ -13,10 +13,6 @@ data class GestureFeatureConfig(
     val indexLeftScroll: Boolean = scroll,
     val palmRightScroll: Boolean = scroll,
     val indexRightScroll: Boolean = scroll,
-    // Circle-volume is disabled by default: on real devices the circling pose overlaps too much
-    // with everyday index-finger gestures, so it only runs after the user opts in.
-    val clockwiseCircleVolume: Boolean = false,
-    val counterClockwiseCircleVolume: Boolean = false,
     val screenshot: Boolean = true,
     val selfie: Boolean = true,
     val like: Boolean = true,
@@ -67,8 +63,6 @@ object GesturePreferences {
             indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", legacyScroll),
             palmRightScroll = prefs.getBoolean("feature_palm_right_scroll", legacyScroll),
             indexRightScroll = prefs.getBoolean("feature_index_right_scroll", legacyScroll),
-            clockwiseCircleVolume = prefs.getBoolean("feature_clockwise_circle_volume", false),
-            counterClockwiseCircleVolume = prefs.getBoolean("feature_counter_clockwise_circle_volume", false),
             screenshot = prefs.getBoolean("feature_screenshot", true),
             selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
             like = prefs.getBoolean("feature_like", true),
@@ -133,8 +127,6 @@ object GesturePreferences {
             .putBoolean("feature_index_left_scroll", features.indexLeftScroll)
             .putBoolean("feature_palm_right_scroll", features.palmRightScroll)
             .putBoolean("feature_index_right_scroll", features.indexRightScroll)
-            .putBoolean("feature_clockwise_circle_volume", features.clockwiseCircleVolume)
-            .putBoolean("feature_counter_clockwise_circle_volume", features.counterClockwiseCircleVolume)
             .putBoolean("feature_screenshot", features.screenshot)
             .putBoolean("feature_selfie", features.selfie)
             .putBoolean("feature_like", features.like)

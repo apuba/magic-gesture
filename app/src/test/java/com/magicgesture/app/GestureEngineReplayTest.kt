@@ -184,15 +184,6 @@ class GestureEngineReplayTest {
         .withLandmark(20, Point(.63f, .49f))
         .withLandmark(4, Point(.35f, .55f))
 
-    private fun indexCirclePose(step: Int, clockwise: Boolean): List<Point> {
-        val direction = if (clockwise) 1f else -1f
-        val angle = direction * (Math.PI * 2.0 * step / 24.0)
-        return pointingIndex().withLandmark(
-            8,
-            Point(.40f + .065f * kotlin.math.cos(angle).toFloat(), .35f + .065f * kotlin.math.sin(angle).toFloat())
-        )
-    }
-
     // ---------------------------------------------------------------- replay driver
 
     private class Replay(features: GestureFeatureConfig = GestureFeatureConfig()) {
@@ -492,32 +483,5 @@ class GestureEngineReplayTest {
         r.feed(14, ::noisyCShapePose)
         assertEquals(1, r.events.countOf<GestureEvent.CShape>())
         assertEquals(0, r.events.countOf<GestureEvent.ClawDrag>())
-    }
-
-    @Test fun clockwiseAndCounterClockwiseIndexCirclesStartContinuousVolumeSessions() {
-        val circleVolumeOn = GestureFeatureConfig(scroll = false, clockwiseCircleVolume = true, counterClockwiseCircleVolume = true)
-        val clockwise = Replay(circleVolumeOn)
-        clockwise.feedPoses((0..36).map { indexCirclePose(it % 24, true) })
-        clockwise.feed(1, ::fistPose)
-        val up = clockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
-        assertTrue(up.any { it.raise && it.phase == GestureEvent.VolumeHoldPhase.START })
-        assertTrue(up.any { it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
-        assertEquals(GestureEvent.VolumeHoldPhase.END, up.last().phase)
-
-        val counterClockwise = Replay(circleVolumeOn)
-        counterClockwise.feedPoses((0..36).map { indexCirclePose(it % 24, false) })
-        counterClockwise.feed(1, ::fistPose)
-        val down = counterClockwise.events.filterIsInstance<GestureEvent.CircleVolume>()
-        assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.START })
-        assertTrue(down.any { !it.raise && it.phase == GestureEvent.VolumeHoldPhase.TICK })
-        assertEquals(GestureEvent.VolumeHoldPhase.END, down.last().phase)
-    }
-
-    /** Circle volume ships disabled (real-device pose conflicts); the pipeline must stay dormant. */
-    @Test fun indexCirclesAreIgnoredWhenCircleVolumeSwitchesAreOff() {
-        val off = Replay(GestureFeatureConfig(scroll = false))
-        off.feedPoses((0..36).map { indexCirclePose(it % 24, true) })
-        off.feed(1, ::fistPose)
-        assertEquals(0, off.events.countOf<GestureEvent.CircleVolume>())
     }
 }

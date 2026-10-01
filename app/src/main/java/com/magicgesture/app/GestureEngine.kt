@@ -33,7 +33,6 @@ sealed interface GestureEvent {
     data class TwoFingerSwipe(val direction: TwoFingerDirection) : GestureEvent
     enum class VolumeHoldPhase { START, TICK, END }
     data class TwoFingerVolumeHold(val raise: Boolean, val phase: VolumeHoldPhase) : GestureEvent
-    data class CircleVolume(val raise: Boolean, val phase: VolumeHoldPhase) : GestureEvent
     /** Both fingers bend and re-extend twice in a row while in the two-finger pose. */
     data object TwoFingerDoubleTap : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
@@ -49,7 +48,6 @@ class GestureEngine(
     private enum class ClawDragState { READY, CONFIRMING, DRAGGING }
     private enum class TwoFingerSwipeState { IDLE, TRACKING, WAIT_RELEASE, VOLUME_UP, VOLUME_DOWN }
     private enum class TwoFingerTapState { IDLE, HELD, BENT_ONCE, POSED_SECOND, BENT_TWICE, FIRED_WAIT }
-    private enum class CircleState { IDLE, TRACKING, ACTIVE_UP, ACTIVE_DOWN, WAIT_RELEASE }
     private enum class ScreenshotSequence {
         IDLE, OPEN_CANDIDATE, WAIT_FIST, FIST_HOLD, INDEX_FINGER_SCROLL, INDEX_HORIZONTAL_SWIPE,
         WAIT_FINAL_OPEN, WAIT_RELEASE, WAIT_SCREENSHOT_RELEASE
@@ -102,15 +100,6 @@ class GestureEngine(
     private var twoFingerTapPoseAt = 0L
     private var twoFingerTapBentAt = 0L
     private var twoFingerTapFirstCycleAt = 0L
-    private var circleState = CircleState.IDLE
-    private val circlePath = mutableListOf<Point>()
-    private var circleStartedAt = 0L
-    private var circleLastMotionAt = 0L
-    private var circleCenter: Point? = null
-    private var circleLastAngle = 0f
-    private var circleAccumulatedAngle = 0f
-    private var circleLastTickAt = 0L
-    private var circleReleaseRequired = false
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
@@ -127,10 +116,6 @@ class GestureEngine(
             TwoFingerSwipeState.VOLUME_UP -> GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.END)
             TwoFingerSwipeState.VOLUME_DOWN -> GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.END)
             else -> null
-        } ?: when (circleState) {
-            CircleState.ACTIVE_UP -> GestureEvent.CircleVolume(true, GestureEvent.VolumeHoldPhase.END)
-            CircleState.ACTIVE_DOWN -> GestureEvent.CircleVolume(false, GestureEvent.VolumeHoldPhase.END)
-            else -> null
         }
         resetTransient()
         smoothed = null
@@ -141,11 +126,6 @@ class GestureEngine(
         twoFingerStart = null
         lastVolumeTickAt = 0L
         twoFingerReleaseRequired = waitForRelease
-        circleState = if (waitForRelease) CircleState.WAIT_RELEASE else CircleState.IDLE
-        circlePath.clear()
-        circleCenter = null
-        circleAccumulatedAngle = 0f
-        circleReleaseRequired = waitForRelease
     }
     @Synchronized fun consume(points: List<Point>, now: Long): List<GestureEvent> {
         if (paused || points.size != 21 || (lastSeenAt != 0L && now <= lastSeenAt)) return emptyList()
@@ -283,8 +263,6 @@ class GestureEngine(
         // behind the index finger. Never let that valid two-finger candidate arm index gestures.
         val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded && !twoFingerTogetherPose
         if (advanceActiveVolumeHold(twoFingerTogetherPose, now, output)) return output
-        val circlePoint = Point((points[8].x - palm.x) / handScale, (points[8].y - palm.y) / handScale)
-        if (advanceIndexCircle(indexOnlyPose, circlePoint, now, output)) return output
         output += GestureEvent.Cursor(cursor.x, cursor.y)
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
@@ -608,113 +586,6 @@ class GestureEngine(
             }
             TwoFingerSwipeState.WAIT_RELEASE -> if (!pose) twoFingerState = TwoFingerSwipeState.IDLE
             TwoFingerSwipeState.VOLUME_UP, TwoFingerSwipeState.VOLUME_DOWN -> Unit
-        }
-    }
-    private fun advanceIndexCircle(
-        pose: Boolean,
-        point: Point,
-        now: Long,
-        output: MutableList<GestureEvent>
-    ): Boolean {
-        if (!features.clockwiseCircleVolume && !features.counterClockwiseCircleVolume) {
-            circleState = CircleState.IDLE
-            circlePath.clear()
-            return false
-        }
-        if (circleReleaseRequired) {
-            if (!pose) {
-                circleReleaseRequired = false
-                circleState = CircleState.IDLE
-            } else return true
-        }
-        when (circleState) {
-            CircleState.IDLE -> {
-                if (pose) {
-                    circleState = CircleState.TRACKING
-                    circleStartedAt = now
-                    circleLastMotionAt = now
-                    circlePath.clear()
-                    circlePath += point
-                }
-                return false
-            }
-            CircleState.TRACKING -> {
-                if (!pose) {
-                    circleState = CircleState.IDLE
-                    circlePath.clear()
-                    return false
-                }
-                val last = circlePath.lastOrNull()
-                if (last == null || dist(last, point) >= .035f) {
-                    circlePath += point
-                    circleLastMotionAt = now
-                }
-                if (now - circleStartedAt > 2600L) {
-                    circleStartedAt = now
-                    circlePath.clear()
-                    circlePath += point
-                    return false
-                }
-                if (circlePath.size < 12) return false
-                val minX = circlePath.minOf { it.x }; val maxX = circlePath.maxOf { it.x }
-                val minY = circlePath.minOf { it.y }; val maxY = circlePath.maxOf { it.y }
-                val width = maxX - minX; val height = maxY - minY
-                val pathLength = circlePath.zipWithNext().sumOf { (a, b) -> dist(a, b).toDouble() }.toFloat()
-                val closure = dist(circlePath.first(), circlePath.last())
-                val signedArea = circlePath.zipWithNext().sumOf { (a, b) ->
-                    (a.x * b.y - b.x * a.y).toDouble()
-                }.toFloat() / 2f
-                val circularEnough = width >= .30f && height >= .30f &&
-                    width / height.coerceAtLeast(.001f) in .45f..2.2f &&
-                    pathLength >= 1.35f && closure <= .32f && kotlin.math.abs(signedArea) >= .10f
-                if (!circularEnough) return false
-                // Screen y grows downward, so a positive signed area is clockwise.
-                val raise = signedArea > 0f
-                if ((raise && !features.clockwiseCircleVolume) || (!raise && !features.counterClockwiseCircleVolume)) {
-                    circleState = CircleState.WAIT_RELEASE
-                    circlePath.clear()
-                    return true
-                }
-                circleState = if (raise) CircleState.ACTIVE_UP else CircleState.ACTIVE_DOWN
-                circleCenter = Point((minX + maxX) / 2f, (minY + maxY) / 2f)
-                circleLastAngle = angleAround(circleCenter!!, point)
-                circleAccumulatedAngle = 0f
-                circleLastTickAt = now
-                output += GestureEvent.CircleVolume(raise, GestureEvent.VolumeHoldPhase.START)
-                return true
-            }
-            CircleState.ACTIVE_UP, CircleState.ACTIVE_DOWN -> {
-                val raise = circleState == CircleState.ACTIVE_UP
-                if (!pose || now - circleLastMotionAt > 750L) {
-                    output += GestureEvent.CircleVolume(raise, GestureEvent.VolumeHoldPhase.END)
-                    circleState = CircleState.IDLE
-                    circlePath.clear()
-                    return true
-                }
-                val last = circlePath.lastOrNull()
-                if (last == null || dist(last, point) >= .025f) {
-                    circlePath += point
-                    if (circlePath.size > 24) circlePath.removeAt(0)
-                    circleLastMotionAt = now
-                    val angle = angleAround(circleCenter ?: point, point)
-                    var delta = angle - circleLastAngle
-                    while (delta > Math.PI) delta -= (Math.PI * 2).toFloat()
-                    while (delta < -Math.PI) delta += (Math.PI * 2).toFloat()
-                    circleLastAngle = angle
-                    val directed = if (raise) delta else -delta
-                    if (directed > 0f) circleAccumulatedAngle += directed
-                    if (circleAccumulatedAngle >= (Math.PI / 2).toFloat() && now - circleLastTickAt >= 250L) {
-                        circleAccumulatedAngle -= (Math.PI / 2).toFloat()
-                        circleLastTickAt = now
-                        output += GestureEvent.CircleVolume(raise, GestureEvent.VolumeHoldPhase.TICK)
-                    }
-                }
-                return true
-            }
-            CircleState.WAIT_RELEASE -> {
-                if (!pose) circleState = CircleState.IDLE
-                return pose
-            }
         }
     }
     private fun advanceActiveVolumeHold(
@@ -1076,18 +947,10 @@ class GestureEngine(
         twoFingerTapPoseAt = 0L
         twoFingerTapBentAt = 0L
         twoFingerTapFirstCycleAt = 0L
-        circleState = CircleState.IDLE
-        circlePath.clear()
-        circleStartedAt = 0L
-        circleLastMotionAt = 0L
-        circleCenter = null
-        circleLastAngle = 0f
-        circleAccumulatedAngle = 0f
-        circleLastTickAt = 0L
+
         lastFeedbackAt = 0
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)
-    private fun angleAround(center: Point, point: Point) = atan2(point.y - center.y, point.x - center.x)
     private fun vectorAngleDegrees(aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): Float {
         val ax = aEnd.x - aStart.x
         val ay = aEnd.y - aStart.y

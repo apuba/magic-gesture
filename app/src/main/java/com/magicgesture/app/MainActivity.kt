@@ -142,8 +142,6 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", actionLabelOf(GestureCode.G09), "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "食指顺时针画圈", actionLabelOf(GestureCode.G18), "保持手掌相对稳定，用食指指尖连续顺时针画圈；识别成功后按圆弧进度持续增加音量。", "↻", "clockwise_circle_volume", features.clockwiseCircleVolume), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "食指逆时针画圈", actionLabelOf(GestureCode.G19), "保持手掌相对稳定，用食指指尖连续逆时针画圈；识别成功后按圆弧进度持续降低音量。", "↺", "counter_clockwise_circle_volume", features.counterClockwiseCircleVolume), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，倒计时后保存前置摄像头画面。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -323,8 +321,6 @@ class MainActivity : Activity() {
         "index_left_scroll" -> "食指左挑"
         "palm_right_scroll" -> "四指右挥"
         "index_right_scroll" -> "食指右挑"
-        "clockwise_circle_volume" -> "顺时针画圈增大音量"
-        "counter_clockwise_circle_volume" -> "逆时针画圈降低音量"
         "screenshot" -> "截图"
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
@@ -353,8 +349,6 @@ class MainActivity : Activity() {
             "index_left_scroll" to features.indexLeftScroll,
             "palm_right_scroll" to features.palmRightScroll,
             "index_right_scroll" to features.indexRightScroll,
-            "clockwise_circle_volume" to features.clockwiseCircleVolume,
-            "counter_clockwise_circle_volume" to features.counterClockwiseCircleVolume,
             "screenshot" to features.screenshot,
             "selfie" to features.selfie,
             "like" to features.like,

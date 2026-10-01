@@ -137,10 +137,6 @@ class CameraProbeService : Service() {
                                 handleContinuousVolume(event, event.raise, event.phase)
                                 return@HandPipeline
                             }
-                            if (event is GestureEvent.CircleVolume) {
-                                handleContinuousVolume(event, event.raise, event.phase)
-                                return@HandPipeline
-                            }
                             if (!globalCooldown.allows(event)) return@HandPipeline
                             val mapped = mappingManager.resolve(event)
                             if (mapped != null) {
@@ -155,8 +151,7 @@ class CameraProbeService : Service() {
                                 GestureEvent.LotusRecents, GestureEvent.OrchidBack,
                                 GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
-                                GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
-                                is GestureEvent.CircleVolume -> Unit // Migrated gestures use the mapping pipeline above.
+                                GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold -> Unit // Migrated gestures use the mapping pipeline above.
                                 is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                                 GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }

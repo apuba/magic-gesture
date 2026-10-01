@@ -133,7 +133,6 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
                 GestureEvent.TwoFingerDirection.DOWN -> GestureCode.G32
             }
             is GestureEvent.TwoFingerVolumeHold -> if (event.raise) GestureCode.G31 else GestureCode.G32
-            is GestureEvent.CircleVolume -> if (event.raise) GestureCode.G18 else GestureCode.G19
             else -> return null
         }
         val base = defaultMappings[code]
@@ -159,7 +158,9 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
     companion object {
         /** Codes that only exist in the enum as placeholders; no detector, no event. */
         private val NO_PIPELINE_CODES = setOf(
-            GestureCode.G16, GestureCode.G17, GestureCode.G23
+            // G18/G19 (index-circle volume) were removed on 2026-10-01: the circling pose
+            // conflicted too much with everyday index gestures on real devices.
+            GestureCode.G16, GestureCode.G17, GestureCode.G18, GestureCode.G19, GestureCode.G23
         )
 
         fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
@@ -222,18 +223,6 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureCode.G15,
             GestureType.HOLD,
             GestureAction.RECENTS,
-            CooldownPolicy.GLOBAL_AFTER_SUCCESS
-        ),
-        GestureCode.G18 to GestureMapping(
-            GestureCode.G18,
-            GestureType.CONTINUOUS,
-            GestureAction.VOLUME_UP,
-            CooldownPolicy.GLOBAL_AFTER_SUCCESS
-        ),
-        GestureCode.G19 to GestureMapping(
-            GestureCode.G19,
-            GestureType.CONTINUOUS,
-            GestureAction.VOLUME_DOWN,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G20 to GestureMapping(
@@ -299,8 +288,6 @@ class GestureFeatureGate {
         GestureCode.G08 -> features.palmRightScroll
         GestureCode.G09 -> features.indexLeftScroll
         GestureCode.G10 -> features.indexRightScroll
-        GestureCode.G18 -> features.clockwiseCircleVolume
-        GestureCode.G19 -> features.counterClockwiseCircleVolume
         GestureCode.G11 -> features.selfie
         GestureCode.G12 -> features.like
         GestureCode.G13 -> features.screenshot
