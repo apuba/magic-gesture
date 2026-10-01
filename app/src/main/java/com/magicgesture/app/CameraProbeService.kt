@@ -70,12 +70,12 @@ class CameraProbeService : Service() {
         volumeAdjust = ::adjustVolume,
         // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
         actionProgress = { message -> overlayIndicator.showFeedback(message) },
-        launchApp = ::launchAppForSlot
+        launchApp = ::launchAppForGesture
     )
 
-    /** Launches the app bound to an open-app slot; the package is read live from preferences. */
-    private fun launchAppForSlot(slot: Int, callback: (Boolean) -> Unit) {
-        val packageName = GesturePreferences.openAppPackage(this, slot)
+    /** Launches the app bound directly to the gesture; the package is read live from preferences. */
+    private fun launchAppForGesture(code: GestureCode, callback: (Boolean) -> Unit) {
+        val packageName = GesturePreferences.openAppPackage(this, code)
         if (packageName == null) {
             callback(false)
             return

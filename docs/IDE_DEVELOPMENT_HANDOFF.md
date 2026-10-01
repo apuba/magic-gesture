@@ -61,16 +61,18 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（32） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、**G16-G19 张掌后收成 1/2/3/4 指→打开指定 App（2026-10-02 新增）**、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 1.5s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形锁屏、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停 |
+| 已实现（32） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、**G16-G19 张掌后收成 1/2/3/4 指→打开指定 App（2026-10-02 新增）**、G20 大拇指点赞、G21 OK=点击光标、G22 握拳保持 1.5s=播放/暂停、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形返回桌面（2026-10-02 调整）、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停 |
 | 未实现/已移除（1） | G23（张掌静止暂停识别）——仅枚举占位。**G18/G19 食指画圈音量已于 2026-10-01 彻底移除**（真机姿势冲突过高）；G16-G19 枚举已于 2026-10-02 以"张掌后收指打开指定 App"重新启用 |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
 
 ## 5. 动作目录（GestureAction，28 项）
 
-`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT`(滚动长截图，无默认绑定) / `OPEN_APP_1..4`(打开应用一~四，G16-G19 默认绑定，目标 App 在校准页选择) / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
+`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT`(滚动长截图，无默认绑定) / `OPEN_APP`(打开应用，目标 App 直接绑定当前手势) / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)。`OPEN_APP_1..4` 仅作旧配置兼容，不再出现在选择界面。
 
-**G16-G19 打开指定 App**（2026-10-02 新增）：张掌（五指张开，复用截图序列的 `screenshotPalmOpen` 判定）确认后收指到 1/2/3/4 指并保持约 0.6 秒，触发 `OpenApp(slot)`。四个独立功能开关 `open_app_1..4`（默认开）。张掌阶段不吞帧，G13 截图序列可并行进入；检测到目标收指姿势后独占（抑制光标/两指媒体等），触发后统一冷却。目标 App 包名存 `open_app_package_1..4`，校准页"打开指定应用"区即时配置；未配置时触发提示"未选择应用"。执行走 `getLaunchIntentForPackage` + `NEW_TASK`。
+**G16-G19 打开指定 App**（2026-10-02 新增并重构）：张掌确认后收指到 1/2/3/4 指并保持约 0.6 秒，映射为统一的 `OPEN_APP` 动作。配置流程为“点击当前手势动作 → 选择打开应用 → 紧接着选择目标 App”，不再维护“应用一/二/三/四”独立配置区。包名按手势存为 `open_app_package_Gxx`，映射按钮及首页卡片显示“打开应用：App 名称”。原 `open_app_package_1..4` 和 `OPEN_APP_1..4` 自动兼容迁移。四个识别功能开关 `open_app_1..4` 仍独立保留；执行走 `getLaunchIntentForPackage` + `NEW_TASK`。
+
+**G16-G19 首页图片**（2026-10-02 更新）：四张卡片不再共用单张 `gesture_palm`。每张卡片以“张掌 → 对应最终指型”的双图组合显示，最终姿势资源分别为 `gesture_open_app_1.png`～`gesture_open_app_4.png`，均为 1254×1254 ARGB 透明 PNG，与现有 3D 手势资产风格一致。新增或调整组合手势时，首页必须显示完整阶段图片，不能只用文字或数字角标代替。
 
 音量动作实现：普通换绑动作仍由 `CameraProbeService.adjustVolume` 每次调整约 10%；G31/G32 两指保持会话约每 0.4 秒调整 5%，会话期间独占识别（不输出光标或其他手势），姿势改变或到达边界后结束并进入冷却（时长可配置，见下）。（G18/G19 食指画圈音量已移除。）
 

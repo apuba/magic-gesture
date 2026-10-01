@@ -82,6 +82,31 @@ object GesturePreferences {
         }.apply()
     }
 
+    /** Package bound directly to a gesture whose selected action is OPEN_APP. */
+    fun openAppPackage(context: Context, code: GestureCode): String? {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val direct = prefs.getString(openAppGestureKey(code), null)
+        if (direct != null) return direct
+        // Preserve the four original bindings after upgrading from the slot-based UI.
+        val legacySlot = when (code) {
+            GestureCode.G16 -> 1
+            GestureCode.G17 -> 2
+            GestureCode.G18 -> 3
+            GestureCode.G19 -> 4
+            else -> null
+        }
+        return legacySlot?.let { prefs.getString("open_app_package_$it", null) }
+    }
+
+    fun saveOpenAppPackage(context: Context, code: GestureCode, packageName: String?) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().apply {
+            if (packageName == null) remove(openAppGestureKey(code))
+            else putString(openAppGestureKey(code), packageName)
+        }.apply()
+    }
+
+    private fun openAppGestureKey(code: GestureCode) = "open_app_package_${code.name}"
+
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val legacyScroll = prefs.getBoolean("feature_scroll", true)
@@ -129,7 +154,22 @@ object GesturePreferences {
         val overrides = mutableMapOf<GestureCode, GestureAction>()
         for (code in GestureCode.entries) {
             val stored = prefs.getString(mappingKey(code), null) ?: continue
-            val action = runCatching { GestureAction.valueOf(stored) }.getOrNull() ?: continue
+            var action = runCatching { GestureAction.valueOf(stored) }.getOrNull() ?: continue
+            val legacySlot = when (action) {
+                GestureAction.OPEN_APP_1 -> 1
+                GestureAction.OPEN_APP_2 -> 2
+                GestureAction.OPEN_APP_3 -> 3
+                GestureAction.OPEN_APP_4 -> 4
+                else -> null
+            }
+            if (legacySlot != null) {
+                prefs.getString("open_app_package_$legacySlot", null)?.let { legacyPackage ->
+                    if (prefs.getString(openAppGestureKey(code), null) == null) {
+                        prefs.edit().putString(openAppGestureKey(code), legacyPackage).apply()
+                    }
+                }
+                action = GestureAction.OPEN_APP
+            }
             overrides[code] = action
         }
         return overrides

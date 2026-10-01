@@ -151,15 +151,15 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1.5 秒（有倒计时提示），控制当前媒体播放状态。", "▶", "play_pause", features.playPause), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成食指", actionLabelOf(GestureCode.G16), "五指张开稳定后，收起其他手指只保留食指，保持约 0.6 秒打开应用一（在“手势练习与校准”中选择应用）。", "1", "open_app_1", features.openApp1), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成两指", actionLabelOf(GestureCode.G17), "五指张开稳定后，收起其他手指保留食指与中指，保持约 0.6 秒打开应用二。", "2", "open_app_2", features.openApp2), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成三指", actionLabelOf(GestureCode.G18), "五指张开稳定后，收起其他手指保留食指、中指与无名指，保持约 0.6 秒打开应用三。", "3", "open_app_3", features.openApp3), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成四指", actionLabelOf(GestureCode.G19), "五指张开稳定后，收起大拇指保留四指，保持约 0.6 秒打开应用四。", "4", "open_app_4", features.openApp4), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成食指", actionLabelOf(GestureCode.G16), "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。目标应用在“手势练习与校准”的动作映射中直接绑定。", "1", "open_app_1", features.openApp1, R.drawable.gesture_open_app_1), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成两指", actionLabelOf(GestureCode.G17), "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", "2", "open_app_2", features.openApp2, R.drawable.gesture_open_app_2), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成三指", actionLabelOf(GestureCode.G18), "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。", "3", "open_app_3", features.openApp3, R.drawable.gesture_open_app_3), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_palm, "张掌后收成四指", actionLabelOf(GestureCode.G19), "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。", "4", "open_app_4", features.openApp4, R.drawable.gesture_open_app_4), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", actionLabelOf(GestureCode.G24), "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 2 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。仅支持锁屏，解锁需系统验证。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒，返回手机桌面。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右挥动，切换上一曲/下一曲。", "⏭", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势，可持续增减音量；改变姿势后停止。", "🔊", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直、连点两下，控制播放/暂停。", "▶", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
@@ -190,28 +190,56 @@ class MainActivity : Activity() {
      */
     private fun actionLabelOf(vararg codes: GestureCode): () -> String = {
         val manager = GestureMappingManager(GesturePreferences.actionOverrides(this))
-        val labels = codes.mapNotNull { manager.actionFor(it) }.map { it.displayLabel() }.distinct()
+        val labels = codes.mapNotNull { code ->
+            val action = manager.actionFor(code) ?: return@mapNotNull null
+            if (action == GestureAction.OPEN_APP) {
+                val pkg = GesturePreferences.openAppPackage(this, code)
+                val appName = pkg?.let {
+                    runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull()
+                }
+                "打开应用：${appName ?: "未选择"}"
+            } else action.displayLabel()
+        }.distinct()
         if (labels.isEmpty()) "未绑定动作" else labels.joinToString(" / ")
     }
 
-    private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean): View = LinearLayout(this).apply {
+    private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean, secondImage: Int? = null): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12), dp(12), dp(15), dp(12))
         background = rounded(Color.WHITE, 20)
         elevation = dp(2).toFloat()
+        val imageWidth = if (secondImage == null) 96 else 132
         addView(FrameLayout(this@MainActivity).apply {
             background = rounded(Color.rgb(245, 243, 255), 16)
-            addView(ImageView(this@MainActivity).apply {
-                setImageResource(image)
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(5), dp(5), dp(5), dp(5))
-            }, FrameLayout.LayoutParams(dp(88), dp(88), Gravity.CENTER))
+            if (secondImage == null) {
+                addView(ImageView(this@MainActivity).apply {
+                    setImageResource(image)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(5), dp(5), dp(5), dp(5))
+                }, FrameLayout.LayoutParams(dp(88), dp(88), Gravity.CENTER))
+            } else {
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageResource(image)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    }, LinearLayout.LayoutParams(dp(51), dp(82)))
+                    addView(label("→", 16f, Color.rgb(91, 87, 218), true).apply {
+                        gravity = Gravity.CENTER
+                    }, LinearLayout.LayoutParams(dp(18), dp(82)))
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageResource(secondImage)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    }, LinearLayout.LayoutParams(dp(51), dp(82)))
+                }, FrameLayout.LayoutParams(dp(124), dp(88), Gravity.CENTER))
+            }
             addView(label(badge, 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
                 background = rounded(Color.rgb(91, 87, 218), 99)
             }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END))
-        }, LinearLayout.LayoutParams(dp(96), dp(96)))
+        }, LinearLayout.LayoutParams(dp(imageWidth), dp(96)))
         addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), 0, 0, 0)
@@ -341,7 +369,7 @@ class MainActivity : Activity() {
         "l_shape" -> "L 手形通知栏"
         "claw_drag" -> "爪形手势"
         "c_shape" -> "C 手形最近任务"
-        "love_lock" -> "Love 手形锁屏"
+        "love_lock" -> "Love 手形返回桌面"
         "two_finger_media" -> "两指媒体控制"
         "open_app_1" -> "张掌后收成食指"
         "open_app_2" -> "张掌后收成两指"

@@ -209,10 +209,10 @@ class GestureArchitectureTest {
     }
 
     @Test fun g16ThroughG19DefaultToOpenAppSlotsAndResolve() {
-        assertEquals(GestureAction.OPEN_APP_1, GestureMappingManager.defaultActionOf(GestureCode.G16))
-        assertEquals(GestureAction.OPEN_APP_2, GestureMappingManager.defaultActionOf(GestureCode.G17))
-        assertEquals(GestureAction.OPEN_APP_3, GestureMappingManager.defaultActionOf(GestureCode.G18))
-        assertEquals(GestureAction.OPEN_APP_4, GestureMappingManager.defaultActionOf(GestureCode.G19))
+        assertEquals(GestureAction.OPEN_APP, GestureMappingManager.defaultActionOf(GestureCode.G16))
+        assertEquals(GestureAction.OPEN_APP, GestureMappingManager.defaultActionOf(GestureCode.G17))
+        assertEquals(GestureAction.OPEN_APP, GestureMappingManager.defaultActionOf(GestureCode.G18))
+        assertEquals(GestureAction.OPEN_APP, GestureMappingManager.defaultActionOf(GestureCode.G19))
         val mappings = GestureMappingManager()
         val events = listOf(
             GestureEvent.OpenApp(1) to GestureCode.G16,
@@ -235,7 +235,7 @@ class GestureArchitectureTest {
         // G26 is deliberately unbound; users can assign any action to it themselves.
         assertNull(GestureMappingManager.defaultActionOf(GestureCode.G26))
         assertEquals(GestureAction.RECENTS, GestureMappingManager.defaultActionOf(GestureCode.G27))
-        assertEquals(GestureAction.LOCK_SCREEN, GestureMappingManager.defaultActionOf(GestureCode.G28))
+        assertEquals(GestureAction.HOME, GestureMappingManager.defaultActionOf(GestureCode.G28))
     }
 
     @Test fun g24ThroughG28EventsResolveWithHoldTypeAndOwnFeatureGates() {

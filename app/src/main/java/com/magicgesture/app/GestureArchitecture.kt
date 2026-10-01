@@ -15,7 +15,9 @@ enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
-    DRAG, ROLLING_SCREENSHOT, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
+    DRAG, ROLLING_SCREENSHOT, OPEN_APP,
+    /** Legacy values retained only so existing saved mappings continue to load after upgrade. */
+    OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
 
     fun successMessage(): String = when (this) {
         MOVE_CURSOR -> ""
@@ -42,10 +44,7 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "已唤起语音助手"
         DRAG -> "拖动完成"
         ROLLING_SCREENSHOT -> "长截图已保存"
-        OPEN_APP_1 -> "已打开应用一"
-        OPEN_APP_2 -> "已打开应用二"
-        OPEN_APP_3 -> "已打开应用三"
-        OPEN_APP_4 -> "已打开应用四"
+        OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "已打开应用"
     }
 
     fun failureMessage(): String = when (this) {
@@ -56,7 +55,7 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "未找到可用的语音助手"
         DRAG -> "拖动距离太短或执行失败"
         ROLLING_SCREENSHOT -> "滚动截图需要 Android 11 或更高版本"
-        OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "未选择应用，请到“手势练习与校准”中设置"
+        OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "未选择应用，请重新设置该手势"
         else -> "动作执行失败"
     }
 
@@ -85,10 +84,7 @@ enum class GestureAction {
         VOICE_ASSISTANT -> "语音助手"
         DRAG -> "拖动"
         ROLLING_SCREENSHOT -> "滚动长截图"
-        OPEN_APP_1 -> "打开应用一"
-        OPEN_APP_2 -> "打开应用二"
-        OPEN_APP_3 -> "打开应用三"
-        OPEN_APP_4 -> "打开应用四"
+        OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "打开应用"
     }
 }
 
@@ -241,30 +237,29 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.RECENTS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
-        // G16-G19: open-palm then fold to N fingers; each slot launches its own app
-        // (the target app is configured per slot in the calibration page).
+        // G16-G19 use the same action type; each gesture stores its own target package.
         GestureCode.G16 to GestureMapping(
             GestureCode.G16,
             GestureType.SEQUENCE,
-            GestureAction.OPEN_APP_1,
+            GestureAction.OPEN_APP,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G17 to GestureMapping(
             GestureCode.G17,
             GestureType.SEQUENCE,
-            GestureAction.OPEN_APP_2,
+            GestureAction.OPEN_APP,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G18 to GestureMapping(
             GestureCode.G18,
             GestureType.SEQUENCE,
-            GestureAction.OPEN_APP_3,
+            GestureAction.OPEN_APP,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G19 to GestureMapping(
             GestureCode.G19,
             GestureType.SEQUENCE,
-            GestureAction.OPEN_APP_4,
+            GestureAction.OPEN_APP,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G20 to GestureMapping(
@@ -308,7 +303,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G28 to GestureMapping(
             GestureCode.G28,
             GestureType.HOLD,
-            GestureAction.LOCK_SCREEN,
+            GestureAction.HOME,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         GestureCode.G29 to dynamicMapping(GestureCode.G29, GestureAction.MEDIA_PREVIOUS),
@@ -359,7 +354,7 @@ class GestureActionExecutor(
     private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
     private val actionProgress: ((String) -> Unit)? = null,
     /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
-    private val launchApp: (Int, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) }
+    private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) }
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -410,10 +405,11 @@ class GestureActionExecutor(
                 )
                 true
             }
-            GestureAction.OPEN_APP_1 -> { launchApp(1, callback); true }
-            GestureAction.OPEN_APP_2 -> { launchApp(2, callback); true }
-            GestureAction.OPEN_APP_3 -> { launchApp(3, callback); true }
-            GestureAction.OPEN_APP_4 -> { launchApp(4, callback); true }
+            GestureAction.OPEN_APP -> { launchApp(mapped.mapping.code, callback); true }
+            GestureAction.OPEN_APP_1 -> { launchApp(GestureCode.G16, callback); true }
+            GestureAction.OPEN_APP_2 -> { launchApp(GestureCode.G17, callback); true }
+            GestureAction.OPEN_APP_3 -> { launchApp(GestureCode.G18, callback); true }
+            GestureAction.OPEN_APP_4 -> { launchApp(GestureCode.G19, callback); true }
             GestureAction.LOCK_SCREEN -> {
                 val service = accessibilityService() ?: return false
                 service.lockScreenAction(callback)
