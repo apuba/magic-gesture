@@ -346,6 +346,30 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
     }
 
+    /**
+     * Folding to three fingers naturally crosses another slot first (the thumb folds while
+     * the four fingers are still extended -> slot 4). The sequence must follow the latest
+     * slot and restart its hold timer instead of cancelling with "pose changed".
+     */
+    @Test fun foldingThroughAnotherSlotFollowsTheLatestStablePose() {
+        val r = Replay()
+        r.feed(10, ::spreadPalm)                // 500ms: arm on the open palm
+        r.feed(4, ::foldedFourFingers)          // 200ms: slot 4 locks while the thumb folds
+        r.feed(15, ::foldedThreeFingers)        // 750ms: pinky joins, timer restarts, fires slot 3
+        val fired = r.events.filterIsInstance<GestureEvent.OpenApp>()
+        assertEquals(listOf(3), fired.map { it.slot })
+    }
+
+    /** After locking a slot, relaxing the hand cancels the sequence only after a grace window. */
+    @Test fun holdingThenRelaxingCancelsAfterGraceWindow() {
+        val r = Replay()
+        r.feed(10, ::spreadPalm)                // 500ms: arm
+        r.feed(4, ::foldedIndexOnly)            // 200ms: slot 1 locks (below the 600ms hold)
+        r.feed(15, ::fistPose)                  // 750ms: no slot pose anymore -> cancelled
+        assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.contains("取消") })
+    }
+
     @Test fun closedPalmWaveDownFiresOneSwipeAndReturnPathStaysSilent() {
         val r = Replay()
         r.feed(4) { closedPalm() }                // settle past 160ms

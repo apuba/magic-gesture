@@ -739,7 +739,7 @@ class GestureEngine(
                     if (now - appStageAt > 5000) appSequence = AppSequence.WAIT_RELEASE
                     return false
                 }
-                if (now - appOpenPalmAt > 600) {
+                if (now - appOpenPalmAt > 800) {
                     // The open palm was lost for too long: this frame belongs to other gestures.
                     appSequence = AppSequence.IDLE
                     return false
@@ -756,6 +756,18 @@ class GestureEngine(
                 return false
             }
             AppSequence.HOLDING -> {
+                // Folding naturally crosses other slots on the way (e.g. the thumb folds
+                // first -> slot 4 shows up, then the pinky joins -> slot 3). Follow the
+                // latest slot and restart the hold timer instead of cancelling outright.
+                if (slotPose != 0 && slotPose != appHoldSlot) {
+                    appHoldSlot = slotPose
+                    appHoldAt = now
+                    val names = arrayOf("", "食指", "两指", "三指", "四指")
+                    if (now - lastFeedbackAt > 400) {
+                        lastFeedbackAt = now
+                        output += GestureEvent.Feedback("已保留${names[slotPose]}：请保持")
+                    }
+                }
                 if (slotPose == appHoldSlot) {
                     if (now - appHoldAt >= 600) {
                         output += GestureEvent.OpenApp(appHoldSlot)
@@ -765,7 +777,8 @@ class GestureEngine(
                     }
                     return true
                 }
-                if (now - appHoldAt > 260) {
+                // No slot pose anymore (fist, half-folded hand, palm...): cancel after grace.
+                if (now - appHoldAt > 500) {
                     appSequence = AppSequence.WAIT_RELEASE
                     appHoldAt = now
                     output += GestureEvent.Feedback("姿势已改变，已取消")
