@@ -323,16 +323,19 @@ class CameraProbeService : Service() {
     /**
      * Raises/lowers the media stream volume. dispatchMediaKeyEvent silently drops
      * VOLUME_UP/DOWN on modern Android, so adjust the stream directly and only fall
-     * back to a simulated key event if that path fails.
+     * back to a simulated key event if that path fails. One native step is barely
+     * audible on devices with fine-grained volume (Huawei exposes dozens of steps),
+     * so each gesture moves ~10% of the full range instead.
      */
     private fun adjustVolume(raise: Boolean, callback: (Boolean) -> Unit) {
         try {
             val audio = getSystemService(AudioManager::class.java)
-            audio.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                if (raise) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-                AudioManager.FLAG_SHOW_UI
-            )
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val step = maxOf(1, max / 10)
+            val target = (current + if (raise) step else -step).coerceIn(0, max)
+            Log.d("CameraProbe", "volume $current -> $target (max $max)")
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
             callback(true)
         } catch (e: Exception) {
             Log.e("CameraProbe", "volume adjust failed", e)

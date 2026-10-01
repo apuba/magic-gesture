@@ -75,7 +75,7 @@
 | `PLAY_PAUSE` | 播放/暂停 | 媒体键；默认绑定 G22 拳头保持与 G33 两指双击 |
 | `RECENTS` | 最近任务 | Android 全局最近任务动作 |
 | `NOTIFICATIONS` | 下拉通知栏 | Android 全局通知栏动作 |
-| `VOLUME_UP` | 音量 + | 直接调节媒体流音量（`adjustStreamVolume`；部分机型会忽略模拟音量键）；默认绑定 G31 两指上挥 |
+| `VOLUME_UP` | 音量 + | 直接调节媒体流音量（`setStreamVolume`；每次约 10% 量程，避免细刻度机型上一格无感知）；默认绑定 G31 两指上挥 |
 | `VOLUME_DOWN` | 音量 − | 同上；默认绑定 G32 两指下挥 |
 | `MEDIA_NEXT` | 下一曲 | 媒体键 |
 | `MEDIA_PREVIOUS` | 上一曲 | 媒体键 |
