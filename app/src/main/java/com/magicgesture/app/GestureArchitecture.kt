@@ -1,6 +1,7 @@
 package com.magicgesture.app
 
 import android.accessibilityservice.AccessibilityService
+import android.view.KeyEvent
 
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
@@ -11,7 +12,8 @@ enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 
 enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
-    THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS;
+    THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
+    NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT;
 
     fun successMessage(): String = when (this) {
         MOVE_CURSOR -> ""
@@ -27,12 +29,21 @@ enum class GestureAction {
         CONFIRM -> "确认"
         PLAY_PAUSE -> "播放/暂停"
         RECENTS -> "打开最近任务"
+        NOTIFICATIONS -> "已打开通知栏"
+        VOLUME_UP -> "音量已增加"
+        VOLUME_DOWN -> "音量已降低"
+        MEDIA_NEXT -> "已切换下一曲"
+        MEDIA_PREVIOUS -> "已切换上一曲"
+        LOCK_SCREEN -> "已锁屏"
+        VOICE_ASSISTANT -> "已唤起语音助手"
     }
 
     fun failureMessage(): String = when (this) {
         SELFIE -> "自拍保存失败"
         LIKE, THUMBS_UP_LIKE -> "未找到可用的点赞按钮"
         CONFIRM -> "请先启用并移动光标"
+        LOCK_SCREEN -> "锁屏需要 Android 9 或更高版本"
+        VOICE_ASSISTANT -> "未找到可用的语音助手"
         else -> "动作执行失败"
     }
 
@@ -50,6 +61,13 @@ enum class GestureAction {
         CONFIRM -> "点击光标位置"
         PLAY_PAUSE -> "播放/暂停"
         RECENTS -> "最近任务"
+        NOTIFICATIONS -> "下拉通知栏"
+        VOLUME_UP -> "音量 +"
+        VOLUME_DOWN -> "音量 −"
+        MEDIA_NEXT -> "下一曲"
+        MEDIA_PREVIOUS -> "上一曲"
+        LOCK_SCREEN -> "锁屏"
+        VOICE_ASSISTANT -> "语音助手"
     }
 }
 
@@ -209,7 +227,7 @@ class GestureFeatureGate {
 class GestureActionExecutor(
     private val accessibilityService: () -> ControlAccessibilityService?,
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
-    private val mediaToggle: ((Boolean) -> Unit) -> Unit
+    private val mediaKey: (Int, (Boolean) -> Unit) -> Unit
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -241,9 +259,20 @@ class GestureActionExecutor(
             GestureAction.BACK -> globalAction(AccessibilityService.GLOBAL_ACTION_BACK, callback)
             GestureAction.HOME -> globalAction(AccessibilityService.GLOBAL_ACTION_HOME, callback)
             GestureAction.RECENTS -> globalAction(AccessibilityService.GLOBAL_ACTION_RECENTS, callback)
+            GestureAction.NOTIFICATIONS -> globalAction(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS, callback)
             GestureAction.SCREENSHOT -> {
                 val service = accessibilityService() ?: return false
                 service.screenshotAction(callback)
+                true
+            }
+            GestureAction.LOCK_SCREEN -> {
+                val service = accessibilityService() ?: return false
+                service.lockScreenAction(callback)
+                true
+            }
+            GestureAction.VOICE_ASSISTANT -> {
+                val service = accessibilityService() ?: return false
+                service.voiceAssistantAction(callback)
                 true
             }
             GestureAction.SELFIE -> {
@@ -260,10 +289,13 @@ class GestureActionExecutor(
                 service.confirmAtCursor(callback)
                 true
             }
-            GestureAction.PLAY_PAUSE -> {
-                mediaToggle(callback)
-                true
-            }
+            // Media and volume keys go through AudioManager and keep working even when the
+            // accessibility service is reconnecting.
+            GestureAction.PLAY_PAUSE -> { mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, callback); true }
+            GestureAction.MEDIA_NEXT -> { mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT, callback); true }
+            GestureAction.MEDIA_PREVIOUS -> { mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS, callback); true }
+            GestureAction.VOLUME_UP -> { mediaKey(KeyEvent.KEYCODE_VOLUME_UP, callback); true }
+            GestureAction.VOLUME_DOWN -> { mediaKey(KeyEvent.KEYCODE_VOLUME_DOWN, callback); true }
         }
     }
 

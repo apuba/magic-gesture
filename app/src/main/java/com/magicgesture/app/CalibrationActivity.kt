@@ -42,7 +42,9 @@ class CalibrationActivity : Activity() {
     private val selectableActions = listOf(
         GestureAction.CLICK, GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
         GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
-        GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE
+        GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE,
+        GestureAction.NOTIFICATIONS, GestureAction.LOCK_SCREEN, GestureAction.VOICE_ASSISTANT,
+        GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS
     )
 
     private val mappingButtons = mutableMapOf<GestureCode, Button>()

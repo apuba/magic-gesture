@@ -59,7 +59,7 @@ class CameraProbeService : Service() {
     private val actionExecutor = GestureActionExecutor(
         accessibilityService = { ControlAccessibilityService.active },
         selfieCapture = ::captureSelfie,
-        mediaToggle = ::toggleMediaPlayback
+        mediaKey = ::dispatchMediaKey
     )
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()
@@ -293,14 +293,15 @@ class CameraProbeService : Service() {
         null
     }
 
-    private fun toggleMediaPlayback(callback: (Boolean) -> Unit) {
+    /** Dispatches a media/volume key through AudioManager; works without the accessibility service. */
+    private fun dispatchMediaKey(keyCode: Int, callback: (Boolean) -> Unit) {
         return try {
             val audio = getSystemService(AudioManager::class.java)
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
             callback(true)
         } catch (e: Exception) {
-            Log.e("CameraProbe", "media toggle failed", e)
+            Log.e("CameraProbe", "media key $keyCode failed", e)
             callback(false)
         }
     }

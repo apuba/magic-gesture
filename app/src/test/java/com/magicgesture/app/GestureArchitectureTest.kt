@@ -155,4 +155,33 @@ class GestureArchitectureTest {
         assertEquals(GestureAction.BACK, mapped.mapping.action)
         assertEquals(GestureAction.BACK, remapped.actionFor(GestureCode.G15))
     }
+
+    @Test fun newSystemActionsAreBindableThroughOverrides() {
+        val remapped = GestureMappingManager(mapOf(
+            GestureCode.G07 to GestureAction.NOTIFICATIONS,
+            GestureCode.G22 to GestureAction.VOLUME_UP,
+            GestureCode.G21 to GestureAction.MEDIA_NEXT
+        ))
+
+        val notifications = requireNotNull(remapped.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM)))
+        assertEquals(GestureAction.NOTIFICATIONS, notifications.mapping.action)
+        assertEquals(GestureType.DYNAMIC, notifications.mapping.type)
+        assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, notifications.mapping.cooldownPolicy)
+
+        val volume = requireNotNull(remapped.resolve(GestureEvent.PlayPause))
+        assertEquals(GestureAction.VOLUME_UP, volume.mapping.action)
+        // The gesture gate still follows G22's own playPause switch.
+        assertFalse(gate.allows(volume.mapping, GestureFeatureConfig(playPause = false)))
+
+        val nextTrack = requireNotNull(remapped.resolve(GestureEvent.Ok))
+        assertEquals(GestureAction.MEDIA_NEXT, nextTrack.mapping.action)
+    }
+
+    @Test fun everyActionHasUILabelsAndOutcomeMessages() {
+        for (action in GestureAction.entries) {
+            assertTrue(action.displayLabel().isNotBlank())
+            assertTrue(action.failureMessage().isNotBlank())
+            if (action != GestureAction.MOVE_CURSOR) assertTrue(action.successMessage().isNotBlank())
+        }
+    }
 }

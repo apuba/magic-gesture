@@ -99,6 +99,22 @@ class ControlAccessibilityService : AccessibilityService() {
         else callback(false)
     }
 
+    /** Locks the screen; GLOBAL_ACTION_LOCK_SCREEN requires API 28+. */
+    fun lockScreenAction(callback: (Boolean) -> Unit = {}) = main.post {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) callback(performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN))
+        else callback(false)
+    }
+
+    /** Opens the system voice assistant; no window content is read or passed along. */
+    fun voiceAssistantAction(callback: (Boolean) -> Unit = {}) = main.post {
+        try {
+            startActivity(Intent(Intent.ACTION_VOICE_COMMAND).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            callback(true)
+        } catch (e: Exception) {
+            callback(false)
+        }
+    }
+
     fun inject(event: GestureEvent, callback: (Boolean) -> Unit = {}) = main.post {
         if (busy) { callback(false); return@post }
         val m = resources.displayMetrics
