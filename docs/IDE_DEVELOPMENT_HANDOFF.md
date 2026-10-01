@@ -66,9 +66,9 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
 
-## 5. 动作目录（GestureAction，23 项）
+## 5. 动作目录（GestureAction，24 项）
 
-`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
+`MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT`(滚动长截图，无默认绑定) / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`(仅爪形可提供坐标)
 
 音量动作实现：普通换绑动作仍由 `CameraProbeService.adjustVolume` 每次调整约 10%；G18/G19 先确认完整顺/逆时针圆，进入独占会话后每约 90° 圆弧且至少间隔 250ms 调整 5%，停止约 0.75s或姿势改变后结束；G31/G32 两指保持会话约每 0.4 秒调整 5%。两类会话期间均不输出光标或其他手势，结束后统一冷却 2 秒。
 
@@ -78,7 +78,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 2. **真机阈值校准**：G14/G15（莲花/兰花 0.30 触碰阈值）、G24-G28、G29-G33 全部为合成初版阈值，按真机手感逐个微调，一次只改一个。
 3. ~~首页卡片动作标签是静态文案~~ **已解决**（2026-10-01）：卡片动作标签改为 `actionLabelOf(Gxx)` 实时读取 `GestureMappingManager.actionFor(code)`（含用户换绑），`onResume` 统一刷新；G01 光标固定不可换绑保持静态文案。
 4. G16/G17/G23 未开发（打开指定 App 需应用选择器 UI；G23 暂停识别是安全阀功能）。
-5. `captureRollingScreenshot`（滚动长截图）已实现但未接入动作目录，激活成本低。
+5. ~~`captureRollingScreenshot`（滚动长截图）已实现但未接入动作目录~~ **已接入**（2026-10-01）：新增动作 `ROLLING_SCREENSHOT`（滚动长截图），无默认绑定手势、已进入换绑选单；进度提示经悬浮反馈显示，需 Android 11+。
 6. G12/G20 双击点赞用固定屏幕坐标，换 App/布局即失效，考虑标注实验性或改为用户校准坐标。
 7. 保持授权引导仅有荣耀/华为方案，小米/OPPO/vivo 待补。
 8. 回放测试样本是程序合成帧，非真机录制；做真机阈值校准时建议升级为录制样本回放。

@@ -71,6 +71,7 @@
 | `SELFIE` | 自拍 | App 内部前置摄像头抓帧；不打开第三方相机 |
 | `LIKE` / `THUMBS_UP_LIKE` | 双击点赞 | 当前为固定屏幕区域双击，跨 App 可靠性有限 |
 | `SCREENSHOT` | 截图 | Android 无障碍截图能力 |
+| `ROLLING_SCREENSHOT` | 滚动长截图 | 自动滚动并拼接最多 4 屏，保存到图片/MagicGesture；需要 Android 11 及以上；无默认绑定手势，可换绑 |
 | `CONFIRM` | 点击光标位置 | 必须已有有效悬浮光标 |
 | `PLAY_PAUSE` | 播放/暂停 | 媒体键；默认绑定 G22 拳头保持与 G33 两指双击 |
 | `RECENTS` | 最近任务 | Android 全局最近任务动作 |

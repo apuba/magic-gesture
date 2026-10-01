@@ -15,7 +15,7 @@ enum class GestureAction {
     MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
     NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
-    DRAG;
+    DRAG, ROLLING_SCREENSHOT;
 
     fun successMessage(): String = when (this) {
         MOVE_CURSOR -> ""
@@ -41,6 +41,7 @@ enum class GestureAction {
         LOCK_SCREEN -> "已锁屏"
         VOICE_ASSISTANT -> "已唤起语音助手"
         DRAG -> "拖动完成"
+        ROLLING_SCREENSHOT -> "长截图已保存"
     }
 
     fun failureMessage(): String = when (this) {
@@ -50,6 +51,7 @@ enum class GestureAction {
         LOCK_SCREEN -> "锁屏需要 Android 9 或更高版本"
         VOICE_ASSISTANT -> "未找到可用的语音助手"
         DRAG -> "拖动距离太短或执行失败"
+        ROLLING_SCREENSHOT -> "滚动截图需要 Android 11 或更高版本"
         else -> "动作执行失败"
     }
 
@@ -77,6 +79,7 @@ enum class GestureAction {
         LOCK_SCREEN -> "锁屏"
         VOICE_ASSISTANT -> "语音助手"
         DRAG -> "拖动"
+        ROLLING_SCREENSHOT -> "滚动长截图"
     }
 }
 
@@ -320,7 +323,8 @@ class GestureActionExecutor(
     private val accessibilityService: () -> ControlAccessibilityService?,
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
     private val mediaKey: (Int, (Boolean) -> Unit) -> Unit,
-    private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit
+    private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
+    private val actionProgress: ((String) -> Unit)? = null
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -361,6 +365,14 @@ class GestureActionExecutor(
             GestureAction.SCREENSHOT -> {
                 val service = accessibilityService() ?: return false
                 service.screenshotAction(callback)
+                true
+            }
+            GestureAction.ROLLING_SCREENSHOT -> {
+                val service = accessibilityService() ?: return false
+                service.captureRollingScreenshot(
+                    onProgress = { actionProgress?.invoke(it) },
+                    onComplete = { ok, _ -> callback(ok) }
+                )
                 true
             }
             GestureAction.LOCK_SCREEN -> {

@@ -59,6 +59,7 @@ class CalibrationActivity : Activity() {
         GestureAction.CLICK, GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
         GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT,
         GestureAction.BACK, GestureAction.HOME, GestureAction.RECENTS, GestureAction.SCREENSHOT,
+        GestureAction.ROLLING_SCREENSHOT,
         GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE,
         GestureAction.NOTIFICATIONS, GestureAction.LOCK_SCREEN, GestureAction.VOICE_ASSISTANT,
         GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS

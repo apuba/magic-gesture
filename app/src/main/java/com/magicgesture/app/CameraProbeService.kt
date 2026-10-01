@@ -66,7 +66,9 @@ class CameraProbeService : Service() {
         accessibilityService = { ControlAccessibilityService.active },
         selfieCapture = ::captureSelfie,
         mediaKey = ::dispatchMediaKey,
-        volumeAdjust = ::adjustVolume
+        volumeAdjust = ::adjustVolume,
+        // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
+        actionProgress = { message -> overlayIndicator.showFeedback(message) }
     )
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()

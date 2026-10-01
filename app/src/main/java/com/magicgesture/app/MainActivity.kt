@@ -134,7 +134,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(14))
         })
 
-        content.addView(gestureCard(R.drawable.gesture_point, "食指移动", "控制光标", "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "食指移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", actionLabelOf(GestureCode.G03, GestureCode.G04), "伸出食指保持接近水平，上挑或下挑指尖，滚动当前页面。", "↕", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
