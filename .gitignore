@@ -36,3 +36,5 @@ Thumbs.db
 
 # Word temporary lock files
 docs/~$*.docx
+
+.codebuddy/
