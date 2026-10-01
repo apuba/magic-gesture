@@ -33,3 +33,6 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+
+# Word temporary lock files
+docs/~$*.docx
