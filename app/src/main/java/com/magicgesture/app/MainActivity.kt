@@ -156,6 +156,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_love, "666 手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右挥动。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
@@ -448,6 +449,7 @@ class MainActivity : Activity() {
         "claw_drag" -> "爪形手势"
         "c_shape" -> "C 手形最近任务"
         "love_lock" -> "Love 手形返回桌面"
+        "six666" -> "666 手势"
         "two_finger_media" -> "两指媒体控制"
         "open_app_1" -> "张掌后收成食指"
         "open_app_2" -> "张掌后收成两指"
@@ -480,6 +482,7 @@ class MainActivity : Activity() {
             "claw_drag" to features.clawDrag,
             "c_shape" to features.cShape,
             "love_lock" to features.loveLock,
+            "six666" to features.six666,
             "two_finger_media" to features.twoFingerMedia,
             "open_app_1" to features.openApp1,
             "open_app_2" to features.openApp2,

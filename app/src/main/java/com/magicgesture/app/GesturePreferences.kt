@@ -26,6 +26,8 @@ data class GestureFeatureConfig(
     val clawDrag: Boolean = true,
     val cShape: Boolean = true,
     val loveLock: Boolean = true,
+    // G34 "666": thumb and pinky out, other fingers curled. Unbound by default.
+    val six666: Boolean = true,
     val twoFingerMedia: Boolean = true,
     // G16-G19 open-app sequences: open palm, then fold to 1-4 fingers.
     val openApp1: Boolean = true,
@@ -201,6 +203,7 @@ object GesturePreferences {
             clawDrag = prefs.getBoolean("feature_claw_drag", true),
             cShape = prefs.getBoolean("feature_c_shape", true),
             loveLock = prefs.getBoolean("feature_love_lock", true),
+            six666 = prefs.getBoolean("feature_six666", true),
             twoFingerMedia = prefs.getBoolean("feature_two_finger_media", true),
             openApp1 = prefs.getBoolean("feature_open_app_1", true),
             openApp2 = prefs.getBoolean("feature_open_app_2", true),

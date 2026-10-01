@@ -51,6 +51,7 @@ class CalibrationActivity : Activity() {
         GestureCode.G26 to "爪形手势",
         GestureCode.G27 to "C 手形",
         GestureCode.G28 to "Love 手形",
+        GestureCode.G34 to "666 手势",
         GestureCode.G29 to "两指左挥",
         GestureCode.G30 to "两指右挥",
         GestureCode.G31 to "两指上拉保持",

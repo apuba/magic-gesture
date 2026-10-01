@@ -6,7 +6,7 @@ import android.view.KeyEvent
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
     G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23,
-    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33
+    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34
 }
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
@@ -136,6 +136,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             is GestureEvent.ClawDrag -> GestureCode.G26
             GestureEvent.CShape -> GestureCode.G27
             GestureEvent.LoveLock -> GestureCode.G28
+            GestureEvent.Six666 -> GestureCode.G34
             GestureEvent.TwoFingerDoubleTap -> GestureCode.G33
             is GestureEvent.TwoFingerSwipe -> when (event.direction) {
                 GestureEvent.TwoFingerDirection.LEFT -> GestureCode.G29
@@ -353,6 +354,7 @@ class GestureFeatureGate {
         GestureCode.G26 -> features.clawDrag
         GestureCode.G27 -> features.cShape
         GestureCode.G28 -> features.loveLock
+        GestureCode.G34 -> features.six666
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33 -> features.twoFingerMedia
         else -> false
     }

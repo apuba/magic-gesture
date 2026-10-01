@@ -136,6 +136,20 @@ class GestureArchitectureTest {
         assertEquals(GestureAction.SCROLL_RIGHT, indexRight.action)
     }
 
+    /** G34 "666" ships unbound on purpose: the pipeline runs, the action is chosen by the user. */
+    @Test fun six666ResolvesToG34AndStaysUnboundUntilRemapped() {
+        assertNull(GestureMappingManager().resolve(GestureEvent.Six666))
+        assertNull(GestureMappingManager().actionFor(GestureCode.G34))
+        assertTrue(GestureMappingManager().isRemappable(GestureCode.G34))
+
+        val remapped = GestureMappingManager(mapOf(GestureCode.G34 to GestureAction.MEDIA_NEXT))
+        val mapped = requireNotNull(remapped.resolve(GestureEvent.Six666)).mapping
+        assertEquals(GestureCode.G34, mapped.code)
+        assertEquals(GestureAction.MEDIA_NEXT, mapped.action)
+        assertEquals(GestureType.HOLD, mapped.type)
+        assertFalse(gate.allows(mapped, GestureFeatureConfig(six666 = false)))
+    }
+
     @Test fun userOverridesReplaceTheActionButKeepGestureTypeAndCooldown() {
         val remapped = GestureMappingManager(mapOf(GestureCode.G15 to GestureAction.HOME))
 

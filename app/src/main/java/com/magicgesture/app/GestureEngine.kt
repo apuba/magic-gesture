@@ -33,6 +33,8 @@ sealed interface GestureEvent {
     data class TwoFingerSwipe(val direction: TwoFingerDirection) : GestureEvent
     enum class VolumeHoldPhase { START, TICK, END }
     data class TwoFingerVolumeHold(val raise: Boolean, val phase: VolumeHoldPhase) : GestureEvent
+    /** G34 "666": thumb and pinky extended, index/middle/ring curled. Unbound by default. */
+    data object Six666 : GestureEvent
     /** Both fingers bend and re-extend twice in a row while in the two-finger pose. */
     data object TwoFingerDoubleTap : GestureEvent
     /** Open-palm-then-fold sequence fired slot N (1..4): 1=index, 2=index+middle, 3=+ring, 4=+pinky. */
@@ -75,6 +77,8 @@ class GestureEngine(
     private var thumbsUpHoldAt = 0L
     private var okHold = StaticHold.READY
     private var okHoldAt = 0L
+    private var six666Hold = StaticHold.READY
+    private var six666HoldAt = 0L
     /** Last frame the OK shape was seen; keeps the finger heart from claiming wobbling frames. */
     private var okPoseAt = 0L
     private var fistHold = StaticHold.READY
@@ -181,6 +185,7 @@ class GestureEngine(
         val middleOpen = dist(points[12], points[0]) > dist(points[10], points[0]) * 1.12f
         val ringOpen = dist(points[16], points[0]) > dist(points[14], points[0]) * 1.12f
         val pinkyOpen = dist(points[20], points[0]) > dist(points[18], points[0]) * 1.12f
+        val indexFolded = dist(points[8], points[0]) < dist(points[6], points[0]) * 1.08f
         val middleFolded = dist(points[12], points[0]) < dist(points[10], points[0]) * 1.08f
         val ringFolded = dist(points[16], points[0]) < dist(points[14], points[0]) * 1.08f
         val pinkyFolded = dist(points[20], points[0]) < dist(points[18], points[0]) * 1.08f
@@ -216,6 +221,10 @@ class GestureEngine(
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
         // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
         val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
+        // G34 "666": thumb and pinky out, index/middle/ring curled. The pinky is what separates
+        // it from the thumbs-up (which needs the pinky folded) and the curled index separates
+        // it from the love pose (which needs the index extended).
+        val six666Pose = thumbOpen && pinkyOpen && indexFolded && middleFolded && ringFolded
         // Claw vs C live on a curl continuum. Use each finger's own reach from wrist and
         // tolerate one noisy/occluded finger; requiring all four tips inside a narrow band
         // made both poses practically unreachable with real MediaPipe frames.
@@ -326,6 +335,7 @@ class GestureEngine(
         if (features.leftL && advanceStaticHold(leftLPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
         if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 2000L, label = "L 手形保持")) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
+        if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
         advanceTwoFingerTap(twoFingerTogetherPose, now, output)
@@ -1087,6 +1097,8 @@ class GestureEngine(
         cShapeHoldAt = 0L
         loveHold = StaticHold.READY
         loveHoldAt = 0L
+        six666Hold = StaticHold.READY
+        six666HoldAt = 0L
         clawDragState = ClawDragState.READY
         clawConfirmAt = 0L
         clawAnchor = null

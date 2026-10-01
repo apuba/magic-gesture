@@ -175,6 +175,11 @@ class GestureEngineReplayTest {
     private fun horizontalIndexFlicked(): List<Point> = horizontalIndex()
         .withLandmark(8, Point(.65f, .45f))
 
+    /** G34 "666": thumb and pinky out, index/middle/ring curled. */
+    private fun six666Pose(): List<Point> = baseHand(
+        index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED
+    )
+
     /** Deeply curled fingers with one tip slightly farther out, so this is a claw rather than a fist. */
     private fun clawPose(): List<Point> = baseHand(
         FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
@@ -337,6 +342,18 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.Like>())
         r.feed(20, ::fingerHeartPose)
         assertEquals(1, r.events.countOf<GestureEvent.Like>())
+    }
+
+    /** The pinky keeps 666 clear of the thumbs-up; the curled index keeps it clear of the love pose. */
+    @Test fun six666HoldFiresOnceWithoutTriggeringThumbUpOrLove() {
+        val r = Replay()
+        r.feed(14, ::six666Pose)
+        assertEquals(1, r.events.countOf<GestureEvent.Six666>())
+        assertEquals(0, r.events.countOf<GestureEvent.ThumbsUp>())
+        assertEquals(0, r.events.countOf<GestureEvent.LoveLock>())
+        assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
+        r.feed(20, ::six666Pose)
+        assertEquals(1, r.events.countOf<GestureEvent.Six666>())
     }
 
     @Test fun screenshotSequenceOpenFistOpenFiresScreenshotOnce() {
