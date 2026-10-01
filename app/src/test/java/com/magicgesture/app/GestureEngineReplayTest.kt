@@ -375,6 +375,16 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
     }
 
+    @Test fun aQuickRealWorldDoubleTapRhythmAlsoFires() {
+        val r = Replay()
+        r.feed(3) { twoFingerHand() }   // ~150ms per phase: real users tap fast
+        r.feed(1, ::fistPose)
+        r.feed(3) { twoFingerHand() }
+        r.feed(1, ::fistPose)
+        r.feed(3) { twoFingerHand() }
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+    }
+
     @Test fun aSingleTwoFingerBendNeverTogglesPlayPause() {
         val r = Replay()
         r.feed(6) { twoFingerHand() }

@@ -299,7 +299,8 @@ class GestureFeatureGate {
 class GestureActionExecutor(
     private val accessibilityService: () -> ControlAccessibilityService?,
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
-    private val mediaKey: (Int, (Boolean) -> Unit) -> Unit
+    private val mediaKey: (Int, (Boolean) -> Unit) -> Unit,
+    private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit
 ) {
     /**
      * Action-centric dispatch: execution depends only on the mapped action, never on the
@@ -373,13 +374,15 @@ class GestureActionExecutor(
                 service.confirmAtCursor(callback)
                 true
             }
-            // Media and volume keys go through AudioManager and keep working even when the
-            // accessibility service is reconnecting.
+            // Media keys go through AudioManager and keep working even when the
+            // accessibility service is reconnecting. Volume must NOT use dispatchMediaKeyEvent:
+            // modern Android only routes media-session keycodes through it and silently
+            // drops VOLUME_UP/DOWN, so volume adjusts the stream directly instead.
             GestureAction.PLAY_PAUSE -> { mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, callback); true }
             GestureAction.MEDIA_NEXT -> { mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT, callback); true }
             GestureAction.MEDIA_PREVIOUS -> { mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS, callback); true }
-            GestureAction.VOLUME_UP -> { mediaKey(KeyEvent.KEYCODE_VOLUME_UP, callback); true }
-            GestureAction.VOLUME_DOWN -> { mediaKey(KeyEvent.KEYCODE_VOLUME_DOWN, callback); true }
+            GestureAction.VOLUME_UP -> { volumeAdjust(true, callback); true }
+            GestureAction.VOLUME_DOWN -> { volumeAdjust(false, callback); true }
         }
     }
 

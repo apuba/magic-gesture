@@ -517,9 +517,9 @@ class GestureEngine(
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.LEFT)
                         dx >= .09f * movementScale && horizontal && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.RIGHT)
-                        dy <= -.08f * movementScale && vertical && elapsed <= 5000 ->
+                        dy <= -.065f * movementScale && vertical && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.UP)
-                        dy >= .08f * movementScale && vertical && elapsed <= 5000 ->
+                        dy >= .055f * movementScale && vertical && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.DOWN)
                         elapsed > 5000 -> null
                         else -> null
@@ -537,8 +537,9 @@ class GestureEngine(
     /**
      * G33 play/pause toggle: with the index+middle-together pose held, bend both fingers
      * and re-extend twice in a row ("tap twice"). Like the sibling swipe machine it never
-     * consumes frames. Each pose segment must be held >= 250ms (a casual drop/raise never
-     * counts) and each bend must resolve within 450ms, so the whole gesture stays snappy.
+     * consumes frames. Real double-taps are quick (~150ms per phase), so each pose segment
+     * only needs >= 120ms (still long enough to reject single-frame pose flickers) and
+     * each bend must resolve within 500ms.
      */
     private fun advanceTwoFingerTap(
         pose: Boolean,
@@ -555,7 +556,7 @@ class GestureEngine(
                 twoFingerTapPoseAt = now
             }
             TwoFingerTapState.HELD -> if (!pose) {
-                if (now - twoFingerTapPoseAt >= 250) {
+                if (now - twoFingerTapPoseAt >= 120) {
                     twoFingerTapState = TwoFingerTapState.BENT_ONCE
                     twoFingerTapBentAt = now
                 } else {
@@ -563,15 +564,15 @@ class GestureEngine(
                 }
             }
             TwoFingerTapState.BENT_ONCE -> when {
-                pose && now - twoFingerTapBentAt <= 450 -> {
+                pose && now - twoFingerTapBentAt <= 500 -> {
                     twoFingerTapState = TwoFingerTapState.POSED_SECOND
                     twoFingerTapPoseAt = now
                     twoFingerTapFirstCycleAt = now
                 }
-                now - twoFingerTapBentAt > 450 -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapBentAt > 500 -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.POSED_SECOND -> when {
-                !pose && now - twoFingerTapPoseAt >= 250 && now - twoFingerTapFirstCycleAt <= 1200 -> {
+                !pose && now - twoFingerTapPoseAt >= 120 && now - twoFingerTapFirstCycleAt <= 1200 -> {
                     twoFingerTapState = TwoFingerTapState.BENT_TWICE
                     twoFingerTapBentAt = now
                 }
@@ -579,11 +580,11 @@ class GestureEngine(
                 now - twoFingerTapFirstCycleAt > 1500 -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.BENT_TWICE -> when {
-                pose && now - twoFingerTapBentAt <= 450 -> {
+                pose && now - twoFingerTapBentAt <= 500 -> {
                     output += GestureEvent.TwoFingerDoubleTap
                     twoFingerTapState = TwoFingerTapState.FIRED_WAIT
                 }
-                now - twoFingerTapBentAt > 450 -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapBentAt > 500 -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.FIRED_WAIT -> if (!pose) twoFingerTapState = TwoFingerTapState.IDLE
         }

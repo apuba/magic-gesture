@@ -59,7 +59,8 @@ class CameraProbeService : Service() {
     private val actionExecutor = GestureActionExecutor(
         accessibilityService = { ControlAccessibilityService.active },
         selfieCapture = ::captureSelfie,
-        mediaKey = ::dispatchMediaKey
+        mediaKey = ::dispatchMediaKey,
+        volumeAdjust = ::adjustVolume
     )
     private val reopenCamera = Runnable {
         if (!stopped && camera == null && !cameraOpening) openCamera()
@@ -121,6 +122,7 @@ class CameraProbeService : Service() {
                         val mapped = mappingManager.resolve(event)
                         if (mapped != null) {
                             if (!featureGate.allows(mapped.mapping, featureConfig)) return@HandPipeline
+                            Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
                             val submitted = actionExecutor.execute(mapped) { success ->
                                 if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS) {
                                     finishAction(
@@ -315,6 +317,29 @@ class CameraProbeService : Service() {
         } catch (e: Exception) {
             Log.e("CameraProbe", "media key $keyCode failed", e)
             callback(false)
+        }
+    }
+
+    /**
+     * Raises/lowers the media stream volume. dispatchMediaKeyEvent silently drops
+     * VOLUME_UP/DOWN on modern Android, so adjust the stream directly and only fall
+     * back to a simulated key event if that path fails.
+     */
+    private fun adjustVolume(raise: Boolean, callback: (Boolean) -> Unit) {
+        try {
+            val audio = getSystemService(AudioManager::class.java)
+            audio.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                if (raise) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                AudioManager.FLAG_SHOW_UI
+            )
+            callback(true)
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "volume adjust failed", e)
+            dispatchMediaKey(
+                if (raise) KeyEvent.KEYCODE_VOLUME_UP else KeyEvent.KEYCODE_VOLUME_DOWN,
+                callback
+            )
         }
     }
     private fun saveSelfie(bitmap: Bitmap): Boolean {
