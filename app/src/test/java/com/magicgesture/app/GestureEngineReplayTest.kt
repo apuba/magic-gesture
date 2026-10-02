@@ -290,14 +290,14 @@ class GestureEngineReplayTest {
 
     @Test fun fistHoldFiresPlayPauseOnceAndRequiresRelease() {
         val r = Replay()
-        r.feed(20, ::fistPose)                   // 1s: below the 1.5s hold, must not fire yet
+        r.feed(20, ::fistPose)                   // 950ms elapsed: below the 1s hold
         assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
-        r.feed(15, ::fistPose)                   // 1.75s total -> PlayPause at 1.5s
+        r.feed(2, ::fistPose)                    // 1.05s elapsed -> PlayPause at 1s
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(20, ::fistPose)                   // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(8, ::restPose)
-        r.feed(35, ::fistPose)                   // re-enter: fires again
+        r.feed(22, ::fistPose)                   // re-enter: fires again
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 
@@ -367,9 +367,9 @@ class GestureEngineReplayTest {
 
     @Test fun pinkyOnlyHoldFiresMuteOnceAndRequiresRelease() {
         val r = Replay()
-        r.feed(20, ::pinkyOnlyPose)                   // 1s: below the 1.5s hold
+        r.feed(20, ::pinkyOnlyPose)                   // 950ms elapsed: below the 1s hold
         assertEquals(0, r.events.countOf<GestureEvent.PinkyMute>())
-        r.feed(15, ::pinkyOnlyPose)                   // 1.75s total: fires once
+        r.feed(2, ::pinkyOnlyPose)                    // 1.05s elapsed: fires once
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         assertEquals(0, r.events.countOf<GestureEvent.Six666>())
         assertEquals(0, r.events.countOf<GestureEvent.LoveLock>())
@@ -377,7 +377,7 @@ class GestureEngineReplayTest {
         r.feed(20, ::pinkyOnlyPose)
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         r.feed(4, ::restPose)
-        r.feed(35, ::pinkyOnlyPose)
+        r.feed(22, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 

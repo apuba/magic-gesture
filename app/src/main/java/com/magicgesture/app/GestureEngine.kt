@@ -380,7 +380,7 @@ class GestureEngine(
             candidateAt = 0L
             releaseAt = 0L
         }
-        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1500L, label = "小指手势保持")) return output
+        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持")) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
@@ -456,7 +456,7 @@ class GestureEngine(
         if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
         if (features.ok && okPose) okPoseAt = now
         if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
-        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1500L, label = "握拳保持")) return output
+        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持")) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
         // Finger-heart uses thumb/index proximity independently from index-bend clicking, but
