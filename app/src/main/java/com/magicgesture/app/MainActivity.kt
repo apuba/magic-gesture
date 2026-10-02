@@ -149,7 +149,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。", "OK", "ok", features.ok), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1.5 秒，期间显示倒计时。", "拳", "play_pause", features.playPause), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_pinky, "伸出小指", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持约 0.6 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_pinky, "伸出小指", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1.5 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", actionLabelOf(GestureCode.G24), "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))

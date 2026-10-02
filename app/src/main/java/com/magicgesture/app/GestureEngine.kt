@@ -347,7 +347,7 @@ class GestureEngine(
             candidateAt = 0L
             releaseAt = 0L
         }
-        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, label = "小指手势保持")) return output
+        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1500L, label = "小指手势保持")) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output

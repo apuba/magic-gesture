@@ -364,7 +364,9 @@ class GestureEngineReplayTest {
 
     @Test fun pinkyOnlyHoldFiresMuteOnceAndRequiresRelease() {
         val r = Replay()
-        r.feed(14, ::pinkyOnlyPose)
+        r.feed(20, ::pinkyOnlyPose)                   // 1s: below the 1.5s hold
+        assertEquals(0, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(15, ::pinkyOnlyPose)                   // 1.75s total: fires once
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         assertEquals(0, r.events.countOf<GestureEvent.Six666>())
         assertEquals(0, r.events.countOf<GestureEvent.LoveLock>())
@@ -372,7 +374,7 @@ class GestureEngineReplayTest {
         r.feed(20, ::pinkyOnlyPose)
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         r.feed(4, ::restPose)
-        r.feed(14, ::pinkyOnlyPose)
+        r.feed(35, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
