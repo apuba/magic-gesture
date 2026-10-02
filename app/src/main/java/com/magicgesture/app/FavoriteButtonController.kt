@@ -27,7 +27,9 @@ import android.widget.TextView
 class FavoriteButtonController(
     private val context: Context,
     private val accessibilityService: () -> ControlAccessibilityService?,
-    private val onFlowStateChanged: (Boolean) -> Unit
+    private val onFlowStateChanged: (Boolean) -> Unit,
+    /** Surfaces reasons the flow cannot continue; the generic failure text alone is not enough. */
+    private val onMessage: (String) -> Unit = {}
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val window = context.getSystemService(WindowManager::class.java)
@@ -44,6 +46,9 @@ class FavoriteButtonController(
         if (completion != null) { callback(false); return@post }
         val service = accessibilityService() ?: run { callback(false); return@post }
         val packageName = service.foregroundPackage()?.takeIf(::isAllowedTarget) ?: run {
+            // No collectable foreground app known yet (launcher, system surface, or no window
+            // event since the service started): the generic failure text does not explain that.
+            onMessage("未识别到可收藏的应用，请先切换到要收藏的页面")
             callback(false)
             return@post
         }
@@ -88,7 +93,13 @@ class FavoriteButtonController(
     fun dismiss() = main.post { finish(false) }
 
     private fun showFirstUsePrompt() {
-        if (!Settings.canDrawOverlays(context)) { finish(false); return }
+        if (!Settings.canDrawOverlays(context)) {
+            // Without the overlay the calibration cannot be shown at all; say so instead of
+            // failing silently, which looked like "the OK gesture does nothing".
+            onMessage("需要允许显示悬浮窗，才能定义收藏按钮位置")
+            finish(false)
+            return
+        }
         replaceOverlay(fullScreenRoot().apply {
             addView(card().apply {
                 addView(heading("当前应用尚未定义收藏位置"))
@@ -189,6 +200,8 @@ class FavoriteButtonController(
             appVersion = appVersion(pkg),
             updatedAt = System.currentTimeMillis()
         ))
+        // Saving only stores the position: the actual favorite tap still needs one more gesture.
+        onMessage("收藏位置已保存，再做一次 OK 手势即可收藏")
         finish(true)
     }
 

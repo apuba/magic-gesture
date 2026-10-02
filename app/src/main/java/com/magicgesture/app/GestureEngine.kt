@@ -43,7 +43,7 @@ sealed interface GestureEvent {
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
 }
 class GestureEngine(
-    private val movementScale: Float = 1f,
+    private var movementScale: Float = 1f,
     private var features: GestureFeatureConfig = GestureFeatureConfig()
 ) {
     private enum class Pinch { READY, CANDIDATE, FIRED }
@@ -69,6 +69,7 @@ class GestureEngine(
     private var screenshotCooldownUntil = 0L
     private var backCooldownUntil = 0L
     private var openPalmStart: Point? = null
+    private var openPalmStartWrist: Point? = null
     private var openPalmAxis = PalmAxis.NONE
     private var lastOpenPalmAt = 0L
     private var indexScrollStartAngle = 0f
@@ -104,6 +105,7 @@ class GestureEngine(
     private var clawPalmAt: Point? = null
     private var twoFingerState = TwoFingerSwipeState.IDLE
     private var twoFingerStart: Point? = null
+    private var twoFingerStartWrist: Point? = null
     private var twoFingerStageAt = 0L
     private var lastVolumeTickAt = 0L
     private var twoFingerReleaseRequired = false
@@ -114,6 +116,25 @@ class GestureEngine(
     private var lastFeedbackAt = 0L
     private val localRepeatGuardMs = 2000L
     private val openPalmSettleMs = 160L
+    // 整只手轻挑判定：手腕位移至少要达到掌心位移的这个比例。
+    // 只有手指在空中挑动、手掌基本不动时，手腕位移会明显小于掌心位移，据此排除误触。
+    private val wholeHandWristRatio = .60f
+    // G29/G30 左右挥切歌的触发位移（按 movementScale 缩放）。比上下拉音量更宽松，
+    // 真机上整只手轻挑的幅度本来就小，阈值过高会表现为挥了没反应。
+    private var twoFingerHorizontalTrigger = .07f * movementScale
+    // 方向判定容忍度：水平（垂直）分量要压过另一个分量多少倍才算一次左右挥（上下拉）。
+    // 左右挥只要求水平分量不小于垂直分量，即方向与水平轴夹角不超过约 45°——真实挥手
+    // 很少是纯水平的，收紧到 1.25 倍会把带上下起伏的轻挑判成"不是左右挥"。
+    // 上下拉仍要求垂直分量明显占优，两条判定互斥，放宽左右不会抢走音量手势。
+    private val horizontalAxisDominance = 1.0f
+    private val verticalAxisDominance = 1.25f
+    // G33 双击每一段"弯下 / 伸直"的最短时间。真实双击很快，120ms 会把快速双击当成抖动
+    // 而整段作废；80ms 约等于 2 帧，仍能挡住单帧抖动。
+    private val twoFingerTapSegmentMs = 80L
+    // 轨迹型手势（挥动、滚动、切歌、音量）的单个动作窗口。超过窗口不再判"失效、必须松手
+    // 重来"，而是把位移/角度基准刷新到当前位置重新计时：摆好姿势后想一下再动也能触发，
+    // 同时基准始终新鲜，不会因为很久以前的位置突然算出一段位移而误触发。
+    private val stageTimeoutMs = 5000L
     // G16-G19: open-palm then fold to N fingers opens the app bound to that slot.
     private enum class AppSequence { IDLE, ARMED, HOLDING, WAIT_RELEASE }
     private var appSequence = AppSequence.IDLE
@@ -129,6 +150,17 @@ class GestureEngine(
     @Synchronized fun resume() { paused = false; resetTransient() }
     @Synchronized fun stop() { paused = true; resetTransient(); smoothed = null }
     @Synchronized fun updateFeatures(value: GestureFeatureConfig) { features = value; resetTransient() }
+
+    /**
+     * Applies a new sensitivity live. Every movement threshold is expressed in terms of
+     * movementScale, so replacing it retunes all of them at once; transient tracking is
+     * cleared so a trajectory started under the old scale cannot fire under the new one.
+     */
+    @Synchronized fun updateMovementScale(value: Float) {
+        movementScale = value
+        twoFingerHorizontalTrigger = .07f * movementScale
+        resetTransient()
+    }
     @Synchronized fun lost(now: Long): List<GestureEvent> {
         if (now - lastSeenAt < 300) return emptyList()
         val ending = when (twoFingerState) {
@@ -143,6 +175,7 @@ class GestureEngine(
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) {
         twoFingerState = if (waitForRelease) TwoFingerSwipeState.WAIT_RELEASE else TwoFingerSwipeState.IDLE
         twoFingerStart = null
+        twoFingerStartWrist = null
         lastVolumeTickAt = 0L
         twoFingerReleaseRequired = waitForRelease
     }
@@ -352,7 +385,7 @@ class GestureEngine(
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
         advanceTwoFingerTap(twoFingerTogetherPose, now, output)
-        advanceTwoFingerSwipe(twoFingerTogetherPose, palm, now, output)
+        advanceTwoFingerSwipe(twoFingerTogetherPose, palm, points[0], now, output)
         if (twoFingerState == TwoFingerSwipeState.VOLUME_UP || twoFingerState == TwoFingerSwipeState.VOLUME_DOWN) return output
         if (features.click) {
             when (indexClick) {
@@ -410,7 +443,7 @@ class GestureEngine(
             indexClick = IndexClick.READY
             indexClickPoint = null
         }
-        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, fist, palm, now, output)) {
+        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, fist, palm, points[0], now, output)) {
             if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
                 indexClick = IndexClick.READY
                 indexClickPoint = null
@@ -589,6 +622,16 @@ class GestureEngine(
         return false
     }
     /**
+     * 整只手向左右轻挑：掌心位移达标，且手腕同向位移达到掌心位移的 wholeHandWristRatio。
+     * 只有手指在空中挑动、手掌基本不动时，手腕位移会明显小于掌心位移，据此排除误触。
+     */
+    private fun wholeHandHorizontalFlick(palmDx: Float, wristDx: Float): Boolean {
+        val absPalm = kotlin.math.abs(palmDx)
+        if (absPalm <= 0f) return false
+        return palmDx * wristDx > 0f && kotlin.math.abs(wristDx) >= absPalm * wholeHandWristRatio
+    }
+
+    /**
      * G29-G32 two-finger media control: hold the index+middle-together pose, then wave the
      * whole hand left/right for track control or pull up/down and hold for continuous volume. The
      * pose is also a common "neutral" hand shape, so this machine never consumes frames —
@@ -597,18 +640,21 @@ class GestureEngine(
     private fun advanceTwoFingerSwipe(
         pose: Boolean,
         palm: Point,
+        wrist: Point,
         now: Long,
         output: MutableList<GestureEvent>
     ) {
         if (!features.twoFingerMedia) {
             twoFingerState = TwoFingerSwipeState.IDLE
             twoFingerStart = null
+            twoFingerStartWrist = null
             return
         }
         when (twoFingerState) {
             TwoFingerSwipeState.IDLE -> if (pose) {
                 twoFingerState = TwoFingerSwipeState.TRACKING
                 twoFingerStart = palm
+                twoFingerStartWrist = wrist
                 twoFingerStageAt = now
                 // Stay quiet while the tap machine is mid double-tap or has just fired.
                 if (twoFingerTapState == TwoFingerTapState.IDLE ||
@@ -621,24 +667,43 @@ class GestureEngine(
                 if (!pose) {
                     twoFingerState = TwoFingerSwipeState.IDLE
                     twoFingerStart = null
+                    twoFingerStartWrist = null
                     return
                 }
                 val start = twoFingerStart
-                if (start != null) {
+                val startWrist = twoFingerStartWrist
+                if (start != null && startWrist != null) {
                     val dx = palm.x - start.x
                     val dy = palm.y - start.y
+                    val wristDx = wrist.x - startWrist.x
                     val elapsed = now - twoFingerStageAt
-                    val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f
-                    val vertical = kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.25f
+                    // 摆好姿势后超过一个动作窗口还没挥动：不再判失效，把基准刷新到当前
+                    // 位置重新计时，用户想一下再挥也能触发。
+                    if (elapsed > stageTimeoutMs) {
+                        twoFingerStart = palm
+                        twoFingerStartWrist = wrist
+                        twoFingerStageAt = now
+                        return
+                    }
+                    val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy) * horizontalAxisDominance
+                    val vertical = kotlin.math.abs(dy) > kotlin.math.abs(dx) * verticalAxisDominance
+                    // 左右切歌要求整只手一起轻挑：指尖单独抖动不算挥手。
+                    val wholeHand = wholeHandHorizontalFlick(dx, wristDx)
+                    // 双击（G33）后半程：手指弯下再伸直会带着掌心上下移动，这段位移不能被
+                    // 判成上下拉音量，否则双击会变成调音量。左右挥不受影响——松手后重新
+                    // 挥手与双击第二下形态相同，屏蔽它会让正常的切歌失灵。
+                    val doubleTapFinishing = twoFingerTapState == TwoFingerTapState.POSED_SECOND ||
+                        twoFingerTapState == TwoFingerTapState.BENT_TWICE ||
+                        twoFingerTapState == TwoFingerTapState.FIRED_WAIT
                     val fired = when {
                         // Landmark y grows downward, so a wave up produces negative dy.
-                        dx <= -.09f * movementScale && horizontal && elapsed <= 5000 ->
+                        dx <= -twoFingerHorizontalTrigger && horizontal && wholeHand && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.LEFT)
-                        dx >= .09f * movementScale && horizontal && elapsed <= 5000 ->
+                        dx >= twoFingerHorizontalTrigger && horizontal && wholeHand && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.RIGHT)
-                        dy <= -.065f * movementScale && vertical && elapsed <= 5000 ->
+                        dy <= -.065f * movementScale && vertical && !doubleTapFinishing && elapsed <= 5000 ->
                             GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.START)
-                        dy >= .055f * movementScale && vertical && elapsed <= 5000 ->
+                        dy >= .055f * movementScale && vertical && !doubleTapFinishing && elapsed <= 5000 ->
                             GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.START)
                         elapsed > 5000 -> null
                         else -> null
@@ -652,6 +717,7 @@ class GestureEngine(
                         }
                         if (fired is GestureEvent.TwoFingerVolumeHold) lastVolumeTickAt = now
                         twoFingerStart = null
+                        twoFingerStartWrist = null
                     }
                 }
             }
@@ -709,7 +775,7 @@ class GestureEngine(
                 twoFingerTapPoseAt = now
             }
             TwoFingerTapState.HELD -> if (!pose) {
-                if (now - twoFingerTapPoseAt >= 120) {
+                if (now - twoFingerTapPoseAt >= twoFingerTapSegmentMs) {
                     twoFingerTapState = TwoFingerTapState.BENT_ONCE
                     twoFingerTapBentAt = now
                 } else {
@@ -725,7 +791,7 @@ class GestureEngine(
                 now - twoFingerTapBentAt > 500 -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.POSED_SECOND -> when {
-                !pose && now - twoFingerTapPoseAt >= 120 && now - twoFingerTapFirstCycleAt <= 1200 -> {
+                !pose && now - twoFingerTapPoseAt >= twoFingerTapSegmentMs && now - twoFingerTapFirstCycleAt <= 1200 -> {
                     twoFingerTapState = TwoFingerTapState.BENT_TWICE
                     twoFingerTapBentAt = now
                 }
@@ -853,6 +919,7 @@ class GestureEngine(
         indexAngleDegrees: Float,
         fist: Boolean,
         palm: Point,
+        wrist: Point,
         now: Long,
         output: MutableList<GestureEvent>
     ): Boolean {
@@ -874,7 +941,8 @@ class GestureEngine(
                     screenshotSequence = ScreenshotSequence.INDEX_HORIZONTAL_SWIPE
                     screenshotStageAt = now
                     openPalmStart = palm
-                    output += GestureEvent.Feedback("竖直食指已识别：向左或向右轻挑滚动页面")
+                    openPalmStartWrist = wrist
+                    output += GestureEvent.Feedback("竖直食指已识别：整只手向左或向右轻挑滚动页面")
                     return true
                 }
                 if (features.screenshot && screenshotOpen && now >= screenshotCooldownUntil) {
@@ -889,6 +957,7 @@ class GestureEngine(
                     screenshotSequence = ScreenshotSequence.OPEN_CANDIDATE
                     screenshotStageAt = now
                     openPalmStart = palm
+                    openPalmStartWrist = wrist
                     openPalmAxis = PalmAxis.NONE
                     lastOpenPalmAt = now
                     output += GestureEvent.Feedback("食指、中指、无名指和小指并拢：请挥动")
@@ -909,6 +978,7 @@ class GestureEngine(
                 if (elapsed < openPalmSettleMs) {
                     // Ignore the small sideways jump that commonly occurs while the palm opens.
                     openPalmStart = palm
+                    openPalmStartWrist = wrist
                     return true
                 }
                 val start = openPalmStart
@@ -950,9 +1020,11 @@ class GestureEngine(
                         openPalmStart = null
                         return true
                     }
-                    if (elapsed > 5000) {
-                        screenshotSequence = ScreenshotSequence.WAIT_RELEASE
-                        openPalmStart = null
+                    if (elapsed > stageTimeoutMs) {
+                        // 超时不失效：保留已经确定的方向轴，把基准刷新到当前位置重新计时。
+                        openPalmStart = palm
+                        openPalmStartWrist = wrist
+                        screenshotStageAt = now
                     }
                 }
                 return true
@@ -964,25 +1036,32 @@ class GestureEngine(
                     return false
                 }
                 val start = openPalmStart
-                if (start != null) {
+                val startWrist = openPalmStartWrist
+                if (start != null && startWrist != null) {
                     val dx = palm.x - start.x
                     val dy = palm.y - start.y
+                    val wristDx = wrist.x - startWrist.x
                     val elapsed = now - screenshotStageAt
-                    if (features.indexLeftScroll && dx <= -.05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
+                    val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f
+                    // 与两指切歌一致：整只手一起轻挑才算左右滚动，只动指尖不算。
+                    val wholeHand = wholeHandHorizontalFlick(dx, wristDx)
+                    if (features.indexLeftScroll && dx <= -.05f * movementScale && horizontal && wholeHand && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         return true
                     }
-                    if (features.indexRightScroll && dx >= .05f * movementScale && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f && elapsed <= 5000) {
+                    if (features.indexRightScroll && dx >= .05f * movementScale && horizontal && wholeHand && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.INDEX_FINGER)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         return true
                     }
-                    if (elapsed > 5000) {
-                        screenshotSequence = ScreenshotSequence.WAIT_RELEASE
-                        openPalmStart = null
+                    if (elapsed > stageTimeoutMs) {
+                        // 超时不失效：把基准刷新到当前位置重新计时。
+                        openPalmStart = palm
+                        openPalmStartWrist = wrist
+                        screenshotStageAt = now
                     }
                 }
                 return true
@@ -1005,8 +1084,10 @@ class GestureEngine(
                     screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                     return true
                 }
-                if (elapsed > 5000) {
-                    screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                if (elapsed > stageTimeoutMs) {
+                    // 超时不失效：把角度基准刷新到当前角度重新计时。
+                    indexScrollStartAngle = indexAngleDegrees
+                    screenshotStageAt = now
                 }
                 return true
             }
@@ -1088,6 +1169,7 @@ class GestureEngine(
         screenshotStageAt = 0
         screenshotArmedAt = 0
         openPalmStart = null
+        openPalmStartWrist = null
         openPalmAxis = PalmAxis.NONE
         lastOpenPalmAt = 0
         indexScrollStartAngle = 0f
@@ -1121,6 +1203,7 @@ class GestureEngine(
         clawPalmAt = null
         twoFingerState = TwoFingerSwipeState.IDLE
         twoFingerStart = null
+        twoFingerStartWrist = null
         twoFingerStageAt = 0L
         lastVolumeTickAt = 0L
         twoFingerTapState = TwoFingerTapState.IDLE

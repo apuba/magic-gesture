@@ -33,6 +33,13 @@ class CameraProbeService : Service() {
         @Volatile
         var isControlRunning = false
             private set
+
+        // Delays for the play fallback: verify audio, confirm the silence, let the music app
+        // publish its MediaSession, then confirm the repeated play key really produced audio.
+        private const val PLAYBACK_VERIFY_DELAY_MS = 800L
+        private const val PLAYBACK_RECHECK_DELAY_MS = 700L
+        private const val MUSIC_APP_SESSION_DELAY_MS = 1_200L
+        private const val PLAYBACK_FINAL_CHECK_DELAY_MS = 2_000L
     }
 
     private val channel = "camera_probe"
@@ -55,6 +62,7 @@ class CameraProbeService : Service() {
     private var pendingHighQualitySelfie: ((ByteArray?) -> Unit)? = null
     private val highQualitySelfieTimeout = Runnable { completeHighQualitySelfie(null) }
     private var featureConfig = GestureFeatureConfig()
+    private var entitlement = GestureEntitlement(GestureUnlockPlan.BASE_CODES.toSet())
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
     private val globalCooldown = GlobalCooldownManager()
@@ -83,7 +91,8 @@ class CameraProbeService : Service() {
         FavoriteButtonController(
             context = this,
             accessibilityService = { ControlAccessibilityService.active },
-            onFlowStateChanged = { favoriteFlowActive = it }
+            onFlowStateChanged = { favoriteFlowActive = it },
+            onMessage = { message -> overlayIndicator.showFeedback(message) }
         )
     }
 
@@ -131,7 +140,8 @@ class CameraProbeService : Service() {
         super.onCreate()
         worker.start(); handler = Handler(worker.looper)
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        featureConfig = GesturePreferences.features(this)
+        featureConfig = GesturePreferences.effectiveFeatures(this)
+        entitlement = GestureUnlockStore(this).entitlement()
         mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
         globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
         overlayIndicator = OverlayIndicator(this)
@@ -143,6 +153,13 @@ class CameraProbeService : Service() {
                     if (!featureConfig.cursor) ControlAccessibilityService.active?.hideCursor()
                     overlayIndicator.showFeedback("手势开关已即时更新")
                 }
+                key?.startsWith(GestureUnlockStore.KEY_PREFIX) == true -> {
+                    // 签到解锁后无需重启控制：权益与生效开关立即下发给识别引擎。
+                    entitlement = GestureUnlockStore(this).entitlement()
+                    featureConfig = GesturePreferences.effectiveFeatures(this)
+                    pipeline?.updateFeatures(featureConfig)
+                    overlayIndicator.showFeedback("解锁状态已即时更新")
+                }
                 key?.startsWith("mapping_") == true -> {
                     mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
                     overlayIndicator.showFeedback("手势映射已即时更新")
@@ -150,6 +167,11 @@ class CameraProbeService : Service() {
                 key == GesturePreferences.COOLDOWN_MS -> {
                     globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
                     overlayIndicator.showFeedback("冷却时长已更新")
+                }
+                key == GesturePreferences.SENSITIVITY -> {
+                    // 灵敏度决定所有位移/角度阈值，运行中直接重算，无需重启手势控制。
+                    pipeline?.updateSensitivity(GesturePreferences.movementScale(this))
+                    overlayIndicator.showFeedback("识别灵敏度已即时更新")
                 }
             }
         }.also {
@@ -183,7 +205,8 @@ class CameraProbeService : Service() {
                         pipeline = HandPipeline(this) { event ->
                             val service = ControlAccessibilityService.active
                             if (favoriteFlowActive) return@HandPipeline
-                            if (selfieInProgress && event !is GestureEvent.Feedback) return@HandPipeline
+                            // 自拍倒计时期间冻结全部手势：连识别提示也不显示，避免与倒计时抢占浮层。
+                            if (selfieInProgress) return@HandPipeline
                             if (event is GestureEvent.TwoFingerVolumeHold) {
                                 handleContinuousVolume(event, event.raise, event.phase)
                                 return@HandPipeline
@@ -305,6 +328,8 @@ class CameraProbeService : Service() {
         }
     }
     private fun executeMapped(mapped: MappedGesture) {
+        // 未解锁的手势不得执行；功能开关是独立的一层，不能代替解锁权益判断。
+        if (!entitlement.owns(mapped.mapping.code)) return
         if (!featureGate.allows(mapped.mapping, featureConfig)) return
         Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
         val submitted = actionExecutor.execute(mapped) { success ->
@@ -324,7 +349,7 @@ class CameraProbeService : Service() {
                     pipeline?.finishVolumeSession(waitForRelease = true)
                     return
                 }
-                if (!featureGate.allows(mapped.mapping, featureConfig)) {
+                if (!entitlement.owns(mapped.mapping.code) || !featureGate.allows(mapped.mapping, featureConfig)) {
                     pipeline?.finishVolumeSession(waitForRelease = true)
                     return
                 }
@@ -403,10 +428,20 @@ class CameraProbeService : Service() {
         handler.removeCallbacks(reopenCamera)
         handler.postDelayed(reopenCamera, 1500)
     }
+    /**
+     * 结束自拍冻结：恢复识别并清空引擎状态，倒计时期间的任何手部动作都不会在恢复后被补触发。
+     */
+    private fun endSelfieFreeze() {
+        selfieInProgress = false
+        pipeline?.resetTracking()
+    }
+
     private fun captureSelfie(callback: (Boolean) -> Unit) {
         if (selfieInProgress) { callback(false); return }
         selfieInProgress = true
         // Countdown freezes every gesture (including the cursor), so the hand can be lowered right away.
+        // Pausing the pipeline also clears holds and trajectories: nothing may fire when it resumes.
+        pipeline?.pause()
         ControlAccessibilityService.active?.hideCursor()
         // Schedule on the main looper: the camera worker thread is busy with YUV conversion
         // and inference, which would otherwise delay the 1s ticks.
@@ -474,7 +509,7 @@ class CameraProbeService : Service() {
             playShutter()
             val preview = previewThumbnail(jpeg)
             val saved = saveSelfie(jpeg)
-            selfieInProgress = false
+            endSelfieFreeze()
             if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
             callback(saved)
         }
@@ -486,7 +521,7 @@ class CameraProbeService : Service() {
                 val preview = previewThumbnail(bitmap)
                 val saved = saveSelfie(bitmap)
                 bitmap.recycle()
-                selfieInProgress = false
+                endSelfieFreeze()
                 if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
                 callback(saved)
             }
@@ -547,16 +582,91 @@ class CameraProbeService : Service() {
         null
     }
 
-    /** Dispatches a media/volume key through AudioManager; works without the accessibility service. */
+    /**
+     * Dispatches a media/volume key through AudioManager; works without the accessibility
+     * service. A dispatched key only reaches an app that owns an active MediaSession, so when
+     * nothing is playing and no session exists the system drops it silently — that is why the
+     * same gesture sometimes starts the music app and sometimes does nothing. For a play
+     * request we therefore verify that audio really started and, if it did not, open the
+     * default music app and repeat the key once its session is up.
+     */
     private fun dispatchMediaKey(keyCode: Int, callback: (Boolean) -> Unit) {
-        return try {
-            val audio = getSystemService(AudioManager::class.java)
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-            callback(true)
-        } catch (e: Exception) {
-            Log.e("CameraProbe", "media key $keyCode failed", e)
+        val audio = runCatching { getSystemService(AudioManager::class.java) }.getOrNull()
+        if (audio == null) {
             callback(false)
+            return
+        }
+        // Remember whether audio was already playing: only a "play" request may wake a music
+        // app, a "pause" request must never open one.
+        val musicActiveBefore = isMusicActive(audio)
+        if (!sendMediaKey(audio, keyCode)) {
+            callback(false)
+            return
+        }
+        callback(true)
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE && !musicActiveBefore) {
+            mainHandler.postDelayed({
+                verifyPlaybackStarted(audio, secondCheck = false)
+            }, PLAYBACK_VERIFY_DELAY_MS)
+        }
+    }
+
+    private fun sendMediaKey(audio: AudioManager, keyCode: Int): Boolean = try {
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        true
+    } catch (e: Exception) {
+        Log.e("CameraProbe", "media key $keyCode failed", e)
+        false
+    }
+
+    private fun isMusicActive(audio: AudioManager): Boolean =
+        runCatching { audio.isMusicActive() }.getOrDefault(false)
+
+    /**
+     * Confirms a play request actually produced audio. A cold player can take almost a second
+     * before it is audible, so the silent case is confirmed twice before the music app is
+     * launched, and once more after the repeated play key so the feedback never claims success
+     * the user cannot hear.
+     */
+    private fun verifyPlaybackStarted(audio: AudioManager, secondCheck: Boolean) {
+        if (isMusicActive(audio)) return
+        if (!secondCheck) {
+            mainHandler.postDelayed(
+                { verifyPlaybackStarted(audio, secondCheck = true) },
+                PLAYBACK_RECHECK_DELAY_MS
+            )
+            return
+        }
+        if (!launchDefaultMusicApp()) {
+            overlayIndicator.showFeedback("没有找到音乐应用，请先打开音乐 App 再试")
+            return
+        }
+        overlayIndicator.showFeedback("正在唤起音乐应用")
+        mainHandler.postDelayed({
+            val current = runCatching { getSystemService(AudioManager::class.java) }.getOrNull()
+                ?: return@postDelayed
+            sendMediaKey(current, KeyEvent.KEYCODE_MEDIA_PLAY)
+            mainHandler.postDelayed({
+                if (!isMusicActive(current)) {
+                    overlayIndicator.showFeedback("未能唤起音乐应用，请先打开音乐 App 再试")
+                }
+            }, PLAYBACK_FINAL_CHECK_DELAY_MS)
+        }, MUSIC_APP_SESSION_DELAY_MS)
+    }
+
+    /** Opens the system's default music app; false when no music app can be resolved. */
+    private fun launchDefaultMusicApp(): Boolean {
+        val intent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_APP_MUSIC)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            if (intent.resolveActivity(packageManager) == null) return false
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w("CameraProbe", "default music app launch failed", e)
+            false
         }
     }
 

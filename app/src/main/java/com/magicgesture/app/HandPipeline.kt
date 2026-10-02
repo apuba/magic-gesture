@@ -23,7 +23,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
     @Volatile private var firstDetectionLogged = false
     init {
-        engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.features(context))
+        engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.effectiveFeatures(context))
         reverseHorizontal = GesturePreferences.reverseHorizontal(context)
         context.assets.open("hand_landmarker.task").close() // fail clearly if the model isn't installed
         val options = HandLandmarker.HandLandmarkerOptions.builder()
@@ -55,6 +55,8 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     @Synchronized fun resetTracking() { engine.stop(); engine.resume() }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
+    /** Retunes every movement threshold for a new sensitivity without restarting the pipeline. */
+    @Synchronized fun updateSensitivity(movementScale: Float) = engine.updateMovementScale(movementScale)
     fun captureNextFrame(callback: (Bitmap) -> Unit) { pendingFrameCapture = callback }
     fun submit(image: Image, frameRotation: Int) {
         if (closed.get()) return

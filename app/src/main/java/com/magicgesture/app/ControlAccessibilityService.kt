@@ -3,8 +3,10 @@ package com.magicgesture.app
 import android.annotation.SuppressLint
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -16,6 +18,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.View
@@ -48,9 +51,40 @@ class ControlAccessibilityService : AccessibilityService() {
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     @Volatile private var foregroundPackageName: String? = null
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName }
-        if (pkg != null) foregroundPackageName = pkg
+        val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName } ?: return
+        foregroundPackageName = when {
+            // Status bar, notification shade, IME and permission dialogs are transient overlays:
+            // recording them as "the current app" made the OK favorite gesture keep failing after
+            // a single notification shade pull, or click into the wrong package.
+            isTransientOverlay(pkg) -> return
+            // The launcher and Settings have nothing to favorite: clear the target so the gesture
+            // cannot click the previously used app's coordinates while it is not even visible.
+            isHomeOrSettings(pkg) -> null
+            else -> pkg
+        }
     }
+
+    /** System surfaces that sit on top of an app without replacing it. */
+    private fun isTransientOverlay(pkg: String): Boolean {
+        if (pkg == "android" || pkg == "com.android.systemui") return true
+        if (pkg.startsWith("com.android.permissioncontroller") || pkg.startsWith("com.google.android.permissioncontroller")) return true
+        if (pkg.startsWith("com.android.packageinstaller") || pkg.startsWith("com.google.android.packageinstaller")) return true
+        return pkg == currentInputMethodPackage()
+    }
+
+    private fun isHomeOrSettings(pkg: String): Boolean =
+        pkg == "com.android.settings" || pkg == homePackage()
+
+    private fun homePackage(): String? = runCatching {
+        packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo?.packageName
+    }.getOrNull()
+
+    private fun currentInputMethodPackage(): String? = runCatching {
+        val flat = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        if (flat.isNullOrBlank()) null else ComponentName.unflattenFromString(flat)?.packageName
+    }.getOrNull()
     override fun onInterrupt() { hideCursor(); busy = false }
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
 

@@ -237,6 +237,9 @@ class GestureEngineReplayTest {
         fun feedPoses(poses: Iterable<List<Point>>) {
             poses.forEach { events += engine.consume(it, ++t * 50L) }
         }
+
+        /** Applies a new sensitivity live, exactly what the preference listener does. */
+        fun setSensitivity(scale: Float) = engine.updateMovementScale(scale)
     }
 
     private inline fun <reified T : GestureEvent> List<GestureEvent>.countOf(): Int = count { it is T }
@@ -454,6 +457,16 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.filterIsInstance<GestureEvent.Swipe>().size)
     }
 
+    /** 张掌静止 6 秒后再向下挥：同样只重置基准，动作照常触发。 */
+    @Test fun palmWaveStillWorksAfterIdleTimeout() {
+        val r = Replay()
+        r.feed(4) { closedPalm() }                  // settle past 160ms
+        r.feed(120) { closedPalm() }                // 6 秒不动
+        var dy = 0f
+        r.feed(6) { dy += .03f; closedPalm(offsetY = dy) }
+        assertEquals(1, r.events.filterIsInstance<GestureEvent.Swipe>().count { !it.up })
+    }
+
     @Test fun horizontalIndexFlickUpFiresSingleIndexFingerSwipe() {
         val r = Replay()
         r.feed(4, ::horizontalIndex)              // recognized as horizontal index
@@ -477,6 +490,13 @@ class GestureEngineReplayTest {
         ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, offsetX = offsetX, offsetY = offsetY
     ).withLandmark(12, Point(.44f + offsetX, .35f + offsetY))
 
+    /** 只有手指在动：手腕留在原地，掌心因手指带动而产生位移。 */
+    private fun fingersOnlyTwoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED
+    ).mapIndexed { i, p -> if (i == 0) p else Point(p.x + offsetX, p.y) }
+        .withLandmark(12, Point(.44f + offsetX, .35f))
+
     /** Pressed fingers with a small real-device splay that exceeded the former 15-degree limit. */
     private fun slightlySplayedTwoFingerHand(offsetX: Float = 0f): List<Point> = baseHand(
         index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
@@ -491,6 +511,64 @@ class GestureEngineReplayTest {
     ).withLandmark(10, Point(.47f + offsetX, .42f))
         .withLandmark(11, Point(.46f + offsetX, .405f))
         .withLandmark(12, Point(.45f + offsetX, .39f))
+
+    /** 整只手小幅轻挑也要能切歌：位移低于旧的 0.09 阈值，但手腕与掌心一起移动。 */
+    @Test fun smallWholeHandFlickStillSwitchesTracks() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dx = 0f
+        r.feed(6) { dx -= .013f; twoFingerHand(dx) }  // 0.078 总位移，手腕同步移动
+        assertEquals(1, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().single().direction)
+    }
+
+    /** 只有指尖挑动、手腕不动：掌心位移已过阈值，但整只手没有挥动，不得切歌。 */
+    @Test fun fingerOnlySidewaysMotionDoesNotSwitchTracks() {
+        val r = Replay()
+        r.feed(4) { fingersOnlyTwoFingerHand() }
+        var dx = 0f
+        r.feed(6) { dx += .02f; fingersOnlyTwoFingerHand(dx) }
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
+
+    /** 带上下起伏的斜向轻挑（约 40°）也要能切歌：放宽前水平分量必须压过垂直分量 1.25 倍。 */
+    @Test fun slantedWholeHandFlickStillSwitchesTracks() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dx = 0f
+        var dy = 0f
+        r.feed(10) { dx -= .012f; dy += .010f; twoFingerHand(dx, dy) }
+        val swipes = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(1, swipes.size)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, swipes.single().direction)
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerVolumeHold>().size)
+    }
+
+    /** 运行中把灵敏度调到“灵敏”：同样的位移在标准档不够触发，换档后立刻能触发。 */
+    @Test fun sensitivityChangeRetunesThresholdsWithoutRestart() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dx = 0f
+        r.feed(5) { dx -= .012f; twoFingerHand(dx) }  // 总位移 0.06 < 0.07，标准档不触发
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+
+        r.setSensitivity(.78f)                        // “灵敏”：阈值降到 0.0546
+        r.feed(4, ::fistPose)                         // 换档清空状态，需重新进入姿势
+        r.feed(4) { twoFingerHand() }
+        var dx2 = 0f
+        r.feed(5) { dx2 -= .012f; twoFingerHand(dx2) }
+        assertEquals(1, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
+
+    /** 摆好姿势后静止 6 秒再挥：超过动作窗口只重置基准，不再要求松手重来。 */
+    @Test fun twoFingerSwipeStillWorksAfterIdleTimeout() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        r.feed(120) { twoFingerHand() }             // 6 秒不动
+        var dx = 0f
+        r.feed(6) { dx -= .03f; twoFingerHand(dx) }
+        assertEquals(1, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
 
     @Test fun twoFingerSwipeLeftFiresPreviousAndRightFiresNext() {
         val r = Replay()
@@ -525,6 +603,30 @@ class GestureEngineReplayTest {
         assertTrue(holds.first().raise)
         assertTrue(holds.any { it.phase == GestureEvent.VolumeHoldPhase.TICK })
         assertEquals(GestureEvent.VolumeHoldPhase.END, holds.last().phase)
+    }
+
+    /** 快速双击：伸直段只有 100ms 也必须算一次完整的弯下——放宽前要求 120ms，会整段作废。 */
+    @Test fun fastTwoFingerDoubleTapStillTogglesPlayPause() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }   // 200ms 摆好姿势
+        r.feed(3, ::fistPose)           // 150ms 弯下
+        r.feed(2) { twoFingerHand() }   // 100ms 伸直（放宽前这一关就判失败）
+        r.feed(2, ::fistPose)           // 第二次弯下
+        r.feed(2) { twoFingerHand() }   // 伸直 -> 触发
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+    }
+
+    /** 双击过程中掌心被带出上下位移：只能算双击，不能被判成上下拉音量。 */
+    @Test fun doubleTapWithPalmDriftNeverStartsVolume() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        r.feed(3, ::fistPose)                            // 第一次弯下
+        var dy = 0f
+        r.feed(4) { dy += .02f; twoFingerHand(0f, dy) }  // 伸直并继续向下带出位移
+        r.feed(3, ::fistPose)                            // 第二次弯下
+        r.feed(2) { twoFingerHand(0f, dy) }              // 伸直 -> 双击
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerVolumeHold>().size)
     }
 
     @Test fun twoFingerDoubleTapTogglesPlayPause() {
