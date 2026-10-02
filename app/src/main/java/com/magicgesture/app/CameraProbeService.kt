@@ -9,6 +9,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.camera2.*
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
@@ -41,6 +42,7 @@ class CameraProbeService : Service() {
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
+    private var selfieReader: ImageReader? = null
     private var cameraOpening = false
     private var cameraGeneration = 0
     private var stopped = false
@@ -50,6 +52,8 @@ class CameraProbeService : Service() {
     private var lastFrameRotation = Int.MIN_VALUE
     private var controlMode = false
     @Volatile private var selfieInProgress = false
+    private var pendingHighQualitySelfie: ((ByteArray?) -> Unit)? = null
+    private val highQualitySelfieTimeout = Runnable { completeHighQualitySelfie(null) }
     private var featureConfig = GestureFeatureConfig()
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
@@ -234,7 +238,8 @@ class CameraProbeService : Service() {
             val id = cameraManager.cameraIdList.firstOrNull {
                 cameraManager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
             } ?: run { fail("未找到前置摄像头"); return }
-            sensorRotation = cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            sensorRotation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             cameraOpening = true
             val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
@@ -256,6 +261,23 @@ class CameraProbeService : Service() {
                         pipeline?.submit(image, frameRotation)
                     } catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
                 } }, handler)
+            }
+            val bestJpegSize = characteristics
+                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                ?.getOutputSizes(ImageFormat.JPEG)
+                ?.maxByOrNull { it.width.toLong() * it.height.toLong() }
+            selfieReader = bestJpegSize?.let { size ->
+                Log.d("CameraProbe", "high quality selfie size ${size.width}x${size.height}")
+                ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2).apply {
+                    setOnImageAvailableListener({ source ->
+                        source.acquireLatestImage()?.use { image ->
+                            val buffer = image.planes[0].buffer
+                            val bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+                            completeHighQualitySelfie(bytes)
+                        }
+                    }, handler)
+                }
             }
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
@@ -334,10 +356,12 @@ class CameraProbeService : Service() {
             else -> 0
         }
     }
-    private fun configure(device: CameraDevice) {
+    private fun configure(device: CameraDevice, includeHighQualitySelfie: Boolean = true) {
         try {
             val surface: Surface = reader?.surface ?: run { fail("图像读取器已关闭"); return }
-            device.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
+            val selfieSurface = selfieReader?.surface?.takeIf { includeHighQualitySelfie }
+            val surfaces = listOfNotNull(surface, selfieSurface)
+            device.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(s: CameraCaptureSession) {
                     if (stopped) { s.close(); return }
                     session = s
@@ -349,7 +373,17 @@ class CameraProbeService : Service() {
                         updateNotification(if (controlMode) "手势识别与悬浮控制正在运行" else "摄像头后台运行中")
                     } catch (e: Exception) { fail("开始取帧失败：${e.javaClass.simpleName}") }
                 }
-                override fun onConfigureFailed(s: CameraCaptureSession) { s.close(); recoverCamera("相机会话中断，等待恢复") }
+                override fun onConfigureFailed(s: CameraCaptureSession) {
+                    s.close()
+                    if (includeHighQualitySelfie && selfieReader != null) {
+                        // Some legacy cameras cannot combine a preview stream with their largest
+                        // JPEG stream. Keep gesture recognition available and use preview fallback.
+                        Log.w("CameraProbe", "high quality selfie stream unsupported; using preview fallback")
+                        selfieReader?.close()
+                        selfieReader = null
+                        configure(device, includeHighQualitySelfie = false)
+                    } else recoverCamera("相机会话中断，等待恢复")
+                }
             }, handler)
         } catch (e: CameraAccessException) { recoverCamera("相机会话中断，等待恢复") }
         catch (e: Exception) { fail("配置失败：${e.javaClass.simpleName}") }
@@ -362,6 +396,8 @@ class CameraProbeService : Service() {
         session?.close(); session = null
         camera?.close(); camera = null
         reader?.close(); reader = null
+        selfieReader?.close(); selfieReader = null
+        completeHighQualitySelfie(null)
         overlayIndicator.setState(OverlayIndicator.State.ERROR)
         updateNotification(message)
         handler.removeCallbacks(reopenCamera)
@@ -384,18 +420,77 @@ class CameraProbeService : Service() {
                 callback(false)
                 return@postDelayed
             }
-            activePipeline.captureNextFrame { bitmap ->
-                selfieWriter.execute {
-                    playShutter()
-                    val preview = previewThumbnail(bitmap)
-                    val saved = saveSelfie(bitmap)
-                    bitmap.recycle()
-                    selfieInProgress = false
-                    if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
-                    callback(saved)
-                }
+            captureHighQualitySelfie { jpeg ->
+                if (jpeg != null) finishHighQualitySelfie(jpeg, callback)
+                else capturePreviewSelfie(activePipeline, callback)
             }
         }, 3_000L)
+    }
+    private fun captureHighQualitySelfie(callback: (ByteArray?) -> Unit) {
+        handler.post {
+            val device = camera
+            val activeSession = session
+            val target = selfieReader?.surface
+            if (stopped || device == null || activeSession == null || target == null || pendingHighQualitySelfie != null) {
+                callback(null)
+                return@post
+            }
+            try {
+                pendingHighQualitySelfie = callback
+                handler.removeCallbacks(highQualitySelfieTimeout)
+                handler.postDelayed(highQualitySelfieTimeout, 4_000L)
+                val jpegRotation = CameraFrameOrientation.relativeRotationDegrees(
+                    sensorOrientationDegrees = sensorRotation,
+                    displayRotationDegrees = currentDisplayRotationDegrees(),
+                    frontFacing = true
+                )
+                val request = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                    addTarget(target)
+                    set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                    set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                    set(CaptureRequest.JPEG_QUALITY, 100.toByte())
+                    set(CaptureRequest.JPEG_ORIENTATION, jpegRotation)
+                }.build()
+                activeSession.capture(request, object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
+                        Log.w("CameraProbe", "high quality selfie capture failed: ${failure.reason}")
+                        completeHighQualitySelfie(null)
+                    }
+                }, handler)
+            } catch (e: Exception) {
+                Log.w("CameraProbe", "high quality selfie unavailable; using preview fallback", e)
+                completeHighQualitySelfie(null)
+            }
+        }
+    }
+    private fun completeHighQualitySelfie(jpeg: ByteArray?) {
+        handler.removeCallbacks(highQualitySelfieTimeout)
+        val callback = pendingHighQualitySelfie ?: return
+        pendingHighQualitySelfie = null
+        callback(jpeg)
+    }
+    private fun finishHighQualitySelfie(jpeg: ByteArray, callback: (Boolean) -> Unit) {
+        selfieWriter.execute {
+            playShutter()
+            val preview = previewThumbnail(jpeg)
+            val saved = saveSelfie(jpeg)
+            selfieInProgress = false
+            if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
+            callback(saved)
+        }
+    }
+    private fun capturePreviewSelfie(activePipeline: HandPipeline, callback: (Boolean) -> Unit) {
+        activePipeline.captureNextFrame { bitmap ->
+            selfieWriter.execute {
+                playShutter()
+                val preview = previewThumbnail(bitmap)
+                val saved = saveSelfie(bitmap)
+                bitmap.recycle()
+                selfieInProgress = false
+                if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
+                callback(saved)
+            }
+        }
     }
     private inner class CountdownTick(private val seconds: Int) : Runnable {
         override fun run() {
@@ -431,6 +526,24 @@ class CameraProbeService : Service() {
         )
     } catch (e: Exception) {
         Log.w("CameraProbe", "selfie preview thumbnail failed", e)
+        null
+    }
+    private fun previewThumbnail(jpeg: ByteArray): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / sample > 960 || bounds.outHeight / sample > 960) sample *= 2
+        val decoded = BitmapFactory.decodeByteArray(
+            jpeg,
+            0,
+            jpeg.size,
+            BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+        ) ?: return null
+        val thumbnail = previewThumbnail(decoded)
+        if (thumbnail !== decoded) decoded.recycle()
+        thumbnail
+    } catch (e: Exception) {
+        Log.w("CameraProbe", "high quality selfie preview failed", e)
         null
     }
 
@@ -569,6 +682,42 @@ class CameraProbeService : Service() {
             false
         }
     }
+    private fun saveSelfie(jpeg: ByteArray): Boolean {
+        return saveSelfieBytes { output -> output.write(jpeg) }
+    }
+    private fun saveSelfieBytes(write: (java.io.OutputStream) -> Unit): Boolean {
+        return try {
+            val name = "MagicGesture_selfie_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MagicGesture")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+            val saved = try {
+                contentResolver.openOutputStream(uri)?.use { write(it) } != null
+            } catch (e: Exception) {
+                Log.e("CameraProbe", "selfie output failed", e)
+                false
+            }
+            if (!saved) {
+                contentResolver.delete(uri, null, null)
+                return false
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "selfie save failed", e)
+            false
+        }
+    }
     private fun finishAction(success: Boolean, successMessage: String, failureMessage: String = "动作执行失败") {
         if (success) {
             globalCooldown.actionSucceeded()
@@ -603,6 +752,7 @@ class CameraProbeService : Service() {
         session?.close(); session = null
         camera?.close(); camera = null
         reader?.close(); reader = null
+        selfieReader?.close(); selfieReader = null
         pipeline?.close(); pipeline = null
         selfieWriter.shutdownNow()
         try { toneGenerator?.release() } catch (_: Exception) { }
