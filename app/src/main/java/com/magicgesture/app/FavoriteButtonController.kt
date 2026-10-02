@@ -40,18 +40,43 @@ class FavoriteButtonController(
     private var targetPortrait = true
     private var selectedX = .82f
     private var selectedY = .52f
+    private var resolvingForeground = false
     private val timeout = Runnable { finish(false) }
 
     fun execute(callback: (Boolean) -> Unit) = main.post {
-        if (completion != null) { callback(false); return@post }
+        if (completion != null || resolvingForeground) { callback(false); return@post }
         val service = accessibilityService() ?: run { callback(false); return@post }
-        val packageName = service.foregroundPackage()?.takeIf(::isAllowedTarget) ?: run {
+        resolvingForeground = true
+        resolveForeground(service, callback, attemptsLeft = 3)
+    }
+
+    /**
+     * A task restored from Recents may publish its window event a few frames after it is visible.
+     * Briefly retry only while that transition is pending; never fall back to the previous app.
+     */
+    private fun resolveForeground(
+        service: ControlAccessibilityService,
+        callback: (Boolean) -> Unit,
+        attemptsLeft: Int
+    ) {
+        val packageName = service.foregroundPackage()?.takeIf(::isAllowedTarget)
+        if (packageName == null && service.isAwaitingRecentsTarget() && attemptsLeft > 0) {
+            if (attemptsLeft == 3) onMessage("正在确认当前应用，请稍候")
+            main.postDelayed({ resolveForeground(service, callback, attemptsLeft - 1) }, 200L)
+            return
+        }
+        resolvingForeground = false
+        if (packageName == null) {
             // No collectable foreground app known yet (launcher, system surface, or no window
             // event since the service started): the generic failure text does not explain that.
             onMessage("未识别到可收藏的应用，请先切换到要收藏的页面")
             callback(false)
-            return@post
+            return
         }
+        beginForPackage(packageName, callback)
+    }
+
+    private fun beginForPackage(packageName: String, callback: (Boolean) -> Unit) {
         val portrait = context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
         completion = callback
         targetPackage = packageName
@@ -76,7 +101,13 @@ class FavoriteButtonController(
     private fun tap(normalizedX: Float, normalizedY: Float, callback: (Boolean) -> Unit) {
         val width = displaySize().first
         val height = displaySize().second
-        accessibilityService()?.tapPixels(normalizedX * width, normalizedY * height, callback) ?: callback(false)
+        accessibilityService()?.tapPixels(normalizedX * width, normalizedY * height) { success ->
+            if (!success) onMessage("收藏位置点击被系统取消，请确认页面没有被其他窗口遮挡")
+            callback(success)
+        } ?: run {
+            onMessage("无障碍服务未连接，无法点击收藏位置")
+            callback(false)
+        }
     }
 
     /** Full display size in pixels; matches what the calibration overlay actually covers. */
@@ -211,6 +242,7 @@ class FavoriteButtonController(
 
     private fun finish(success: Boolean) {
         main.removeCallbacks(timeout)
+        resolvingForeground = false
         removeOverlay()
         val callback = completion
         completion = null

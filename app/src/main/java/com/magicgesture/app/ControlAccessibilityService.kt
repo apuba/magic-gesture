@@ -50,6 +50,7 @@ class ControlAccessibilityService : AccessibilityService() {
     private val imageWorker = Executors.newSingleThreadExecutor()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     @Volatile private var foregroundPackageName: String? = null
+    @Volatile private var awaitingRecentsTarget = false
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName } ?: return
         foregroundPackageName = when {
@@ -59,8 +60,16 @@ class ControlAccessibilityService : AccessibilityService() {
             isTransientOverlay(pkg) -> return
             // The launcher and Settings have nothing to favorite: clear the target so the gesture
             // cannot click the previously used app's coordinates while it is not even visible.
-            isHomeOrSettings(pkg) -> null
-            else -> pkg
+            isHomeOrSettings(pkg) -> {
+                awaitingRecentsTarget = false
+                null
+            }
+            else -> {
+                // TYPE_WINDOWS_CHANGED is required here: restoring an existing task from Recents
+                // does not reliably produce TYPE_WINDOW_STATE_CHANGED on every Android build.
+                awaitingRecentsTarget = false
+                pkg
+            }
         }
     }
 
@@ -88,7 +97,10 @@ class ControlAccessibilityService : AccessibilityService() {
     override fun onInterrupt() { hideCursor(); busy = false }
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
 
-    fun foregroundPackage(): String? = foregroundPackageName
+    fun foregroundPackage(): String? = if (awaitingRecentsTarget) null else foregroundPackageName
+
+    /** True only between opening Recents and receiving the selected app's real window event. */
+    fun isAwaitingRecentsTarget(): Boolean = awaitingRecentsTarget
 
     fun tapNormalized(x: Float, y: Float, callback: (Boolean) -> Unit) = main.post {
         if (busy) { callback(false); return@post }
@@ -157,7 +169,14 @@ class ControlAccessibilityService : AccessibilityService() {
     /** Performs a system global action (back / home / recents / ...). */
     fun globalAction(actionCode: Int, callback: (Boolean) -> Unit = {}) = main.post {
         if (busy) { callback(false); return@post }
-        callback(performGlobalAction(actionCode))
+        val success = performGlobalAction(actionCode)
+        if (success && actionCode == GLOBAL_ACTION_RECENTS) {
+            // Never let an OK gesture reuse the previous app's saved coordinates while the
+            // task switcher is still handing control to the newly selected application.
+            foregroundPackageName = null
+            awaitingRecentsTarget = true
+        }
+        callback(success)
     }
 
     /** Scrolls the current page in the given direction, mirroring the swipe injection timing. */
