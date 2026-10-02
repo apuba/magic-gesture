@@ -180,6 +180,12 @@ class GestureEngineReplayTest {
         index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED
     )
 
+    /** G23: pinky alone; folded thumb keeps it distinct from G34 "666". */
+    private fun pinkyOnlyPose(): List<Point> = baseHand(
+        index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED,
+        pinky = FingerPose.EXTENDED, thumb = thumbFolded
+    )
+
     /** Deeply curled fingers with one tip slightly farther out, so this is a claw rather than a fist. */
     private fun clawPose(): List<Point> = baseHand(
         FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
@@ -354,6 +360,20 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(20, ::six666Pose)
         assertEquals(1, r.events.countOf<GestureEvent.Six666>())
+    }
+
+    @Test fun pinkyOnlyHoldFiresMuteOnceAndRequiresRelease() {
+        val r = Replay()
+        r.feed(14, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        assertEquals(0, r.events.countOf<GestureEvent.Six666>())
+        assertEquals(0, r.events.countOf<GestureEvent.LoveLock>())
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+        r.feed(20, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(4, ::restPose)
+        r.feed(14, ::pinkyOnlyPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
     @Test fun screenshotSequenceOpenFistOpenFiresScreenshotOnce() {

@@ -19,6 +19,7 @@ data class GestureFeatureConfig(
     val thumbsUp: Boolean = true,
     val ok: Boolean = true,
     val playPause: Boolean = true,
+    val pinkyMute: Boolean = true,
     val lotusRecents: Boolean = true,
     val orchidBack: Boolean = true,
     val leftL: Boolean = true,
@@ -196,6 +197,7 @@ object GesturePreferences {
             thumbsUp = prefs.getBoolean("feature_thumbs_up", true),
             ok = prefs.getBoolean("feature_ok", true),
             playPause = prefs.getBoolean("feature_play_pause", true),
+            pinkyMute = prefs.getBoolean("feature_pinky_mute", true),
             lotusRecents = prefs.getBoolean("feature_lotus_recents", true),
             orchidBack = prefs.getBoolean("feature_orchid_back", true),
             leftL = prefs.getBoolean("feature_left_l", true),
@@ -280,6 +282,7 @@ object GesturePreferences {
             .putBoolean("feature_thumbs_up", features.thumbsUp)
             .putBoolean("feature_ok", features.ok)
             .putBoolean("feature_play_pause", features.playPause)
+            .putBoolean("feature_pinky_mute", features.pinkyMute)
             .putBoolean("feature_lotus_recents", features.lotusRecents)
             .putBoolean("feature_orchid_back", features.orchidBack)
             .putBoolean("feature_left_l", features.leftL)

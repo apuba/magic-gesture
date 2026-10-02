@@ -21,6 +21,7 @@ sealed interface GestureEvent {
     data object ThumbsUp : GestureEvent
     data object Ok : GestureEvent
     data object PlayPause : GestureEvent
+    data object PinkyMute : GestureEvent
     data object LotusRecents : GestureEvent
     data object OrchidBack : GestureEvent
     data object LeftLBack : GestureEvent
@@ -83,6 +84,8 @@ class GestureEngine(
     private var okPoseAt = 0L
     private var fistHold = StaticHold.READY
     private var fistHoldAt = 0L
+    private var pinkyHold = StaticHold.READY
+    private var pinkyHoldAt = 0L
     private var lotusHold = StaticHold.READY
     private var lotusHoldAt = 0L
     private var orchidHold = StaticHold.READY
@@ -221,6 +224,8 @@ class GestureEngine(
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
         // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
         val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
+        // G23: only the little finger is extended; thumb and the other three fingers stay folded.
+        val pinkyOnlyPose = pinkyOpen && indexFolded && middleFolded && ringFolded && !thumbOpen
         // G34 "666": thumb and pinky out, index/middle/ring curled. The pinky is what separates
         // it from the thumbs-up (which needs the pinky folded) and the curled index separates
         // it from the love pose (which needs the index extended).
@@ -335,6 +340,14 @@ class GestureEngine(
         if (features.leftL && advanceStaticHold(leftLPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
         if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 2000L, label = "L 手形保持")) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
+        if (pinkyOnlyPose) {
+            // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and
+            // clears partial heart state so landmark wobble cannot fire Like afterward.
+            pinch = Pinch.READY
+            candidateAt = 0L
+            releaseAt = 0L
+        }
+        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, label = "小指手势保持")) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
@@ -421,7 +434,8 @@ class GestureEngine(
         //    heart arms on those wobble frames and fires a like instead of the OK action.
         val threeFingersExtended = middleOpen && ringOpen && pinkyOpen
         val okOwnsHand = features.ok && okPoseAt > 0L && now - okPoseAt < 500L
-        val fingerHeartPose = ratio < .40f && !threeFingersExtended && !okOwnsHand
+        val fingerHeartPose = ratio < .40f && middleFolded && ringFolded && pinkyFolded &&
+            !threeFingersExtended && !okOwnsHand
         val fingersClearlyReleased = ratio > .58f
         if (features.like) when (pinch) {
             Pinch.READY -> if (fingerHeartPose) {
@@ -1085,6 +1099,8 @@ class GestureEngine(
         okHoldAt = 0L
         fistHold = StaticHold.READY
         fistHoldAt = 0L
+        pinkyHold = StaticHold.READY
+        pinkyHoldAt = 0L
         lotusHold = StaticHold.READY
         lotusHoldAt = 0L
         orchidHold = StaticHold.READY

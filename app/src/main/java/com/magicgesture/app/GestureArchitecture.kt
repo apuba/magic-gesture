@@ -14,7 +14,7 @@ enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 enum class GestureAction {
     NONE, MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,
-    NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
+    NOTIFICATIONS, VOLUME_UP, VOLUME_DOWN, TOGGLE_MUTE, MEDIA_NEXT, MEDIA_PREVIOUS, LOCK_SCREEN, VOICE_ASSISTANT,
     DRAG, ROLLING_SCREENSHOT, OPEN_APP, FAVORITE_CURRENT,
     /** Legacy values retained only so existing saved mappings continue to load after upgrade. */
     OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4;
@@ -39,6 +39,7 @@ enum class GestureAction {
         NOTIFICATIONS -> "已打开通知栏"
         VOLUME_UP -> "音量已增加"
         VOLUME_DOWN -> "音量已降低"
+        TOGGLE_MUTE -> "静音状态已切换"
         MEDIA_NEXT -> "已切换下一曲"
         MEDIA_PREVIOUS -> "已切换上一曲"
         LOCK_SCREEN -> "已锁屏"
@@ -83,6 +84,7 @@ enum class GestureAction {
         NOTIFICATIONS -> "下拉通知栏"
         VOLUME_UP -> "音量 +"
         VOLUME_DOWN -> "音量 −"
+        TOGGLE_MUTE -> "静音开关"
         MEDIA_NEXT -> "下一曲"
         MEDIA_PREVIOUS -> "上一曲"
         LOCK_SCREEN -> "锁屏"
@@ -131,6 +133,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureEvent.ThumbsUp -> GestureCode.G20
             GestureEvent.Ok -> GestureCode.G21
             GestureEvent.PlayPause -> GestureCode.G22
+            GestureEvent.PinkyMute -> GestureCode.G23
             GestureEvent.LeftLBack -> GestureCode.G24
             GestureEvent.LShape -> GestureCode.G25
             is GestureEvent.ClawDrag -> GestureCode.G26
@@ -180,12 +183,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
 
     companion object {
         /** Codes that only exist in the enum as placeholders; no detector, no event. */
-        private val NO_PIPELINE_CODES = setOf(
-            // G16-G19 were revived on 2026-10-02 as open-app sequences (palm open, then fold
-            // to 1-4 fingers). G18/G19 (index-circle volume) were removed on 2026-10-01:
-            // the circling pose conflicted too much with everyday index gestures.
-            GestureCode.G23
-        )
+        private val NO_PIPELINE_CODES = emptySet<GestureCode>()
 
         fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
 
@@ -292,6 +290,12 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.PLAY_PAUSE,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
+        GestureCode.G23 to GestureMapping(
+            GestureCode.G23,
+            GestureType.HOLD,
+            GestureAction.TOGGLE_MUTE,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
         GestureCode.G24 to GestureMapping(
             GestureCode.G24,
             GestureType.HOLD,
@@ -349,6 +353,7 @@ class GestureFeatureGate {
         GestureCode.G20 -> features.thumbsUp
         GestureCode.G21 -> features.ok
         GestureCode.G22 -> features.playPause
+        GestureCode.G23 -> features.pinkyMute
         GestureCode.G24 -> features.leftL
         GestureCode.G25 -> features.lShape
         GestureCode.G26 -> features.clawDrag
@@ -365,6 +370,7 @@ class GestureActionExecutor(
     private val selfieCapture: ((Boolean) -> Unit) -> Unit,
     private val mediaKey: (Int, (Boolean) -> Unit) -> Unit,
     private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
+    private val muteToggle: ((Boolean) -> Unit) -> Unit = { callback -> callback(false) },
     private val actionProgress: ((String) -> Unit)? = null,
     /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
     private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) },
@@ -466,6 +472,7 @@ class GestureActionExecutor(
             GestureAction.MEDIA_PREVIOUS -> { mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS, callback); true }
             GestureAction.VOLUME_UP -> { volumeAdjust(true, callback); true }
             GestureAction.VOLUME_DOWN -> { volumeAdjust(false, callback); true }
+            GestureAction.TOGGLE_MUTE -> { muteToggle(callback); true }
         }
     }
 

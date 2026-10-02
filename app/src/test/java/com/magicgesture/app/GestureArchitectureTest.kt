@@ -74,6 +74,15 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(playPause, GestureFeatureConfig(playPause = false)))
     }
 
+    @Test fun pinkyGestureMapsToG23MuteToggleAndUsesItsOwnGate() {
+        val mapped = requireNotNull(mappings.resolve(GestureEvent.PinkyMute)).mapping
+        assertEquals(GestureCode.G23, mapped.code)
+        assertEquals(GestureAction.TOGGLE_MUTE, mapped.action)
+        assertEquals(GestureType.HOLD, mapped.type)
+        assertFalse(gate.allows(mapped, GestureFeatureConfig(pinkyMute = false)))
+        assertTrue(gate.allows(mapped, GestureFeatureConfig(pinkyMute = true)))
+    }
+
     @Test fun lotusMapsHomeAndOrchidMapsRecents() {
         val lotus = requireNotNull(mappings.resolve(GestureEvent.LotusRecents)).mapping
         val orchid = requireNotNull(mappings.resolve(GestureEvent.OrchidBack)).mapping
@@ -176,14 +185,14 @@ class GestureArchitectureTest {
         assertTrue(manager.isRemappable(GestureCode.G22))
         // G26 is unbound by default but its pipeline exists, so it stays bindable.
         assertTrue(manager.isRemappable(GestureCode.G26))
-        // G01 is the continuous cursor; G23 has no pipeline. G16-G19 were revived on
+        // G01 is the continuous cursor. G16-G19 and G23 all have real pipelines.
         // 2026-10-02 as open-app sequences, so they are remappable again.
         assertFalse(manager.isRemappable(GestureCode.G01))
         assertTrue(manager.isRemappable(GestureCode.G16))
         assertTrue(manager.isRemappable(GestureCode.G17))
         assertTrue(manager.isRemappable(GestureCode.G18))
         assertTrue(manager.isRemappable(GestureCode.G19))
-        assertFalse(manager.isRemappable(GestureCode.G23))
+        assertTrue(manager.isRemappable(GestureCode.G23))
     }
 
     @Test fun overrideEqualToTheDefaultBehavesLikeNoOverride() {

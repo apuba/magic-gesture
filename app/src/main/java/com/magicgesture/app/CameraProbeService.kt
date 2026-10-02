@@ -69,6 +69,7 @@ class CameraProbeService : Service() {
         selfieCapture = ::captureSelfie,
         mediaKey = ::dispatchMediaKey,
         volumeAdjust = ::adjustVolume,
+        muteToggle = ::toggleMute,
         // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
         actionProgress = { message -> overlayIndicator.showFeedback(message) },
         launchApp = ::launchAppForGesture,
@@ -194,6 +195,7 @@ class CameraProbeService : Service() {
                                 is GestureEvent.Swipe, is GestureEvent.HorizontalSwipe,
                                 GestureEvent.Selfie, GestureEvent.Like, GestureEvent.Screenshot,
                                 GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
+                                GestureEvent.PinkyMute,
                                 GestureEvent.LotusRecents, GestureEvent.OrchidBack,
                                 GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
@@ -468,6 +470,27 @@ class CameraProbeService : Service() {
                 if (raise) KeyEvent.KEYCODE_VOLUME_UP else KeyEvent.KEYCODE_VOLUME_DOWN,
                 callback
             )
+        }
+    }
+
+    private fun toggleMute(callback: (Boolean) -> Unit) {
+        try {
+            val audio = getSystemService(AudioManager::class.java)
+            val wasMuted = audio.isStreamMute(AudioManager.STREAM_MUSIC)
+            audio.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                if (wasMuted) AudioManager.ADJUST_UNMUTE else AudioManager.ADJUST_MUTE,
+                AudioManager.FLAG_SHOW_UI
+            )
+            overlayIndicator.showFeedback(if (wasMuted) "已恢复媒体声音" else "媒体已静音")
+            // Some vendor audio services publish the mute bit a few frames after accepting
+            // ADJUST_MUTE/UNMUTE. Verify shortly afterward instead of reporting a false failure.
+            mainHandler.postDelayed({
+                callback(runCatching { audio.isStreamMute(AudioManager.STREAM_MUSIC) != wasMuted }.getOrDefault(false))
+            }, 120L)
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "toggle mute failed", e)
+            callback(false)
         }
     }
     /** One tick of the exclusive two-finger volume session (about 5% of the media range). */

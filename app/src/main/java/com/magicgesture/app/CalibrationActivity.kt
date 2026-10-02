@@ -46,6 +46,7 @@ class CalibrationActivity : Activity() {
         GestureCode.G20 to "大拇指",
         GestureCode.G21 to "OK 手势",
         GestureCode.G22 to "握拳",
+        GestureCode.G23 to "伸出小指",
         GestureCode.G24 to "左 L 手形",
         GestureCode.G25 to "L 手形",
         GestureCode.G26 to "爪形手势",
@@ -73,7 +74,8 @@ class CalibrationActivity : Activity() {
         GestureAction.OPEN_APP, GestureAction.FAVORITE_CURRENT,
         GestureAction.SELFIE, GestureAction.LIKE, GestureAction.CONFIRM, GestureAction.PLAY_PAUSE,
         GestureAction.NOTIFICATIONS, GestureAction.LOCK_SCREEN, GestureAction.VOICE_ASSISTANT,
-        GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS
+        GestureAction.VOLUME_UP, GestureAction.VOLUME_DOWN, GestureAction.TOGGLE_MUTE,
+        GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS
     )
 
     private val mappingButtons = mutableMapOf<GestureCode, Button>()
@@ -101,6 +103,7 @@ class CalibrationActivity : Activity() {
     private lateinit var thumbsUpSwitch: Switch
     private lateinit var okSwitch: Switch
     private lateinit var playPauseSwitch: Switch
+    private lateinit var pinkyMuteSwitch: Switch
     private lateinit var lotusRecentsSwitch: Switch
     private lateinit var orchidBackSwitch: Switch
     private lateinit var leftLSwitch: Switch
@@ -207,6 +210,7 @@ class CalibrationActivity : Activity() {
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
             okSwitch = featureSwitch("OK 收藏当前内容", "做出 OK 手势并保持约 0.6 秒，点击当前 App 已标定的收藏按钮位置。", savedFeatures.ok)
             playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持 1.5 秒（有倒计时提示），发送系统媒体播放/暂停指令。", savedFeatures.playPause)
+            pinkyMuteSwitch = featureSwitch("伸出小指静音开关", "仅伸出小指，其余四指收拢并保持约 0.6 秒；每次重新做手势切换静音与恢复声音。", savedFeatures.pinkyMute)
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
             leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)
@@ -221,7 +225,7 @@ class CalibrationActivity : Activity() {
             openApp4Switch = featureSwitch("张掌后收成四指", "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。", savedFeatures.openApp4)
             listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
                 palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
-                screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch,
+                screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, pinkyMuteSwitch,
                 lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
                 cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch,
                 openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach {
@@ -269,6 +273,7 @@ class CalibrationActivity : Activity() {
                             thumbsUp = thumbsUpSwitch.isChecked,
                             ok = okSwitch.isChecked,
                             playPause = playPauseSwitch.isChecked,
+                            pinkyMute = pinkyMuteSwitch.isChecked,
                             lotusRecents = lotusRecentsSwitch.isChecked,
                             orchidBack = orchidBackSwitch.isChecked,
                             leftL = leftLSwitch.isChecked,
