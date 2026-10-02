@@ -11,6 +11,44 @@ enum class GestureCode {
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 
+/** 手势中文名：首页签到提示与校准页配置区共用，避免两处文案不一致。 */
+val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
+    GestureCode.G01 to "食指移动",
+    GestureCode.G02 to "食指弯曲再伸直",
+    GestureCode.G03 to "食指上挑",
+    GestureCode.G04 to "食指下挑",
+    GestureCode.G05 to "四指并拢上挥",
+    GestureCode.G06 to "四指并拢下挥",
+    GestureCode.G07 to "四指并拢左挥",
+    GestureCode.G08 to "四指并拢右挥",
+    GestureCode.G09 to "竖直食指向左",
+    GestureCode.G10 to "竖直食指向右",
+    GestureCode.G11 to "V 字保持",
+    GestureCode.G12 to "比心保持",
+    GestureCode.G13 to "张掌→握拳→张掌",
+    GestureCode.G14 to "莲花指",
+    GestureCode.G15 to "兰花指",
+    GestureCode.G16 to "张掌后收成食指",
+    GestureCode.G17 to "张掌后收成两指",
+    GestureCode.G18 to "张掌后收成三指",
+    GestureCode.G19 to "张掌后收成四指",
+    GestureCode.G20 to "大拇指",
+    GestureCode.G21 to "OK 手势",
+    GestureCode.G22 to "握拳",
+    GestureCode.G23 to "伸出小指",
+    GestureCode.G24 to "左 L 手形",
+    GestureCode.G25 to "L 手形",
+    GestureCode.G26 to "爪形手势",
+    GestureCode.G27 to "C 手形",
+    GestureCode.G28 to "Love 手形",
+    GestureCode.G34 to "666 手势",
+    GestureCode.G29 to "两指左挥",
+    GestureCode.G30 to "两指右挥",
+    GestureCode.G31 to "两指上拉保持",
+    GestureCode.G32 to "两指下拉保持",
+    GestureCode.G33 to "两指双击"
+)
+
 enum class GestureAction {
     NONE, MOVE_CURSOR, CLICK, SCROLL_UP, SCROLL_DOWN, SCROLL_LEFT, SCROLL_RIGHT, BACK, HOME, SELFIE, LIKE, SCREENSHOT,
     THUMBS_UP_LIKE, CONFIRM, PLAY_PAUSE, RECENTS,

@@ -10,8 +10,8 @@
 - **工程**：`e:/2026/MagicGesture-v0.9`，单模块 Android 应用（Kotlin，无 Compose，自绘 View）
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
-- **源码**：`app/src/main/java/com/magicgesture/app/` 下 13 个类，全部单层包结构
-- **测试**：`app/src/test/` 下 4 个测试类，共 61 个用例，当前全绿
+- **源码**：`app/src/main/java/com/magicgesture/app/` 下 14 个类，全部单层包结构（含 `GestureUnlock.kt`、`FavoriteButtonController.kt`）
+- **测试**：`app/src/test/` 下 5 个测试类，共 83 个用例，当前全绿（Replay 40、Architecture 24、Unlock 14、Orientation 2、Cooldown 3）
 
 ## 2. 核心架构
 
@@ -21,8 +21,9 @@ HandPipeline（MediaPipe 20fps 关键点）
   → GestureMappingManager   手势码→动作：默认映射 + 用户覆盖表（持久化于 SharedPreferences 键 mapping_Gxx）
   → GestureFeatureGate      手势开关门控（跟手势走，不跟动作走）
   → GestureActionExecutor   以动作为中心的分发（不依赖原始事件类型，换绑后任何手势可执行任何动作）
-       ├─ ControlAccessibilityService  全局动作 / dispatchGesture 注入 / 语音助手意图
+       ├─ ControlAccessibilityService  全局动作 / dispatchGesture 注入 / 语音助手意图 / 前台包名缓存
        ├─ CameraProbeService 内部动作（自拍、缩略图、悬浮反馈、媒体键与音量）
+       ├─ FavoriteButtonController     收藏：前台包名 → 已存坐标 tapPixels，未存则弹出全屏标定浮层
        └─ 媒体/音量           KeyEvent 派发 + AudioManager（音量走 setStreamVolume）
 GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间冻结全部识别（含光标）
 ```
@@ -54,13 +55,99 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 - 静态拍摄不会替换日常 repeating preview；拍完后原 640×480 手势识别流继续运行。若机型不支持最大 JPEG 与识别流并发、拍摄失败或 4 秒超时，自动回退到原预览帧自拍。
 - 已执行 `testDebugUnitTest assembleDebug` 并通过；最大分辨率、照片方向、前置镜像、拍摄后识别恢复和失败降级仍需真机验收。
 
-### 2026-10-02 每日签到解锁需求（产品已确认、代码尚未实现）
+### 2026-10-02 每日签到解锁（需求已确认、代码已实现、尚未真机验收）
 
 - 当前正式版本不设置收费用户或付费入口；所有正式用户统一从 7 个基础编号开始：G01、G02、G03、G04、G24、G11、G13。
 - 用户每天主动签到，永久解锁下一个功能包；一天最多一次，断签不清零，共 12 次有效签到完成当前全部奖励。
 - 所有正式 Release 用户遵循同一规则，不设置历史用户、管理员或隐藏口令全开；Debug/内部测试构建允许全部解锁，但不得把测试入口带入正式包。
-- 当前只完成产品文档，尚无解锁权益模型、签到状态机、UI、迁移或测试代码。不得把“需求确认”写成“功能完成”。
 - 微信登录、账号、付费全开、邀请分享、服务端和联网权益属于二期；必须等 App 真实公开上线后重新规划，当前不得开发。
+
+**当前代码实现（2026-10-02）**：
+
+- 新增 `GestureUnlock.kt`：`GestureUnlockPlan`（基础 7 个编号 + 12 个功能包，与需求 §6.1 顺序一致）、`GestureUnlockMachine`（纯逻辑签到状态机）、`GestureUnlockStore`（本机 SharedPreferences，键前缀 `unlock_`）、`GestureEntitlement`（拥有权判定）、`GestureFeatureConfig.restrictedTo()`（按权益收敛开关）、`GESTURE_CODES_BY_FEATURE`（开关键→编号）。
+- 三层保持独立：解锁权益只决定“是否拥有”；`feature_*` 仍决定“是否识别”；`mapping_Gxx` 仍决定“执行什么动作”。用户关闭的开关不会被解锁覆盖，未解锁也不会写回开关值。
+- 双重拦截：识别入口走 `GesturePreferences.effectiveFeatures()`（`HandPipeline` 初始化与运行中 `updateFeatures` 均使用），执行入口在 `CameraProbeService.executeMapped()` 与持续音量会话前判定 `entitlement.owns(code)`。
+- 运行中即时生效：控制服务的偏好监听新增 `unlock_` 前缀分支，签到后立即刷新权益并下发引擎，无需重启控制。
+- 日期规则：本地时区 epochDay；一天一次；断签不清零；系统时间回拨视为当日已领取，不增加也不清零；12 次后返回“已完成”。
+- UI：首页状态条下方新增“每日签到解锁”卡片（进度、下一次解锁内容、签到按钮、本机保存提示）；未解锁手势的紫色标签显示“未解锁 · 第 N 次签到后开放”且识别开关不可点；校准页未解锁手势的映射按钮显示“未解锁”并禁用，功能开关附加解锁说明并禁用。
+- 构建隔离：`app/build.gradle.kts` 开启 `buildFeatures.buildConfig`；`GestureUnlockStore` 默认参数 `BuildConfig.DEBUG` 控制全开。已验证 `assembleRelease` 生成 `DEBUG=false`、`assembleDebug` 为 `true`。
+- 验证：`testDebugUnitTest` 75/75 通过（新增 `GestureUnlockTest` 14 例），`assembleDebug` 与 `assembleRelease` 均成功；真机签到流程、升级迁移与 G26/G34 解锁后引导尚未验收。
+
+### 2026-10-02 左右挥整只手条件与自拍倒计时冻结
+
+- **左右挥必须整只手轻挑**：`GestureEngine` 新增 `wholeHandHorizontalFlick()`，要求手腕位移与掌心位移同向且达到掌心位移的 60%（`wholeHandWristRatio`）。G29/G30 与 G09/G10 的左右判定都走这个条件，只动手指、手腕不跟着移动时不再触发。
+- **两指左右挥灵敏度**：G29/G30 触发位移由 `.09f * movementScale` 下调为 `.07f * movementScale`（`twoFingerHorizontalTrigger`），解决真机上挥了没反应；上下拉音量阈值未改。G09/G10 阈值仍为 `.05f * movementScale`。
+- **自拍倒计时冻结全部识别**：V 字确认进入倒计时即 `pipeline.pause()`（清空保持、轨迹与候选状态），帧回调期间丢弃全部事件（原来只丢弃非 `Feedback` 事件，导致倒计时仍显示手势提示）；拍照完成或预览回退后统一走 `endSelfieFreeze()` → `pipeline.resetTracking()`，从清空状态恢复，倒计时期间的动作不会在恢复后被补触发。
+- 文案同步：首页两指左右挥卡片、V 字自拍卡片，校准页两指媒体控制与 V 字自拍开关、练习顺序第 3 项；`GESTURE_ACTION_MAPPING_CHECKLIST.md` 的 G09/G10/G11/G29/G30 与 §4 冻结规则。
+- 验证：`testDebugUnitTest` 77/77 通过（回放测试新增 2 例：整只手小幅轻挑 0.078 位移仍能切歌；只动手指使掌心位移 0.096 但不触发）；`assembleDebug` 通过。**真机尚未验收**：两指左右挥灵敏度是否合适、整只手条件是否过严、倒计时期间是否彻底无手势提示。
+- 2026-10-02 追加放宽（真机反馈"挥了没反应"）：方向判定抽成 `horizontalAxisDominance = 1.0f` / `verticalAxisDominance = 1.25f`。左右挥原来要求水平分量 > 垂直分量 × 1.25（夹角 <38°），带上下起伏的自然轻挑常被判成"不是左右挥"；现只要求水平分量不小于垂直分量（夹角 ≤45°）。上下拉音量仍要求垂直分量 × 1.25 占优，两条判定互斥，放宽左右不会抢走音量。新增回放用例 `slantedWholeHandFlickStillSwitchesTracks`（约 40° 斜向轻挑，旧规则不触发、新规则触发且不产生音量事件），回放测试 78/78 通过，`assembleDebug` 通过。
+- 同批次修复：播放手势唤不起音乐应用（见下节）。
+
+### 2026-10-02 播放手势唤不起音乐应用（代码完成、待真机验收）
+
+- 现象：播放/暂停有时能唤起系统默认音乐播放器，有时毫无反应。
+- 根因：`AudioManager.dispatchMediaKeyEvent()` 只把按键发给**当前持有活跃 MediaSession 的应用**。有 session（刚播过、后台仍存活）时系统能恢复播放；无任何 session 时系统静默丢弃按键，App 侧仍返回"派发成功"，所以表现为时好时坏。
+- 修复（`CameraProbeService.dispatchMediaKey`）：播放键派发前记录 `isMusicActive()`；只有"手势前没在播放"（用户意图是播放）才进入回退。回退链为 800ms 后确认是否有声音 → 再 700ms 二次确认（避免冷启动缓冲被误判为无响应）→ 仍无声则用 `CATEGORY_APP_MUSIC` 打开默认音乐应用 → 1.2s 后补发 `KEYCODE_MEDIA_PLAY` → 2s 后仍无声则提示"未能唤起音乐应用，请先打开音乐 App 再试"。暂停场景（手势前正在播放）不进入回退，绝不会误打开音乐 App；失败统一给明确提示，不伪装成功。
+- `AndroidManifest.xml` 的 `queries` 增加 `MAIN + APP_MUSIC`，保证 Android 11+ 包可见性下能解析默认音乐应用。
+- 验证：`assembleDebug` 通过，JVM 测试无回归。**真机待验收**：无音乐播放时播放手势能否打开默认播放器并真正开始播放；播放中做暂停手势不会误打开 App；Android 10+ 后台启动 Activity 限制是否会在该机型上拦截（若被拦截会看到"未能唤起"提示）。
+
+### 2026-10-02 识别灵敏度点击即时生效
+
+- 原因：灵敏度（`movementScale`）只在 `HandPipeline` 构造时读取一次，校准页把它和功能开关一起放在"保存设置并返回"里，运行中改不了；功能开关、冷却时长、动作映射都已即时生效，灵敏度是唯一例外。
+- 改动：`GestureEngine.movementScale` 改为可变并新增 `updateMovementScale()`（同步重算 `twoFingerHorizontalTrigger`、清空轨迹与保持状态，避免旧轨迹按新阈值触发）；`HandPipeline.updateSensitivity()`；`GesturePreferences.SENSITIVITY` 改为公开并新增 `saveSensitivity()`；`CameraProbeService` 偏好监听新增 `sensitivity` 分支，运行中下发并提示"识别灵敏度已即时更新"。
+- 校准页：点击"稳定 / 标准 / 灵敏"立即写入偏好并 Toast"识别灵敏度已即时生效"，分组说明补"点击即时生效，无需先保存"；底部保存按钮行为不变（仍写入当前选中值，不冲突）。
+- 验证：新增回放用例 `sensitivityChangeRetunesThresholdsWithoutRestart`（0.06 位移在标准档不触发，换到"灵敏"档后立即触发），全部测试 79/79 通过，`assembleDebug` 通过。**真机待验收**：手势控制运行中切档是否立刻改变灵敏度。
+- 未改："左右反向"仍随保存按钮生效，如需同样即时生效可照此处理。
+
+### 2026-10-02 两指双击（G33）经常失效 / 被判成调音量
+
+- 现象：两指并拢双击经常没反应，有时反而开始调音量。
+- 原因一（失效）：状态机要求每一段"弯下 / 伸直"至少 120ms，真实快速双击的一段常只有 100ms 左右，一旦不够就整段作废回到 IDLE。已改为 `twoFingerTapSegmentMs = 80L`（约 2 帧，仍可挡住单帧抖动）。
+- 原因二（误判音量）：弯下再伸直会带着掌心上下移动，达到音量阈值（0.055/0.065 × movementScale）且垂直占优时，切歌/音量机器先于双击触发音量并进入独占会话，双击彻底失效。已改为：双击后半程（`POSED_SECOND` / `BENT_TWICE` / `FIRED_WAIT`）不产生音量事件。
+- 刻意不屏蔽左右挥：松手后重新挥手与"双击第二下"形态完全相同，屏蔽它会让正常切歌失灵（回归测试 `twoFingerSwipeLeftFiresPreviousAndRightFiresNext` 已暴露过一次）。
+- 验证：新增回放用例 `fastTwoFingerDoubleTapStillTogglesPlayPause`（100ms 伸直段，放宽前失败）、`doubleTapWithPalmDriftNeverStartsVolume`（双击带 0.08 掌心位移，只出双击不出音量），全部测试 81/81 通过，`assembleDebug` 通过。**真机待验收**：双击成功率与是否还会转成调音量。
+
+### 2026-10-02 轨迹类手势超时改为重置基准
+
+- 诉求：摆好姿势后 5 秒没有动作就失效，必须松手重新摆姿势，体验很差。
+- 改动：新增 `stageTimeoutMs = 5000L`。轨迹型机器（两指切歌/音量、张掌挥动与滚动、食指左右滚动、食指上下挑）超过这个窗口不再进入 `WAIT_RELEASE`，而是把位移基准（食指上下挑是角度基准）刷新到当前位置并重新计时；张掌机器同时保留已经确定的方向轴。基准始终新鲜，不会因为很久以前的位置突然算出一段位移而误触发。
+- 未改：序列型手势（截图组合、张掌后收指打开应用）保持原超时退出——它们有明确的阶段语义，久等不动作就该退出。
+- 文案：首页"使用提示"中"请在 5 秒内完成对应动作，超时后需重新进入准备姿势"改为"挥动、滚动类手势久等不会失效，会自动重新计时，无需重新摆姿势"。
+- 验证：新增回放用例 `twoFingerSwipeStillWorksAfterIdleTimeout`、`palmWaveStillWorksAfterIdleTimeout`（静止 6 秒后再做动作仍能触发），全部测试 83/83 通过，`assembleDebug` 通过。**真机待验收**。
+
+### 2026-10-02 OK 收藏功能检查与修复（代码完成、待真机验收）
+
+- 链路：G21 OK 保持 0.6 秒 → `GestureEvent.Ok` → `GestureAction.FAVORITE_CURRENT` → `CameraProbeService.favoriteCurrentContent` → `FavoriteButtonController`：已有位置直接 `tapPixels`，没有则弹出全屏标定浮层（准星 → 测试点击 → 确认保存）。
+- 修复一（**最可能的"收藏没反应"根因**）：`ControlAccessibilityService` 只在 `onAccessibilityEvent` 里缓存 `event.packageName`，而无障碍配置只订阅 `typeWindowStateChanged`。于是下拉通知栏、弹出输入法、权限框时，缓存被改成 `com.android.systemui` / 输入法包名；`isAllowedTarget` 随后拒绝它们，OK 手势就一直失败，直到用户重新切换应用或 Activity。现在分三类处理：临时覆盖层（systemui / 输入法 / 权限框 / 安装器）**忽略并保留上一个真正的应用**；桌面与设置**置空**（明确没有可收藏目标）；其余正常记录。`canRetrieveWindowContent` 仍为 `false`，不读窗口内容，隐私策略不变。
+- 修复二：没有悬浮窗权限时标定浮层无法显示，原来是静默 `finish(false)`，用户只看到"当前应用未定义收藏位置或点击失败"。现在提示"需要允许显示悬浮窗，才能定义收藏按钮位置"。
+- 修复三：`FavoriteButtonController` 增加 `onMessage`（接到 `overlayIndicator`）。无可用前台应用时提示"未识别到可收藏的应用，请先切换到要收藏的页面"；保存位置时提示"收藏位置已保存，再做一次 OK 手势即可收藏"——原来一律报"已点击收藏位置"，但保存这一轮并没有真的点击，文案误导。
+- 验证：`assembleDebug` 通过，全部测试 83/83 通过。**真机待验收**：下拉通知栏/弹出输入法后再做 OK 手势仍能收藏；桌面与设置页做 OK 手势不再误点上一个应用；首次标定与保存提示是否清晰。
+- 未改（待确认）：`FavoriteButtonProfile` 记录了 `appVersion` 但从不校验，目标 App 大版本更新、按钮位置变化后仍点旧坐标；标定 30 秒超时仍是静默 `finish(false)`。这两项需要你确认是否要做。
+
+### 2026-10-02 OK 收藏仍报"当前应用未定义收藏位置或点击失败"——根因待定位（**本轮未改代码，等真机反馈**）
+
+真机反馈：OK 手势报上述提示，用户判断"大概率因为当前顶部浮着一个被暂停的播放器"（PIP / 悬浮播放器）。本轮只出方案、未动代码，用户正在装机复测。
+
+**失败文案的来源**：`GestureArchitecture.failureMessage()` 中 `FAVORITE_CURRENT -> "当前应用未定义收藏位置或点击失败"` 是**统一兜底**，`FavoriteButtonController` 的每条 false 分支都走它，所以看文案分不清失败环节。
+
+**三条候选根因**
+
+| 候选 | 机制 | 与"顶部悬浮播放器"的关系 | 如何验证 |
+|---|---|---|---|
+| ① 前台应用判定被悬浮层抢走 | 无障碍只订阅 `typeWindowStateChanged`，`foregroundPackage()` 取最近一次事件的包名；PIP/悬浮播放器出现或"暂停↔播放"会发窗口事件，包名可能是播放器自身或 `com.android.systemui`，随后 `isAllowedTarget` 拒绝 → 立刻 false | 下拉通知栏、弹输入法同理（14:05 版已修 systemui/输入法，此处特指**播放器包名**这种情况） | 是否出现新增提示"未识别到可收藏的应用…"；旧 APK 不会有这句 |
+| ② `ControlAccessibilityService.busy` 卡死 | `dispatch()` 置 `busy = true`，只有 `onCompleted` / `onCancelled` 复位；系统在 PIP/悬浮窗场景可能丢弃 `dispatchGesture` 且不回调 → busy 永不复位 → 此后 `tapPixels` 进门就 false | 表现为"先偶尔失败、后来一直失败"，收藏与点赞、光标点击同时失效 | 失败后回到**没有**悬浮播放器的普通页面再做 OK：若仍失败即为 ② |
+| ③ 标定浮层 `addView` 被 ROM 拦截 | `replaceOverlay` 的 catch 为空，加窗抛异常就静默 `finish(false)` | MIUI / ColorOS 等对后台全屏悬浮窗有限制，别家有悬浮窗在最上层时更易被拦 | 无日志，必须捕获异常才能证实 |
+
+注意区分另一种现象：若坐标恰好被悬浮播放器遮住，点击会报**成功**但没收藏（打在悬浮窗上），与"失败提示"不是同一回事，可先排除。
+
+**待选方案（须用户确认后才写代码）**
+
+- **方案 A（推荐先做，用于定位）**：把 `execute` / `tap` / `replaceOverlay` 每个 false 分支各给一句明确提示并写 logcat：`无障碍服务未连接` / `未识别到可收藏应用（附被判定包名）` / `当前页面不支持收藏` / `点击注入被系统取消（可能有悬浮窗遮挡）` / `标定浮层无法弹出（附异常名）`。约 20 行，只动 `FavoriteButtonController`，一次装机即可确定 ①②③。
+- **方案 B（针对 ②）**：给 `dispatch()` 的 `busy` 加 1.5–2 秒超时兜底（未回调即强制复位并按失败回调），点击前检测卡死先复位。约 10 行，顺带解决"某手势卡死后全部点击失效"的通病。
+- **方案 C（针对 ③）**：捕获 `addView` 异常，提示"请在设置中允许后台弹出界面 / 先关闭悬浮播放器"，不再静默失败。约 5 行。
+- **方案 D（针对 ①，彻底方案，三选一）**：D1 打开 `canRetrieveWindowContent` 用 `rootInActiveWindow.packageName`（最准，但**触碰 §7 硬约束第 1 条隐私底线**，必须改无障碍服务说明文案并经产品负责人同意）；D2 用 `UsageStatsManager` 查真实前台 App（准确、不读窗口内容，但要新增 `PACKAGE_USAGE_STATS` 权限与授权引导）；D3 校准页加"为指定应用定义收藏位置"入口，自动识别失败时回退到手动指定目标（零权限代价，多一次交互）。
+
+**推荐顺序**：先确认装的是 14:05 版（已含 systemui / 输入法修复）→ 仍复现则做 A 定位 → 命中 ② 做 B、③ 做 C、① 再从 D1/D2/D3 中选。**用户明确要求"确认了再改代码"，反馈未到之前不要自行改这几处。**
 
 ### 前半段（95864c6 → 2385186，详见被取代的 PM 版文档）
 
@@ -118,8 +205,11 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 8. 保持授权引导仅有荣耀/华为方案，小米/OPPO/vivo 待补。
 9. 回放测试样本是程序合成帧，非真机录制；做真机阈值校准时建议升级为录制样本回放。
 10. V 字/两指并拢角度边界（`twoFingerIndexMiddleAngle` 附近）：并拢不触发放宽到 18-20°，V 字误触发则收紧。回放基线 `vSign`/`restPose` 需同步调整。
-11. **第三方 App 收藏按钮位置标定（待真机验收）**：统一动作、G21 默认绑定、首次原页面悬浮标定、按包名与屏幕方向保存相对坐标、多 App 配置管理及执行独占态均已实现。需在快手/抖音/小红书分别验收首次提示、测试保存、再次直接点击、横竖屏隔离、删除配置和重复点击可能取消收藏的提示。
-12. **高质量自拍待真机验收**：确认荣耀前置摄像头选中的最大 JPEG 尺寸、照片横竖方向与镜像符合预期；拍摄完成后 640×480 手势识别流继续工作；模拟高质量捕获失败时应自动保存预览帧且服务不退出。
+11. **OK 收藏失败定位与验收（当前最高优先级，见 §3 末节）**：`FavoriteButtonController` 的各 false 分支共用一句兜底文案，无法区分失败环节。待真机确认是①前台判定被悬浮播放器/systemui 抢走、②`busy` 卡死还是③标定浮层 `addView` 被 ROM 拦截，再按方案 A/B/C/D 动代码（尚未执行任何方案）。
+12. **第三方 App 收藏按钮位置标定（待真机验收）**：统一动作、G21 默认绑定、首次原页面悬浮标定、按包名与屏幕方向保存相对坐标、多 App 配置管理及执行独占态均已实现。需在快手/抖音/小红书分别验收首次提示、测试保存、再次直接点击、横竖屏隔离、删除配置和重复点击可能取消收藏的提示。
+13. **收藏位置的健壮性（待产品确认）**：`FavoriteButtonProfile` 存了 `appVersion` 但从不校验，目标 App 大版本更新后仍点旧坐标；标定 30 秒超时仍是静默 `finish(false)`。
+14. **高质量自拍待真机验收**：确认荣耀前置摄像头选中的最大 JPEG 尺寸、照片横竖方向与镜像符合预期；拍摄完成后 640×480 手势识别流继续工作；模拟高质量捕获失败时应自动保存预览帧且服务不退出。
+15. **每日签到解锁真机验收（代码已实现）**：首次安装只开放 7 个基础编号；签到后运行中的控制服务立即生效（无需重启）；同一天重复点击被拒绝；把系统日期改到过去不增加也不清零；12 次后 G01–G34 全部拥有；卸载重装回到 7 个；Release 包不得出现全开入口。
 
 ## 7. 硬约束（不可违反）
 
@@ -135,21 +225,29 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 ```powershell
 cd e:/2026/MagicGesture-v0.9
-.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 61/61 通过）
+.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 83/83 通过）
 .\gradlew.bat installDebug                       # 安装到已连接设备
 D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整路径
+D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
+
+最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-02 **14:05** 生成，67.9 MB，Debug（全部手势解锁）。**该版本已包含**：systemui/输入法/桌面/设置的前台应用判定修复、悬浮窗权限缺失提示、收藏保存/无目标的明确提示、两指左右挥方向放宽（`horizontalAxisDominance = 1.0f`）、播放手势唤起默认音乐应用回退链。真机每次反馈前先确认 APK 时间是否晚于源码改动时间。
 
 手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先验证 G23 小指静音/恢复、保持不重触发、释放后可再触发以及不误判比心；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1.5 秒。G18/G19 画圈识别已经移除，不再测试旧画圈音量流程。
 
 荣耀机型注意：安装时保持手机解锁并确认 USB 安装弹窗；无障碍授权丢失时引导用户在 设置→应用→魔法手势→电池 关闭"自动管理"（详见 §8.1/§10.1 of 旧文档记录，或提交 95864c6 系列）。
 
-## 9. Git 状态
+## 9. Git 状态（2026-10-02 14:10 核对）
 
-- 本次提交包含 G23 小指静音功能、回归测试、`gesture_pinky.png` 及配套文档，并按产品负责人指示同步远程。
-- 提交前基线为 `main` 领先 `origin/main` 7 个提交，原 HEAD = `8ad860e`（`feat: 新增 G34 666 手势（大拇指+小指伸出，动作留空）`）。
-- 提交前 `git diff --check` 已通过，仅报告 Git 的 LF→CRLF 工作区换行提示；`testDebugUnitTest assembleDebug` 已通过。
-- APK 尚未安装手机，代码与构建完成不等于真机验收。
+- 分支 `main`，HEAD = `1b0288c`，与 `origin/main` **完全同步**（无本地领先提交、无未推送内容）。用户未要求提交前**不要推送远程**。
+- **未提交的工作区改动（15 个已改文件 + 2 个新增文件，约 711 行新增 / 127 行删除）**：
+  - 新增：`GestureUnlock.kt`、`GestureUnlockTest.kt`
+  - 源码：`CameraProbeService.kt`、`ControlAccessibilityService.kt`、`FavoriteButtonController.kt`、`GestureEngine.kt`、`GestureArchitecture.kt`、`GesturePreferences.kt`、`HandPipeline.kt`、`MainActivity.kt`、`CalibrationActivity.kt`
+  - 配置：`app/build.gradle.kts`、`AndroidManifest.xml`（`queries` 增加 `MAIN + APP_MUSIC`）
+  - 文档：`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`、本交接文档
+  - 测试：`GestureEngineReplayTest.kt`
+- 这批改动**尚未提交**的原因：连日阈值调参与真机验收尚未收口（含本轮收藏判断），等真机结论回来后一次性提交更安全。若中途需要安全点，可仅做本地提交、不动远程。
+- `git diff --check` 只报 Git 的 LF→CRLF 工作区换行提示，无实质空白错误；`testDebugUnitTest assembleDebug` 已通过（83/83）。
 
 ## 10. 文件速查
 
@@ -158,15 +256,18 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 | `GestureEngine.kt` | 全部姿势检测与状态机（V 字块在最前，注意与两指块的互斥；两指双击状态机在挥手状态机旁） |
 | `GestureArchitecture.kt` | 手势码 G01-G34 / 映射（伴生对象 `defaultMappings`）/门控/动作执行器/`GestureAction` 与文案 |
 | `CameraProbeService.kt` | 前台服务：相机管线、偏好监听（`feature_*` 与 `mapping_*` 即时生效）、自拍链路、媒体键与音量 |
-| `ControlAccessibilityService.kt` | 无障碍：`globalAction()`/`inject()`/`scrollDirectional()`/`confirmAtCursor()`/`likeVideo()`/媒体键 |
+| `ControlAccessibilityService.kt` | 无障碍：`globalAction()`/`inject()`/`tapPixels()`/`foregroundPackage()`/媒体键；`busy` 标志是全局注入锁（疑似卡死点，见 §3 末节②） |
+| `FavoriteButtonController.kt` | 收藏标定与坐标点击：首次标定浮层、准星、`saveFavoriteProfile` 读取；**失败分支共用兜底文案**（当前待定位） |
 | `GesturePreferences.kt` | 开关（`feature_*`）与映射覆盖（`mapping_Gxx`）持久化 |
 | `MainActivity.kt` / `CalibrationActivity.kt` / `KeepAuthorizationActivity.kt` | 首页卡片 / 校准+开关+映射配置 / 品牌授权引导 |
 | `GlobalCooldownManager.kt` / `HandPipeline.kt` / `OverlayIndicator.kt` | 冷却 / MediaPipe 封装 / 悬浮反馈与缩略图 |
+| `GestureUnlock.kt` | 签到解锁：解锁计划、签到状态机、本机存储、权益判定与开关收敛 |
 | `docs/GESTURE_ACTION_MAPPING_CHECKLIST.md` | 手势↔动作完整映射表（必随代码同步更新） |
 
-## 11. 接手后的第一步
+## 11. 接手后的第一步（按当前实际进度）
 
-1. 确认 G23 提交及 `gesture_pinky.png` 均已完整同步，不要回退或覆盖该资源。
-2. 连接荣耀手机（历史设备为 `AXYP6R4A30002818`，HONOR ALP-AN00，Android 14），运行 `adb devices -l` 确认当前连接后再执行 `installDebug`。
-3. 按 §6 第 1 条完成 G23 真机验收，重点记录误识别、1.5 秒保持手感和静音恢复状态。
-4. 根据验收结果一次只调整一个阈值或时序，并同步 `GESTURE_ACTION_MAPPING_CHECKLIST.md`；未获明确指示不要推送远程。
+1. **先问用户要 OK 收藏的复测结果**（§3 末节：三条候选根因 + 方案 A/B/C/D）。这是当前唯一的阻塞项；拿到结果前不要改收藏相关代码（用户已明确"确认了再改代码"）。
+2. 确认手机装的 APK 是 **14:05 版**（`app\build\outputs\apk\debug\app-debug.apk`，67.9 MB）；不是就重装。连接荣耀手机（历史设备 `AXYP6R4A30002818`，HONOR ALP-AN00，Android 14），`adb devices -l` 确认后再安装。
+3. 结果回来后按推荐顺序动刀：**A 定位 → 命中②做 B、③做 C、①再做 D**（D1 触碰 §7 隐私底线，须产品负责人同意）。每次只改一个变量，改完重跑 `testDebugUnitTest assembleDebug` 再让用户复测。
+4. 其余待验真机项（§6）：G23 小指静音回环、播放手势唤起默认音乐应用、两指左右挥放宽后的手感、自拍倒计时无提示、持续音量与双击、签到解锁 Release 行为。
+5. 改动同步 `docs/GESTURE_ACTION_MAPPING_CHECKLIST.md` 与本交接文档；**未获明确指示不要推送远程**，提交前先 `git diff --check`。

@@ -49,7 +49,7 @@ data class FavoriteButtonProfile(
 
 object GesturePreferences {
     const val FILE = "gesture_settings"
-    private const val SENSITIVITY = "sensitivity"
+    const val SENSITIVITY = "sensitivity"
     private const val REVERSE_HORIZONTAL = "reverse_horizontal"
     private const val FEEDBACK = "feedback_enabled"
     const val COOLDOWN_MS = "cooldown_ms"
@@ -65,6 +65,13 @@ object GesturePreferences {
         "high" -> 0.78f
         "stable" -> 1.28f
         else -> 1f
+    }
+
+    /** Saved on tap from the calibration page so a running control session retunes live. */
+    fun saveSensitivity(context: Context, value: String) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(SENSITIVITY, value)
+            .apply()
     }
 
     fun reverseHorizontal(context: Context): Boolean = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -177,6 +184,15 @@ object GesturePreferences {
         }
         editor.apply()
     }
+
+    /**
+     * 用户开关与解锁权益合并后的生效配置：未解锁的手势强制不参与识别。
+     * 用户自己的开关值不会被写入，因此“关闭功能”永远不会等价于“未解锁”。
+     */
+    fun effectiveFeatures(context: Context): GestureFeatureConfig =
+        features(context).restrictedTo(GestureUnlockStore(context).entitlement().codes)
+
+    fun unlockedCodes(context: Context): Set<GestureCode> = GestureUnlockStore(context).unlockedCodes()
 
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

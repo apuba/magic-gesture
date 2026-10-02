@@ -23,42 +23,11 @@ import android.widget.TextView
 import android.widget.Toast
 
 class CalibrationActivity : Activity() {
-    /** Remappable gestures and their display names, in UI order. The G01 cursor stays fixed. */
-    private val gestureNames = linkedMapOf(
-        GestureCode.G02 to "食指弯曲再伸直",
-        GestureCode.G03 to "食指上挑",
-        GestureCode.G04 to "食指下挑",
-        GestureCode.G05 to "四指并拢上挥",
-        GestureCode.G06 to "四指并拢下挥",
-        GestureCode.G07 to "四指并拢左挥",
-        GestureCode.G08 to "四指并拢右挥",
-        GestureCode.G09 to "竖直食指向左",
-        GestureCode.G10 to "竖直食指向右",
-        GestureCode.G11 to "V 字保持",
-        GestureCode.G12 to "比心保持",
-        GestureCode.G13 to "张掌→握拳→张掌",
-        GestureCode.G14 to "莲花指",
-        GestureCode.G15 to "兰花指",
-        GestureCode.G16 to "张掌后收成食指",
-        GestureCode.G17 to "张掌后收成两指",
-        GestureCode.G18 to "张掌后收成三指",
-        GestureCode.G19 to "张掌后收成四指",
-        GestureCode.G20 to "大拇指",
-        GestureCode.G21 to "OK 手势",
-        GestureCode.G22 to "握拳",
-        GestureCode.G23 to "伸出小指",
-        GestureCode.G24 to "左 L 手形",
-        GestureCode.G25 to "L 手形",
-        GestureCode.G26 to "爪形手势",
-        GestureCode.G27 to "C 手形",
-        GestureCode.G28 to "Love 手形",
-        GestureCode.G34 to "666 手势",
-        GestureCode.G29 to "两指左挥",
-        GestureCode.G30 to "两指右挥",
-        GestureCode.G31 to "两指上拉保持",
-        GestureCode.G32 to "两指下拉保持",
-        GestureCode.G33 to "两指双击"
-    )
+    /** Remappable gestures in UI order. The G01 cursor stays fixed and is excluded on purpose. */
+    private val gestureNames = GESTURE_DISPLAY_NAMES.filterKeys { it != GestureCode.G01 }
+
+    /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
+    private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
 
     /**
      * Actions offered in the picker. Cursor/likes-duplicate variants are excluded on purpose;
@@ -123,6 +92,7 @@ class CalibrationActivity : Activity() {
 
     private fun buildContent(): ScrollView {
         val savedFeatures = GesturePreferences.features(this)
+        unlockedCodes = GestureUnlockStore(this).entitlement().codes
         return ScrollView(this).apply {
         setBackgroundColor(Color.rgb(248, 250, 252))
         addView(LinearLayout(this@CalibrationActivity).apply {
@@ -153,7 +123,7 @@ class CalibrationActivity : Activity() {
                 setPadding(0, dp(6), 0, dp(18))
             })
 
-            addView(section("识别灵敏度", "如果经常识别不到，选择“灵敏”；如果容易误触，选择“稳定”。"))
+            addView(section("识别灵敏度", "如果经常识别不到，选择“灵敏”；如果容易误触，选择“稳定”。点击即时生效，无需先保存。"))
             addView(LinearLayout(this@CalibrationActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 lowButton = sensitivityButton("稳定\n减少误触", "stable")
@@ -205,7 +175,7 @@ class CalibrationActivity : Activity() {
             palmRightScrollSwitch = featureSwitch("四指并拢右挥", "四指并拢后整只手向右挥动。", savedFeatures.palmRightScroll)
             indexRightScrollSwitch = featureSwitch("竖直食指右挑", "只竖起食指，整只手向右轻挑。", savedFeatures.indexRightScroll)
             screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
-            selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面。", savedFeatures.selfie)
+            selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面；倒计时期间暂停全部手势识别。", savedFeatures.selfie)
             likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
             okSwitch = featureSwitch("OK 收藏当前内容", "做出 OK 手势并保持约 0.6 秒，点击当前 App 已标定的收藏按钮位置。", savedFeatures.ok)
@@ -218,18 +188,52 @@ class CalibrationActivity : Activity() {
             clawDragSwitch = featureSwitch("爪形手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢；保持约 0.6 秒锁定起点。当前无默认动作，可在上方映射中指定。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手形返回桌面", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒，返回手机桌面。", savedFeatures.loveLock)
-            twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起：左右挥切歌；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
+            twoFingerMediaSwitch = featureSwitch("两指媒体控制", "食指与中指并拢伸直、其余手指收起：整只手左右轻挥切歌（只动手指不触发）；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
             openApp1Switch = featureSwitch("张掌后收成食指", "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。", savedFeatures.openApp1)
             openApp2Switch = featureSwitch("张掌后收成两指", "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", savedFeatures.openApp2)
             openApp3Switch = featureSwitch("张掌后收成三指", "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。", savedFeatures.openApp3)
             openApp4Switch = featureSwitch("张掌后收成四指", "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。", savedFeatures.openApp4)
+            val switchCodes = mapOf<Switch, List<GestureCode>>(
+                cursorSwitch to listOf(GestureCode.G01),
+                clickSwitch to listOf(GestureCode.G02),
+                indexVerticalScrollSwitch to listOf(GestureCode.G03, GestureCode.G04),
+                palmVerticalScrollSwitch to listOf(GestureCode.G05, GestureCode.G06),
+                palmLeftScrollSwitch to listOf(GestureCode.G07),
+                indexLeftScrollSwitch to listOf(GestureCode.G09),
+                palmRightScrollSwitch to listOf(GestureCode.G08),
+                indexRightScrollSwitch to listOf(GestureCode.G10),
+                screenshotSwitch to listOf(GestureCode.G13),
+                selfieSwitch to listOf(GestureCode.G11),
+                likeSwitch to listOf(GestureCode.G12),
+                thumbsUpSwitch to listOf(GestureCode.G20),
+                okSwitch to listOf(GestureCode.G21),
+                playPauseSwitch to listOf(GestureCode.G22),
+                pinkyMuteSwitch to listOf(GestureCode.G23),
+                lotusRecentsSwitch to listOf(GestureCode.G14),
+                orchidBackSwitch to listOf(GestureCode.G15),
+                leftLSwitch to listOf(GestureCode.G24),
+                lShapeSwitch to listOf(GestureCode.G25),
+                clawDragSwitch to listOf(GestureCode.G26),
+                cShapeSwitch to listOf(GestureCode.G27),
+                loveLockSwitch to listOf(GestureCode.G28),
+                twoFingerMediaSwitch to listOf(GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33),
+                openApp1Switch to listOf(GestureCode.G16),
+                openApp2Switch to listOf(GestureCode.G17),
+                openApp3Switch to listOf(GestureCode.G18),
+                openApp4Switch to listOf(GestureCode.G19)
+            )
             listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
                 palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
                 screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, pinkyMuteSwitch,
                 lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
                 cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch,
-                openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach {
-                addView(it, blockMargins(8))
+                openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach { switch ->
+                if (switchCodes[switch].orEmpty().any { it !in unlockedCodes }) {
+                    // 未解锁的手势不能开启识别；开关值本身保留，解锁后自动可用。
+                    switch.isEnabled = false
+                    switch.text = "${switch.text}\n未解锁：完成对应次数的签到后自动开放。"
+                }
+                addView(switch, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
 
@@ -237,7 +241,7 @@ class CalibrationActivity : Activity() {
             addView(body("建议按顺序逐项测试。一次只做一个动作；触发后进入冷却期（时长见上方“手势冷却时长”设置），期间暂停全部手势判断，结束后重新识别。"))
             addView(practiceCard(R.drawable.gesture_point, "1  光标与点击", "食指移动光标；稳定约 0.2 秒后弯曲食指，再在 1 秒内重新伸直。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_four_fingers_together, "2  方向动作", "水平食指挑动，或将食指、中指、无名指和小指并拢后挥动；拇指不限，四指分开时不触发。"), blockMargins(10))
-            addView(practiceCard(R.drawable.gesture_v, "3  V 字自拍", "保持 V 字 2 秒确认，观察进度；随后有 3 秒时间放下手并调整姿势。"), blockMargins(10))
+            addView(practiceCard(R.drawable.gesture_v, "3  V 字自拍", "保持 V 字 2 秒确认，观察进度；随后有 3 秒时间放下手并调整姿势，倒计时期间不再识别任何手势。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_finger_heart, "4  比心双击点赞", "拇指与食指交叉形成小爱心，其余三指自然收拢并稳定保持约 0.6 秒。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_palm, "5  截图组合", "五指明显分开并保持；看到提示后握拳，再次五指分开并保持完成截图。"), blockMargins(20))
 
@@ -317,9 +321,15 @@ class CalibrationActivity : Activity() {
             setTextColor(Color.rgb(37, 99, 235))
             background = pressable(Color.rgb(239, 246, 255), Color.rgb(219, 234, 254), 12, Color.rgb(191, 219, 254))
         }
-        button.text = currentActionLabel(code)
-        button.setOnClickListener { showActionPicker(code) }
         mappingButtons[code] = button
+        if (code !in unlockedCodes) {
+            // 未解锁的手势可以查看名称，但不能换绑动作。
+            button.text = "未解锁"
+            button.isEnabled = false
+        } else {
+            button.text = currentActionLabel(code)
+            button.setOnClickListener { showActionPicker(code) }
+        }
         addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)))
     }
 
@@ -479,7 +489,13 @@ class CalibrationActivity : Activity() {
         text = label
         textSize = 13f
         isAllCaps = false
-        setOnClickListener { selectedSensitivity = value; refreshSensitivityButtons() }
+        setOnClickListener {
+            selectedSensitivity = value
+            refreshSensitivityButtons()
+            // 点击即写入：运行中的手势控制通过偏好监听立刻重算所有位移与角度阈值。
+            GesturePreferences.saveSensitivity(this@CalibrationActivity, value)
+            Toast.makeText(this@CalibrationActivity, "识别灵敏度已即时生效", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun refreshSensitivityButtons() {

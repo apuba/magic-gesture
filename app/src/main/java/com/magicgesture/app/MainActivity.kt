@@ -25,6 +25,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -33,6 +34,9 @@ class MainActivity : Activity() {
     private lateinit var accessibilityPermissionButton: Button
     private lateinit var setupStatusText: TextView
     private lateinit var setupGuideContainer: LinearLayout
+    private lateinit var checkInSummary: TextView
+    private lateinit var checkInNext: TextView
+    private lateinit var checkInButton: Button
     private val requestCamera = 100
     private var pendingControl = false
     private var waitingForOverlayPermission = false
@@ -40,6 +44,8 @@ class MainActivity : Activity() {
     private val featureSwitches = mutableMapOf<String, MutableList<Switch>>()
     private val actionLabelViews = mutableListOf<Pair<TextView, () -> String>>()
     private var updatingFeatureSwitches = false
+    /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
+    private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +59,7 @@ class MainActivity : Activity() {
 
     private fun buildContent(): View {
         val features = GesturePreferences.features(this)
+        unlockedCodes = GestureUnlockStore(this).entitlement().codes
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(36))
@@ -75,6 +82,7 @@ class MainActivity : Activity() {
             background = rounded(Color.rgb(232, 249, 240), 16)
         }
         content.addView(status, margins(bottom = 12))
+        content.addView(checkInCard(), margins(bottom = 12))
 
         setupGuideContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         setupGuideContainer.addView(label("首次使用设置", 22f, Color.rgb(31, 31, 55), true))
@@ -144,7 +152,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", actionLabelOf(GestureCode.G09), "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束。", "◎", "selfie", features.selfie), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。", "OK", "ok", features.ok), margins(bottom = 12))
@@ -158,7 +166,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_love, "666 手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右挥动。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(palmSeriesCard(features), margins(bottom = 18))
@@ -168,7 +176,7 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(15), dp(16), dp(15))
             background = rounded(Color.rgb(239, 240, 255), 16)
             addView(label("使用提示", 15f, Color.rgb(66, 63, 160), true))
-            addView(label("• 保持环境光线充足，避免逆光，手掌距离手机约 40–80 厘米\n• 屏幕顶部出现文字提示时，请在 5 秒内完成对应动作，超时后需重新进入准备姿势\n• 动作清晰但不需要用力，完成后先让手势复位\n• 手腕避免被袖口、手套或过宽的饰品遮挡，否则识别会明显变差\n• 识别不到或容易误触时，可到“手势练习与校准”中调整灵敏度\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, Color.rgb(78, 77, 111), false).apply {
+            addView(label("• 保持环境光线充足，避免逆光，手掌距离手机约 40–80 厘米\n• 屏幕顶部出现文字提示后即可开始动作；挥动、滚动类手势久等不会失效，会自动重新计时，无需重新摆姿势\n• 动作清晰但不需要用力，完成后先让手势复位\n• 手腕避免被袖口、手套或过宽的饰品遮挡，否则识别会明显变差\n• 识别不到或容易误触时，可到“手势练习与校准”中调整灵敏度\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, Color.rgb(78, 77, 111), false).apply {
                 setPadding(0, dp(7), 0, 0)
                 setLineSpacing(0f, 1.2f)
             })
@@ -186,19 +194,31 @@ class MainActivity : Activity() {
      * (e.g. the two-finger media family) join their labels. Rereads user overrides on each call
      * so home cards stay in sync after remapping in CalibrationActivity.
      */
-    private fun actionLabelOf(vararg codes: GestureCode): () -> String = {
-        val manager = GestureMappingManager(GesturePreferences.actionOverrides(this))
-        val labels = codes.mapNotNull { code ->
-            val action = manager.actionFor(code) ?: return@mapNotNull null
-            if (action == GestureAction.OPEN_APP) {
-                val pkg = GesturePreferences.openAppPackage(this, code)
-                val appName = pkg?.let {
-                    runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull()
-                }
-                "打开应用：${appName ?: "未选择"}"
-            } else action.displayLabel()
-        }.distinct()
-        if (labels.isEmpty()) "未绑定动作" else labels.joinToString(" / ")
+    private fun actionLabelOf(vararg codes: GestureCode): () -> String {
+        // 未解锁的手势先显示解锁条件；用户仍然可以看到姿势与用途，但不能换绑或执行。
+        val locked = codes.firstOrNull { it !in unlockedCodes }
+        if (locked != null) return { lockLabel(locked) }
+        return {
+            val manager = GestureMappingManager(GesturePreferences.actionOverrides(this))
+            val labels = codes.mapNotNull { code ->
+                val action = manager.actionFor(code) ?: return@mapNotNull null
+                if (action == GestureAction.OPEN_APP) {
+                    val pkg = GesturePreferences.openAppPackage(this, code)
+                    val appName = pkg?.let {
+                        runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull()
+                    }
+                    "打开应用：${appName ?: "未选择"}"
+                } else action.displayLabel()
+            }.distinct()
+            if (labels.isEmpty()) "未绑定动作" else labels.joinToString(" / ")
+        }
+    }
+
+    /** 未解锁手势的紫色动作标签文案。 */
+    private fun lockLabel(code: GestureCode): String {
+        val required = GestureUnlockPlan.checkInRequiredFor(code)
+        val name = GESTURE_DISPLAY_NAMES[code] ?: code.name
+        return if (required == null) "$name 未解锁" else "$name 未解锁 · 第 $required 次签到后开放"
     }
 
     private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean, secondImage: Int? = null): View = LinearLayout(this).apply {
@@ -254,6 +274,72 @@ class MainActivity : Activity() {
                 setLineSpacing(0f, 1.1f)
             })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    /**
+     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，12 次签到后 G01–G34 全部拥有。
+     * 权益只保存在本机，不联网、无账号、无付费入口。
+     */
+    private fun checkInCard(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(15), dp(16), dp(15))
+        background = rounded(Color.rgb(239, 240, 255), 20, Color.rgb(203, 213, 225))
+        elevation = dp(2).toFloat()
+        addView(label("每日签到解锁", 17f, Color.rgb(38, 37, 59), true))
+        checkInSummary = label("", 13f, Color.rgb(91, 89, 113), false).apply {
+            setPadding(0, dp(7), 0, dp(3))
+            setLineSpacing(0f, 1.15f)
+        }
+        addView(checkInSummary)
+        checkInNext = label("", 13f, Color.rgb(91, 87, 218), true).apply { setLineSpacing(0f, 1.15f) }
+        addView(checkInNext)
+        checkInButton = actionButton("今日签到", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
+            performCheckIn()
+        }
+        addView(checkInButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
+            topMargin = dp(11)
+        })
+        addView(label("解锁记录只保存在本机，卸载或清除数据可能丢失。", 11.5f, Color.rgb(119, 116, 145), false).apply {
+            setPadding(0, dp(9), 0, 0)
+        })
+        refreshCheckInCard()
+    }
+
+    private fun refreshCheckInCard() {
+        if (!::checkInSummary.isInitialized || !::checkInNext.isInitialized || !::checkInButton.isInitialized) return
+        val state = GestureUnlockStore(this).state()
+        val total = GestureUnlockPlan.TOTAL_CHECK_INS
+        val complete = GestureUnlockPlan.isComplete(state.checkInCount)
+        checkInSummary.text = if (complete) {
+            "已完成 $total 次签到，G01–G34 全部解锁。"
+        } else {
+            "已签到 ${state.checkInCount} / $total 次 · 每天主动签到一次，断签不清零，已解锁的功能永久保留。"
+        }
+        val next = GestureUnlockPlan.nextPackageLabel(state.checkInCount)
+        checkInNext.text = if (next != null) "下一次解锁：$next" else "全部手势已解锁，可在校准页为每个手势指定动作。"
+        val canCheckIn = !complete && GestureUnlockStore(this).canCheckInToday()
+        checkInButton.text = when {
+            complete -> "已全部解锁"
+            canCheckIn -> "今日签到"
+            else -> "今日已签到"
+        }
+        checkInButton.isEnabled = canCheckIn
+    }
+
+    private fun performCheckIn() {
+        when (val result = GestureUnlockStore(this).checkIn()) {
+            is CheckInResult.Unlocked -> {
+                val names = result.newCodes.mapNotNull { GESTURE_DISPLAY_NAMES[it] }.distinct().joinToString("、")
+                val unboundHint = if (result.newCodes.any { it == GestureCode.G26 || it == GestureCode.G34 }) {
+                    "。其中部分手势默认未绑定动作，可在手势练习与校准页为其指定用途。"
+                } else ""
+                Toast.makeText(this, "签到成功，已解锁：$names$unboundHint", Toast.LENGTH_LONG).show()
+                // 重建页面，让锁定卡片、动作标签与功能开关立即反映新的权益。
+                recreate()
+            }
+            CheckInResult.AlreadyCheckedIn -> Toast.makeText(this, "今天已经签到过了，明天再来", Toast.LENGTH_SHORT).show()
+            CheckInResult.Completed -> Toast.makeText(this, "全部手势已解锁", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun permissionCard(step: String, title: String, description: String, hint: String, button: Button): View = LinearLayout(this).apply {
@@ -415,6 +501,8 @@ class MainActivity : Activity() {
         minWidth = dp(56)
         minHeight = dp(48)
         contentDescription = "启用或关闭${display}"
+        // 未解锁的手势不允许开启识别；开关值本身保持不动，解锁后自动恢复可用。
+        isEnabled = GESTURE_CODES_BY_FEATURE[feature].orEmpty().none { it !in unlockedCodes }
         setOnCheckedChangeListener { _, checked ->
             if (!updatingFeatureSwitches) {
                 GesturePreferences.setFeature(this@MainActivity, feature, checked)
@@ -573,6 +661,8 @@ class MainActivity : Activity() {
             waitingForAccessibilityPermission = false
             waitForAccessibilityAuthorization()
         }
+        unlockedCodes = GestureUnlockStore(this).entitlement().codes
+        refreshCheckInCard()
         refreshFeatureSwitches()
         refreshActionLabels()
         refreshControlButton()
