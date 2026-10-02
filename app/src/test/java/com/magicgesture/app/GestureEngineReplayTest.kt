@@ -175,6 +175,27 @@ class GestureEngineReplayTest {
     private fun horizontalIndexFlicked(): List<Point> = horizontalIndex()
         .withLandmark(8, Point(.65f, .45f))
 
+    /** G24: index points left, thumb points up, forming a 90-degree L. */
+    private fun leftLPose(): List<Point> = pointingIndex()
+        .withLandmark(5, Point(.40f, .60f))
+        .withLandmark(6, Point(.32f, .60f))
+        .withLandmark(7, Point(.25f, .60f))
+        .withLandmark(8, Point(.17f, .60f))
+        .withLandmark(1, thumbUp.p1)
+        .withLandmark(2, thumbUp.p2)
+        .withLandmark(3, thumbUp.p3)
+        .withLandmark(4, thumbUp.p4)
+
+    /** Thumb leans too close to the left-pointing index: included angle is below 45 degrees. */
+    private fun leftLTooAcute(): List<Point> = leftLPose()
+        .withLandmark(2, Point(.46f, .68f))
+        .withLandmark(4, Point(.30f, .59f))
+
+    /** Thumb opens past the approved L range: included angle is above 90 degrees. */
+    private fun leftLTooObtuse(): List<Point> = leftLPose()
+        .withLandmark(2, Point(.40f, .68f))
+        .withLandmark(4, Point(.56f, .59f))
+
     /** G34 "666": thumb and pinky out, index/middle/ring curled. */
     private fun six666Pose(): List<Point> = baseHand(
         index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED
@@ -318,6 +339,20 @@ class GestureEngineReplayTest {
         r.feed(14, ::orchidPose)
         assertEquals(1, r.events.countOf<GestureEvent.OrchidBack>())
         assertEquals(1, r.events.countOf<GestureEvent.LotusRecents>())
+    }
+
+    @Test fun leftLRequiresThumbIndexAngleBetweenFortyFiveAndNinetyDegrees() {
+        val valid = Replay()
+        valid.feed(14, ::leftLPose)
+        assertEquals(1, valid.events.countOf<GestureEvent.LeftLBack>())
+
+        val tooAcute = Replay()
+        tooAcute.feed(20, ::leftLTooAcute)
+        assertEquals(0, tooAcute.events.countOf<GestureEvent.LeftLBack>())
+
+        val tooObtuse = Replay()
+        tooObtuse.feed(20, ::leftLTooObtuse)
+        assertEquals(0, tooObtuse.events.countOf<GestureEvent.LeftLBack>())
     }
 
     @Test fun cleanOkHoldFiresOkWithoutLiking() {

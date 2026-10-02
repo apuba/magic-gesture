@@ -160,7 +160,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_pinky, "伸出小指", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", actionLabelOf(GestureCode.G24), "食指向左伸直、大拇指向上，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "left_l", features.leftL), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_left_l, "左 L 手形", actionLabelOf(GestureCode.G24), "食指向左伸直、大拇指向上，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", "L", "left_l", features.leftL), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 2 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒锁定起点，移动手掌后张开手指结束。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))

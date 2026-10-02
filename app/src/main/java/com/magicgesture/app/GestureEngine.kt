@@ -200,9 +200,8 @@ class GestureEngine(
             vectorAngleDegrees(points[9], points[12], points[13], points[16]),
             vectorAngleDegrees(points[13], points[16], points[17], points[20])
         )
-        val fiveFingerGapAngles = listOf(
-            vectorAngleDegrees(points[2], points[4], points[5], points[8])
-        ) + fourFingerGapAngles
+        val thumbIndexAngle = vectorAngleDegrees(points[2], points[4], points[5], points[8])
+        val fiveFingerGapAngles = listOf(thumbIndexAngle) + fourFingerGapAngles
         // Compare each finger's own MCP-to-tip direction instead of rays from the wrist.
         // Fingers that physically touch still originate at different places on the palm,
         // so wrist-based angles incorrectly make a closed hand look spread.
@@ -251,7 +250,8 @@ class GestureEngine(
             dist(points[4], points[5]) / handScale > .45f
         // G24: index horizontal pointing to the user's left (mirrored view), thumb up.
         val leftLPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
-            kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x
+            kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x &&
+            thumbIndexAngle in 45f..90f
         // G25: index vertical, thumb stretched sideways.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways

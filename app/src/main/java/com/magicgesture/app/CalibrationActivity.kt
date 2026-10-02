@@ -183,7 +183,7 @@ class CalibrationActivity : Activity() {
             pinkyMuteSwitch = featureSwitch("伸出小指静音开关", "仅伸出小指，其余四指收拢并保持 1 秒；每次重新做手势切换静音与恢复声音。", savedFeatures.pinkyMute)
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
-            leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.leftL)
+            leftLSwitch = featureSwitch("左 L 手形返回", "食指向左伸直、大拇指向上，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", savedFeatures.leftL)
             lShapeSwitch = featureSwitch("L 手形通知栏", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持 2 秒（有倒计时提示）。初版阈值，待真机校准。", savedFeatures.lShape)
             clawDragSwitch = featureSwitch("爪形手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢；保持约 0.6 秒锁定起点。当前无默认动作，可在上方映射中指定。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手形最近任务", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
