@@ -15,6 +15,7 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 /** A simple, deliberately unoptimized YUV-to-RGB bridge for the first device run. */
 class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit) : AutoCloseable {
     private val engine: GestureEngine
+    private val activeHandSelector = ActiveHandSelector()
     private val reverseHorizontal: Boolean
     private val landmarker: HandLandmarker
     private var lastSentAt = 0L
@@ -28,31 +29,41 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         context.assets.open("hand_landmarker.task").close() // fail clearly if the model isn't installed
         val options = HandLandmarker.HandLandmarkerOptions.builder()
             .setBaseOptions(BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build())
-            .setNumHands(1)
+            .setNumHands(2)
             .setRunningMode(RunningMode.LIVE_STREAM)
             .setResultListener { result, _ ->
                 if (closed.get()) return@setResultListener
                 val now = SystemClock.uptimeMillis()
                 if (now - lastResultAt > 300) engine.lost(now).forEach(onEvent)
                 lastResultAt = now
-                val hand = result.landmarks().firstOrNull()
-                if (hand == null) engine.lost(now).forEach(onEvent)
+                val candidates = result.landmarks().mapIndexed { index, hand ->
+                    HandCandidate(
+                        points = hand.map { Point(if (reverseHorizontal) 1f - it.x() else it.x(), it.y()) },
+                        handedness = result.handedness().getOrNull(index)?.firstOrNull()?.categoryName()
+                    )
+                }
+                val selected = activeHandSelector.select(candidates, now)
+                if (selected == null) engine.lost(now).forEach(onEvent)
                 else {
                     if (!firstDetectionLogged) {
                         firstDetectionLogged = true
                         Log.d("HandPipeline", "startup: first hand detected")
                     }
-                    val points = hand.map { Point(if (reverseHorizontal) 1f - it.x() else it.x(), it.y()) }
-                    engine.consume(points, now).forEach(onEvent)
+                    if (selected.ownershipChanged) {
+                        // A new person/hand must never inherit holds, paths or sequences.
+                        engine.stop()
+                        engine.resume()
+                    }
+                    engine.consume(selected.points, now).forEach(onEvent)
                 }
             }
             .setErrorListener { error -> Log.e("HandPipeline", "inference failed", error) }
             .build()
         landmarker = HandLandmarker.createFromOptions(context, options)
     }
-    @Synchronized fun resume() = engine.resume()
-    @Synchronized fun pause() = engine.stop()
-    @Synchronized fun resetTracking() { engine.stop(); engine.resume() }
+    @Synchronized fun resume() { activeHandSelector.reset(); engine.resume() }
+    @Synchronized fun pause() { activeHandSelector.reset(); engine.stop() }
+    @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
     /** Retunes every movement threshold for a new sensitivity without restarting the pipeline. */
@@ -80,7 +91,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
             mpImage.close()
         }
     }
-    override fun close() { if (closed.compareAndSet(false, true)) { engine.stop(); landmarker.close() } }
+    override fun close() { if (closed.compareAndSet(false, true)) { activeHandSelector.reset(); engine.stop(); landmarker.close() } }
     private fun yuvToBitmap(image: Image): Bitmap {
         val w = image.width; val h = image.height
         val planes = image.planes
