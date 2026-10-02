@@ -467,8 +467,19 @@ class GestureEngine(
         //    heart arms on those wobble frames and fires a like instead of the OK action.
         val threeFingersExtended = middleOpen && ringOpen && pinkyOpen
         val okOwnsHand = features.ok && okPoseAt > 0L && now - okPoseAt < 500L
-        val fingerHeartPose = ratio < .40f && middleFolded && ringFolded && pinkyFolded &&
-            !threeFingersExtended && !okOwnsHand
+        // G12 finger heart (2026-10-03): the thumb presses onto the index finger's first joint and
+        // the two fingers cross while the middle, ring and pinky curl into a loose grip. Real MediaPipe
+        // frames put that contact anywhere from the index MCP up to the index tip depending on hand
+        // rotation, so all three are accepted rather than betting on one joint. The index itself stays
+        // visibly bent here — never require it to be extended, that filtered every real pose out before.
+        // Only a fully closed hand is rejected: it pulls the index tip back onto its own MCP.
+        val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .40f
+        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .32f ||
+            dist(points[4], points[5]) / handScale < .32f
+        val indexCurledIntoFist = dist(points[8], points[5]) / handScale < .30f
+        val fingerHeartPose = (thumbMeetsIndexTip || thumbPressesIndexJoint) &&
+            middleFolded && ringFolded && pinkyFolded &&
+            !indexCurledIntoFist && !threeFingersExtended && !okOwnsHand
         val fingersClearlyReleased = ratio > .58f
         if (features.like) when (pinch) {
             Pinch.READY -> if (fingerHeartPose) {

@@ -119,6 +119,10 @@ class GestureEngineReplayTest {
     private fun okPoseWobble(): List<Point> = okPose()
         .withLandmark(20, Point(.61f, .49f))
 
+    /**
+     * G12 finger heart after the 2026-10-03 redefinition: the thumb tip presses onto the index
+     * finger's first joint (PIP) and the two fingers cross, while the other three curl.
+     */
     private fun fingerHeartPose(): List<Point> = baseHand(
         index = FingerPose.EXTENDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED
     ).withLandmark(6, Point(.40f, .51f))
@@ -126,7 +130,11 @@ class GestureEngineReplayTest {
         .withLandmark(8, Point(.41f, .40f))
         .withLandmark(2, Point(.42f, .66f))
         .withLandmark(3, Point(.42f, .58f))
-        .withLandmark(4, Point(.41f, .42f)) // thumb tip beside index tip
+        .withLandmark(4, Point(.41f, .50f)) // thumb tip pressing the index PIP
+
+    /** The same pose with the thumb crossing nearer the index tip instead of the joint. */
+    private fun fingerHeartTipPose(): List<Point> = fingerHeartPose()
+        .withLandmark(4, Point(.41f, .42f))
 
     /** Four fingers open and parallel: the closed palm used for directional waves. */
     private fun closedPalm(offsetY: Float = 0f) = baseHand(fan = false, offsetY = offsetY)
@@ -375,6 +383,19 @@ class GestureEngineReplayTest {
             r.feed(1, ::okPose)
             r.feed(2, ::okPoseWobble)
         }
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+    }
+
+    @Test fun fingerHeartHeldNearTheTipAlsoFiresLike() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::fingerHeartTipPose)
+        assertEquals(1, r.events.countOf<GestureEvent.Like>())
+    }
+
+    /** A closed fist also parks the thumb on the index joint; it must never like anything. */
+    @Test fun fistDoesNotBecomeFingerHeart() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(20, ::fistPose)
         assertEquals(0, r.events.countOf<GestureEvent.Like>())
     }
 

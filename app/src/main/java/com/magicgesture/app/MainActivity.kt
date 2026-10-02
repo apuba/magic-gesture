@@ -153,7 +153,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指与食指交叉形成小爱心，其余三指自然收拢，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。", "OK", "ok", features.ok), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。", "拳", "play_pause", features.playPause), margins(bottom = 12))

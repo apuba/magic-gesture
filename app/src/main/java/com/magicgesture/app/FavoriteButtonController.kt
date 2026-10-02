@@ -160,23 +160,38 @@ class FavoriteButtonController(
                 true
             } else true
         }
-        root.addView(card().apply {
+        val instructionCard = card().apply {
             addView(heading("定义 $targetLabel 收藏按钮"))
-            addView(body("点击或拖动十字准星到收藏按钮中央。标定时不会操作底层页面。"))
-        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP).apply {
+            addView(body("点击或拖动十字准星到收藏按钮中央。若按钮被面板挡住，请先移动面板。标定时不会操作底层页面。"))
+        }
+        root.addView(instructionCard, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP).apply {
             setMargins(dp(14), dp(24), dp(14), 0)
         })
-        root.addView(card().apply {
+        lateinit var movePanelButton: Button
+        lateinit var placePanel: (Boolean) -> Unit
+        var panelAtTop = false
+        val controlPanel = card().apply {
             orientation = LinearLayout.HORIZONTAL
             addView(button("取消") { finish(false) }, LinearLayout.LayoutParams(0, dp(48), 1f))
-            addView(button("重置") {
-                selectedX = .82f; selectedY = .52f
-                marker.normalizedX = selectedX; marker.normalizedY = selectedY; marker.invalidate()
-            }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(8) })
-            addView(button("测试位置", primary = true) { showTestWarning() }, LinearLayout.LayoutParams(0, dp(48), 1.25f).apply { marginStart = dp(8) })
-        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM).apply {
-            setMargins(dp(14), 0, dp(14), dp(24))
-        })
+            movePanelButton = button("面板上移") { placePanel(!panelAtTop) }
+            addView(movePanelButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(8) })
+            addView(button("测试位置", primary = true) { showTestWarning() }, LinearLayout.LayoutParams(0, dp(48), 1.15f).apply { marginStart = dp(8) })
+        }
+        placePanel = { atTop ->
+            panelAtTop = atTop
+            instructionCard.visibility = if (atTop) View.GONE else View.VISIBLE
+            movePanelButton.text = if (atTop) "面板下移" else "面板上移"
+            controlPanel.layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                if (atTop) Gravity.TOP else Gravity.BOTTOM
+            ).apply {
+                if (atTop) setMargins(dp(14), dp(24), dp(14), 0)
+                else setMargins(dp(14), 0, dp(14), dp(24))
+            }
+        }
+        root.addView(controlPanel)
+        placePanel(false)
         replaceOverlay(root)
     }
 

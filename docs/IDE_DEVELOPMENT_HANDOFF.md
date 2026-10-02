@@ -3,7 +3,7 @@
 > 本文档取代 `IDE_DEVELOPMENT_HANDOFF_2026-10-01.md` 与 `IDE_DEVELOPMENT_HANDOFF_2026-10-01_PM.md`（均已删除）。
 > 需求基线见 `MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`；手势↔动作完整映射表见 `GESTURE_ACTION_MAPPING_CHECKLIST.md`（**无日期命名**；今后任何手势/动作绑定变更或新增，必须同步更新该文档——这是产品负责人的既定规则）。
 > 所有 AI/开发者必须先读仓库根目录 `AGENTS.md`；当前正式版签到解锁需求见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`，二期账号、付费和分享须等 App 真实上线后重新规划。
-> 已确认的现有功能行为变更统一记录在 `REQUIREMENTS_CHANGELOG.md`；多人多手场景采用“视觉最近手独占控制权”。
+> 已确认的现有功能行为变更统一记录在 `REQUIREMENTS_CHANGELOG.md`；多人多手场景采用"视觉最近手独占控制权"。
 > 接手前请通读第 2、6、7、9 节。
 
 ## 1. 项目概况
@@ -12,7 +12,7 @@
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 下 15 个类，全部单层包结构（含 `ActiveHandSelector.kt`、`GestureUnlock.kt`、`FavoriteButtonController.kt`）
-- **测试**：`app/src/test/` 下 6 个测试类，共 89 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界 1 例）
+- **测试**：`app/src/test/` 下 6 个测试类，共 92 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界 1 例；G12 新增 3 例）
 
 ## 2. 核心架构
 
@@ -51,19 +51,37 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 ### 2026-10-03 G24 左 L 增加拇指—食指夹角（代码完成、待真机验收）
 
-- G24 在原有“食指水平向左、拇指向上、其余三指收拢、保持约 0.6 秒”基础上，新增拇指与食指方向夹角 45°–90°，包含边界。
+- G24 在原有"食指水平向左、拇指向上、其余三指收拢、保持约 0.6 秒"基础上，新增拇指与食指方向夹角 45°–90°，包含边界。
 - 角度按拇指根部→拇指尖与食指根部→食指尖两条向量计算；小于45°或大于90°不会进入 G24 保持状态，G25 等其他手势不受影响。
 - 首页、校准页、映射清单、开发规格和需求变更记录已同步。
 - 新增回放同时验证标准90°可触发、小于45°不触发、大于90°不触发；当前89项测试全部通过。仍需真机确认45°和90°附近的关键点抖动容忍度。
+
+### 2026-10-03 G12 手指比心收紧（**代码已于同日回滚，以下内容仅作历史记录**）
+
+> **2026-10-03 回滚说明**：经两轮真机反馈（第一次"完全识别不出来"，第二次"识别进度卡着不动"）确认该方向为负优化，用户要求还原到昨天以前的代码。本节涉及的 `GestureEngine.kt`、`GestureEngineReplayTest.kt`、`MainActivity.kt`、`CalibrationActivity.kt`、`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md` 已用 `git checkout --` 回到当时 HEAD（含这之前的提交状态），`REQUIREMENTS_CHANGELOG.md` 中"G12 手指比心识别收紧"整段及其"真机反馈修正"小节已删除（**收藏段与 G24 段保留**）。**收藏功能相关文件（`FavoriteButtonController.kt`、收藏需求文档）未被改动**。回滚前完整 diff 备份在仓库外 `e:/2026/MagicGesture-backup-20261003/g12-before-revert.patch`。回滚后 `testDebugUnitTest assembleDebug` 通过，89/89 用例绿。如需再次尝试，建议从"只调 `ratio` 阈值"或"只调释放复位时长"这类单一变量入手，不要叠加多个几何条件。
+
+- G12 改为拇指与食指指尖交叉或紧密贴近、食指至少半伸展、中指/无名指/小指收拢；指尖距离不超过掌宽35%，两根手指末端须交叉或方向接近。
+- 与 OK、握拳、竖拇指、小指、Love、666 明确互斥，普通捏合不进入比心；OK 原有500ms所有权保护继续保留。
+- 保持必须累计满有效姿势600ms；最多容忍约100ms关键点抖动，抖动时间不计入保持进度，超过即从零开始。触发后指尖明显分开约200ms才允许再次识别。
+- 新增普通捏合、短抖动与长中断回放测试；2026-10-03 已执行 `testDebugUnitTest assembleDebug --rerun-tasks`，92/92 测试通过并成功生成 Debug APK。仍需真机确认左右手、镜像、80cm内外、侧转和弱光下的成功率与误触率。
+- 后续真机反馈"完全识别不出来"：已撤回食指半伸展硬门槛和末端二维夹角/相交门槛，指尖距离恢复至掌宽40%，允许食指自然弯曲，仅排除深度收拢；连续有效保持、100ms抖动处理、200ms释放复位及互斥仍保留。需以新 APK 重新真机验收。
+- 再次真机反馈"识别进度卡着不动"：继续移除食指伸展比例门槛，并把候选抖动策略改为短抖动不暂停0.6秒计时、连续约250ms不合格才清零。这样一两帧关键点波动不会卡死，真正松开仍会取消候选。此前文档中的100ms暂停计时规则由本条取代。
+
+### 2026-10-03 收藏标定底部按钮被遮挡（代码完成、待真机验收）
+
+- `FavoriteButtonController` 的标定操作面板原来固定在屏幕底部，会遮挡部分 App 位于最底部的收藏按钮，同时拦截该区域触摸。
+- 操作行新增"面板上移/面板下移"，可把整块操作面板切到屏幕另一端；移到顶部时隐藏顶部说明卡片，保证不重叠。切换面板不改变准星坐标、不点击底层页面，测试与保存流程不变。
+- 根据后续反馈已移除操作面板中的"重置"按钮，当前仅保留"取消、面板上移/下移、测试位置"。
+- 需真机验证竖屏、横屏及系统手势导航下的底部极限位置能否准确取点，四按钮在小屏/大字体下是否完整显示。
 
 ## 3. 本阶段完成工作（截至 2026-10-03）
 
 ### 2026-10-02 G23 提交内容（已完成构建、尚未装机）
 
 - **本次提交聚焦 G23 小指静音及其文档/测试**；此前打开应用、收藏、动作留空、G34 等功能已经进入本地提交历史。
-- G23 调整为“仅伸出小指，其余四指收拢，保持 1 秒”，默认执行 `TOGGLE_MUTE`。保持期间只触发一次，释放后再次做手势可在媒体静音与恢复声音之间切换。
+- G23 调整为"仅伸出小指，其余四指收拢，保持 1 秒"，默认执行 `TOGGLE_MUTE`。保持期间只触发一次，释放后再次做手势可在媒体静音与恢复声音之间切换。
 - `CameraProbeService.toggleMute()` 通过 `AudioManager.ADJUST_MUTE/ADJUST_UNMUTE` 操作 `STREAM_MUSIC`；执行后延迟 120ms 校验厂商系统的静音状态，只有确认状态发生变化才回调成功并进入全局冷却。
-- 为解决“小指容易被识别为比心”，G12 比心增加中指、无名指、小指均收拢的约束；识别到小指专属姿势时主动清除比心候选状态。回放测试同时断言不得误发 `LoveLock`、`Like` 或 G34 `Six666`。
+- 为解决"小指容易被识别为比心"，G12 比心增加中指、无名指、小指均收拢的约束；识别到小指专属姿势时主动清除比心候选状态。回放测试同时断言不得误发 `LoveLock`、`Like` 或 G34 `Six666`。
 - 首页和校准页已增加 G23 卡片、独立功能开关、动态动作标签及换绑支持。新增透明图片 `app/src/main/res/drawable-nodpi/gesture_pinky.png`（1254×1254 ARGB）。
 - 已同步更新 `GESTURE_ACTION_MAPPING_CHECKLIST.md`、本交接文档和 `MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`。
 - 2026-10-02 已执行 `testDebugUnitTest assembleDebug`：61/61 测试通过，Debug 构建成功；仅有既存 Android API/Gradle 弃用警告。APK 已生成但本轮尚未安装到手机，代码完成不等于真机验收。
@@ -85,11 +103,11 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 **当前代码实现（2026-10-02）**：
 
 - 新增 `GestureUnlock.kt`：`GestureUnlockPlan`（基础 7 个编号 + 12 个功能包，与需求 §6.1 顺序一致）、`GestureUnlockMachine`（纯逻辑签到状态机）、`GestureUnlockStore`（本机 SharedPreferences，键前缀 `unlock_`）、`GestureEntitlement`（拥有权判定）、`GestureFeatureConfig.restrictedTo()`（按权益收敛开关）、`GESTURE_CODES_BY_FEATURE`（开关键→编号）。
-- 三层保持独立：解锁权益只决定“是否拥有”；`feature_*` 仍决定“是否识别”；`mapping_Gxx` 仍决定“执行什么动作”。用户关闭的开关不会被解锁覆盖，未解锁也不会写回开关值。
+- 三层保持独立：解锁权益只决定"是否拥有"；`feature_*` 仍决定"是否识别"；`mapping_Gxx` 仍决定"执行什么动作"。用户关闭的开关不会被解锁覆盖，未解锁也不会写回开关值。
 - 双重拦截：识别入口走 `GesturePreferences.effectiveFeatures()`（`HandPipeline` 初始化与运行中 `updateFeatures` 均使用），执行入口在 `CameraProbeService.executeMapped()` 与持续音量会话前判定 `entitlement.owns(code)`。
 - 运行中即时生效：控制服务的偏好监听新增 `unlock_` 前缀分支，签到后立即刷新权益并下发引擎，无需重启控制。
-- 日期规则：本地时区 epochDay；一天一次；断签不清零；系统时间回拨视为当日已领取，不增加也不清零；12 次后返回“已完成”。
-- UI：首页状态条下方新增“每日签到解锁”卡片（进度、下一次解锁内容、签到按钮、本机保存提示）；未解锁手势的紫色标签显示“未解锁 · 第 N 次签到后开放”且识别开关不可点；校准页未解锁手势的映射按钮显示“未解锁”并禁用，功能开关附加解锁说明并禁用。
+- 日期规则：本地时区 epochDay；一天一次；断签不清零；系统时间回拨视为当日已领取，不增加也不清零；12 次后返回"已完成"。
+- UI：首页状态条下方新增"每日签到解锁"卡片（进度、下一次解锁内容、签到按钮、本机保存提示）；未解锁手势的紫色标签显示"未解锁 · 第 N 次签到后开放"且识别开关不可点；校准页未解锁手势的映射按钮显示"未解锁"并禁用，功能开关附加解锁说明并禁用。
 - 构建隔离：`app/build.gradle.kts` 开启 `buildFeatures.buildConfig`；`GestureUnlockStore` 默认参数 `BuildConfig.DEBUG` 控制全开。已验证 `assembleRelease` 生成 `DEBUG=false`、`assembleDebug` 为 `true`。
 - 验证：`testDebugUnitTest` 75/75 通过（新增 `GestureUnlockTest` 14 例），`assembleDebug` 与 `assembleRelease` 均成功；真机签到流程、升级迁移与 G26/G34 解锁后引导尚未验收。
 
@@ -171,9 +189,9 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 - 真机复现范围进一步收窄：用手势打开最近任务并切换到另一个 App 后，OK 收藏很大概率失败。根因是无障碍原来只订阅 `typeWindowStateChanged`；部分 Android 系统恢复已有任务时只发 `TYPE_WINDOWS_CHANGED`，导致前台包名继续是旧 App 或为空。
 - `accessibility_service.xml` 现同时订阅 `typeWindowStateChanged|typeWindowsChanged`，仍保持 `canRetrieveWindowContent=false`，不读取第三方窗口内容，也没有新增权限。
-- `ControlAccessibilityService.globalAction(RECENTS)` 成功后立即清空旧前台包名并进入“等待目标 App”状态；收到非系统覆盖层、非桌面/设置的真实窗口事件后才接受新包名，避免按旧 App 坐标误点。
-- `FavoriteButtonController` 在最近任务切换尚未确认目标时，每 200ms 重试一次，最多 3 次；期间提示“正在确认当前应用，请稍候”。仍无法确认则明确提示未识别目标，不回退到旧包名。
-- 点击注入失败新增明确提示“收藏位置点击被系统取消，请确认页面没有被其他窗口遮挡”；无障碍断连也有独立提示。
+- `ControlAccessibilityService.globalAction(RECENTS)` 成功后立即清空旧前台包名并进入"等待目标 App"状态；收到非系统覆盖层、非桌面/设置的真实窗口事件后才接受新包名，避免按旧 App 坐标误点。
+- `FavoriteButtonController` 在最近任务切换尚未确认目标时，每 200ms 重试一次，最多 3 次；期间提示"正在确认当前应用，请稍候"。仍无法确认则明确提示未识别目标，不回退到旧包名。
+- 点击注入失败新增明确提示"收藏位置点击被系统取消，请确认页面没有被其他窗口遮挡"；无障碍断连也有独立提示。
 - 2026-10-02 产品负责人反馈真机测试通过：从最近任务切换 App 后再使用 OK 收藏已能正常工作。仍需在其他机型和 PIP/悬浮播放器场景继续做发布前回归。
 
 **后续顺序**：先安装 23:18 之后的新 APK 验证最近任务切换修复；若普通页面或 PIP 场景仍复现，再按 A 定位，命中 ② 做 B、③ 做 C，其他前台识别问题再从 D1/D2/D3 中选。
@@ -212,15 +230,15 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 `NONE`(暂不绑定动作) / `MOVE_CURSOR`(固定) / `CLICK` / `SCROLL_UP` / `SCROLL_DOWN` / `SCROLL_LEFT` / `SCROLL_RIGHT` / `BACK` / `HOME` / `SELFIE` / `LIKE` / `SCREENSHOT` / `ROLLING_SCREENSHOT` / `OPEN_APP` / `FAVORITE_CURRENT` / `THUMBS_UP_LIKE` / `CONFIRM` / `PLAY_PAUSE` / `RECENTS` / `NOTIFICATIONS` / `VOLUME_UP` / `VOLUME_DOWN` / `TOGGLE_MUTE`(媒体静音/恢复) / `MEDIA_NEXT` / `MEDIA_PREVIOUS` / `LOCK_SCREEN` / `VOICE_ASSISTANT` / `DRAG`。`OPEN_APP_1..4` 仅作旧配置兼容。
 
-**G16-G19 打开指定 App**（2026-10-02 新增并重构）：张掌确认后收指到 1/2/3/4 指并保持约 0.6 秒，映射为统一的 `OPEN_APP` 动作。配置流程为“点击当前手势动作 → 选择打开应用 → 紧接着选择目标 App”，不再维护“应用一/二/三/四”独立配置区。包名按手势存为 `open_app_package_Gxx`，映射按钮及首页卡片显示“打开应用：App 名称”。原 `open_app_package_1..4` 和 `OPEN_APP_1..4` 自动兼容迁移。四个识别功能开关 `open_app_1..4` 仍独立保留；执行走 `getLaunchIntentForPackage` + `NEW_TASK`。
+**G16-G19 打开指定 App**（2026-10-02 新增并重构）：张掌确认后收指到 1/2/3/4 指并保持约 0.6 秒，映射为统一的 `OPEN_APP` 动作。配置流程为"点击当前手势动作 → 选择打开应用 → 紧接着选择目标 App"，不再维护"应用一/二/三/四"独立配置区。包名按手势存为 `open_app_package_Gxx`，映射按钮及首页卡片显示"打开应用：App 名称"。原 `open_app_package_1..4` 和 `OPEN_APP_1..4` 自动兼容迁移。四个识别功能开关 `open_app_1..4` 仍独立保留；执行走 `getLaunchIntentForPackage` + `NEW_TASK`。
 
-**G16-G19 首页图片**（2026-10-02 更新）：四张卡片不再共用单张 `gesture_palm`。每张卡片以“张掌 → 对应最终指型”的双图组合显示，最终姿势资源分别为 `gesture_open_app_1.png`～`gesture_open_app_4.png`，均为 1254×1254 ARGB 透明 PNG，与现有 3D 手势资产风格一致。新增或调整组合手势时，首页必须显示完整阶段图片，不能只用文字或数字角标代替。
+**G16-G19 首页图片**（2026-10-02 更新）：四张卡片不再共用单张 `gesture_palm`。每张卡片以"张掌 → 对应最终指型"的双图组合显示，最终姿势资源分别为 `gesture_open_app_1.png`～`gesture_open_app_4.png`，均为 1254×1254 ARGB 透明 PNG，与现有 3D 手势资产风格一致。新增或调整组合手势时，首页必须显示完整阶段图片，不能只用文字或数字角标代替。
 
 音量动作实现：普通换绑动作仍由 `CameraProbeService.adjustVolume` 每次调整约 10%；G31/G32 两指保持会话约每 0.4 秒调整 5%，会话期间独占识别（不输出光标或其他手势），姿势改变或到达边界后结束并进入冷却（时长可配置，见下）。（G18/G19 食指画圈音量已移除。）
 
 **G23 小指静音开关**（2026-10-02 新增）：仅小指伸直，拇指、食指、中指和无名指收拢，保持 1 秒触发 `TOGGLE_MUTE`；执行 `AudioManager.ADJUST_MUTE/ADJUST_UNMUTE` 切换媒体流静音状态。保持不重复触发，必须释放后重新做手势。比心 G12 已收紧为中指、无名指、小指必须收拢；G23 出现时会清除比心候选，避免小指被误判为比心。首页图片为 `gesture_pinky.png`，识别阈值和各厂商静音行为待真机验收。
 
-**手势冷却时长**（2026-10-02 新增）：动作执行成功后的全局锁定默认由 2 秒改为 **1.5 秒**，成为用户可配置项——校准页“显示识别反馈”下方新增拖动条（0.6–4 秒、100ms 步进），松手即保存；运行中的控制服务通过 `cooldown_ms` 偏好监听即时生效，冷却中的锁不会被变更打断。
+**手势冷却时长**（2026-10-02 新增）：动作执行成功后的全局锁定默认由 2 秒改为 **1.5 秒**，成为用户可配置项——校准页"显示识别反馈"下方新增拖动条（0.6–4 秒、100ms 步进），松手即保存；运行中的控制服务通过 `cooldown_ms` 偏好监听即时生效，冷却中的锁不会被变更打断。
 
 ## 6. 已知问题与待办（按优先级）
 
@@ -271,7 +289,7 @@ D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app
 - 分支 `main`，HEAD = `f6f8399`，与 `origin/main` 无领先或落后提交。用户未要求提交前**不要推送远程**。
 - 本轮未提交修改：`AGENTS.md`、`CalibrationActivity.kt`、`GestureEngine.kt`、`HandPipeline.kt`、`MainActivity.kt`、`GestureEngineReplayTest.kt`、三份既有主文档；新增 `ActiveHandSelector.kt`、`ActiveHandSelectorTest.kt`、`REQUIREMENTS_CHANGELOG.md`。
 - 工作区另有未跟踪的 `app/src/main/res/drawable-nodpi.zip`，来源未确认，不属于本轮代码实现，禁止擅自删除或提交。
-- “单食指必须去程并返回”方案因真机操作效果差，已按产品负责人要求完整撤回；代码、回放、首页/校准文案和需求记录均恢复到原单程挑动行为。
+- "单食指必须去程并返回"方案因真机操作效果差，已按产品负责人要求完整撤回；代码、回放、首页/校准文案和需求记录均恢复到原单程挑动行为。
 - `git diff --check` 只报 Git 的 LF→CRLF 工作区换行提示，无实质空白错误；`testDebugUnitTest assembleDebug --rerun-tasks` 已通过（89/89）。
 
 ## 10. 文件速查

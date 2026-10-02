@@ -176,7 +176,7 @@ class CalibrationActivity : Activity() {
             indexRightScrollSwitch = featureSwitch("竖直食指右挑", "只竖起食指，整只手向右轻挑。", savedFeatures.indexRightScroll)
             screenshotSwitch = featureSwitch("五指张开组合截图", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             selfieSwitch = featureSwitch("V 字自拍", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面；倒计时期间暂停全部手势识别。", savedFeatures.selfie)
-            likeSwitch = featureSwitch("比心双击点赞", "拇指和食指交叉形成小爱心，保持约 0.6 秒后双击视频。", savedFeatures.like)
+            likeSwitch = featureSwitch("比心双击点赞", "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，保持约 0.6 秒后双击视频。", savedFeatures.like)
             thumbsUpSwitch = featureSwitch("大拇指点赞", "竖起大拇指并保持约 0.6 秒后双击视频。", savedFeatures.thumbsUp)
             okSwitch = featureSwitch("OK 收藏当前内容", "做出 OK 手势并保持约 0.6 秒，点击当前 App 已标定的收藏按钮位置。", savedFeatures.ok)
             playPauseSwitch = featureSwitch("握拳播放/暂停", "握拳保持 1 秒（有倒计时提示），发送系统媒体播放/暂停指令。", savedFeatures.playPause)
@@ -242,7 +242,7 @@ class CalibrationActivity : Activity() {
             addView(practiceCard(R.drawable.gesture_point, "1  光标与点击", "食指移动光标；稳定约 0.2 秒后弯曲食指，再在 1 秒内重新伸直。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_four_fingers_together, "2  方向动作", "水平食指挑动，或将食指、中指、无名指和小指并拢后挥动；拇指不限，四指分开时不触发。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_v, "3  V 字自拍", "保持 V 字 2 秒确认，观察进度；随后有 3 秒时间放下手并调整姿势，倒计时期间不再识别任何手势。"), blockMargins(10))
-            addView(practiceCard(R.drawable.gesture_finger_heart, "4  比心双击点赞", "拇指与食指交叉形成小爱心，其余三指自然收拢并稳定保持约 0.6 秒。"), blockMargins(10))
+            addView(practiceCard(R.drawable.gesture_finger_heart, "4  比心双击点赞", "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。"), blockMargins(10))
             addView(practiceCard(R.drawable.gesture_palm, "5  截图组合", "五指明显分开并保持；看到提示后握拳，再次五指分开并保持完成截图。"), blockMargins(20))
 
             addView(Button(this@CalibrationActivity).apply {
