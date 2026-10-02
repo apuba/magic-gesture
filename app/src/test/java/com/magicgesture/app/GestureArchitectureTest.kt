@@ -159,6 +159,24 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(mapped, GestureFeatureConfig(six666 = false)))
     }
 
+    @Test fun twoFingerUpResolvesToG35AndDefaultsToScrollUp() {
+        val mapped = requireNotNull(mappings.resolve(GestureEvent.TwoFingerUp)).mapping
+        assertEquals(GestureCode.G35, mapped.code)
+        assertEquals(GestureAction.SCROLL_UP, mapped.action)
+        assertEquals(GestureType.HOLD, mapped.type)
+        assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.cooldownPolicy)
+        assertTrue(gate.allows(mapped, GestureFeatureConfig()))
+        assertFalse(gate.allows(mapped, GestureFeatureConfig(twoFingerUp = false)))
+        assertEquals(GestureAction.SCROLL_UP, GestureMappingManager.defaultActionOf(GestureCode.G35))
+        assertTrue(mappings.isRemappable(GestureCode.G35))
+        // Remapping keeps the hold/gate pairing that belongs to the gesture itself.
+        val remapped = requireNotNull(
+            GestureMappingManager(mapOf(GestureCode.G35 to GestureAction.MEDIA_NEXT)).resolve(GestureEvent.TwoFingerUp)
+        ).mapping
+        assertEquals(GestureAction.MEDIA_NEXT, remapped.action)
+        assertEquals(GestureType.HOLD, remapped.type)
+    }
+
     @Test fun userOverridesReplaceTheActionButKeepGestureTypeAndCooldown() {
         val remapped = GestureMappingManager(mapOf(GestureCode.G15 to GestureAction.HOME))
 

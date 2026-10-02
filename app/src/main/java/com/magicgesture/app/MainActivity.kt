@@ -169,6 +169,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢向上", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指向侧面伸出，无名指和小指收拢，稳定保持 1.5 秒；主要用于刷短视频时翻到下一个视频。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
         content.addView(palmSeriesCard(features), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {

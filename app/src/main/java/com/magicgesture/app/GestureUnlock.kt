@@ -37,7 +37,7 @@ object GestureUnlockPlan {
         listOf(GestureCode.G05, GestureCode.G06),
         listOf(GestureCode.G07, GestureCode.G08, GestureCode.G09, GestureCode.G10),
         listOf(GestureCode.G25, GestureCode.G27, GestureCode.G28),
-        listOf(GestureCode.G12, GestureCode.G20, GestureCode.G26, GestureCode.G34)
+        listOf(GestureCode.G12, GestureCode.G20, GestureCode.G26, GestureCode.G34, GestureCode.G35)
     )
 
     /** 功能包在首页与签到卡片上的中文说明，顺序与 [PACKAGES] 一致。 */
@@ -53,7 +53,7 @@ object GestureUnlockPlan {
         "四指并拢上下滚动",
         "横向滚动手势",
         "通知栏与系统导航",
-        "点赞手势与高级自定义手势"
+        "点赞手势与高级手势"
     )
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size
@@ -112,6 +112,7 @@ val GESTURE_CODES_BY_FEATURE: Map<String, List<GestureCode>> = mapOf(
     "two_finger_media" to listOf(
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33
     ),
+    "two_finger_up" to listOf(GestureCode.G35),
     "open_app_1" to listOf(GestureCode.G16),
     "open_app_2" to listOf(GestureCode.G17),
     "open_app_3" to listOf(GestureCode.G18),
@@ -244,6 +245,7 @@ fun GestureFeatureConfig.restrictedTo(unlocked: Set<GestureCode>): GestureFeatur
     twoFingerMedia = twoFingerMedia && unlocked.hasAny(
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33
     ),
+    twoFingerUp = twoFingerUp && unlocked.hasAny(GestureCode.G35),
     openApp1 = openApp1 && unlocked.hasAny(GestureCode.G16),
     openApp2 = openApp2 && unlocked.hasAny(GestureCode.G17),
     openApp3 = openApp3 && unlocked.hasAny(GestureCode.G18),

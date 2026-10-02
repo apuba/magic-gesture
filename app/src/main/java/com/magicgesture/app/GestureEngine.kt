@@ -38,6 +38,8 @@ sealed interface GestureEvent {
     data object Six666 : GestureEvent
     /** Both fingers bend and re-extend twice in a row while in the two-finger pose. */
     data object TwoFingerDoubleTap : GestureEvent
+    /** G35: index and middle together pointing up, thumb stretched sideways, held to scroll feeds. */
+    data object TwoFingerUp : GestureEvent
     /** Open-palm-then-fold sequence fired slot N (1..4): 1=index, 2=index+middle, 3=+ring, 4=+pinky. */
     data class OpenApp(val slot: Int) : GestureEvent
     data class Feedback(val message: String, val progress: Int? = null) : GestureEvent
@@ -81,6 +83,8 @@ class GestureEngine(
     private var okHoldAt = 0L
     private var six666Hold = StaticHold.READY
     private var six666HoldAt = 0L
+    private var twoFingerUpHold = StaticHold.READY
+    private var twoFingerUpHoldAt = 0L
     /** Last frame the OK shape was seen; keeps the finger heart from claiming wobbling frames. */
     private var okPoseAt = 0L
     private var fistHold = StaticHold.READY
@@ -318,6 +322,15 @@ class GestureEngine(
             twoFingerTipGap <= .60f && twoFingerIndexMiddleAngle <= 25f
         val vPose = indexOpen && middleOpen && ringFolded && pinkyFolded &&
             twoFingerTipGap > .32f && (twoFingerTipGap > .60f || twoFingerIndexMiddleAngle > 25f)
+        // G35 (2026-10-03): the two-finger pose with both fingers reaching up and the thumb stretched
+        // out sideways — the shape held while watching short video feeds. Built on top of the
+        // two-finger pose so it stays mutually exclusive with the V sign (which needs the fingers
+        // apart), and the sideways thumb keeps it clear of the plain two-finger pose used for
+        // volume and track control. "Up" is measured from each finger's own MCP, so a tilted hand
+        // still reads as up as long as both fingertips are clearly above the knuckles.
+        val twoFingerUpPose = twoFingerTogetherPose && thumbSideways &&
+            points[8].y < points[5].y - handScale * .25f &&
+            points[12].y < points[9].y - handScale * .25f
         // A close, parallel middle finger may look folded relative to the wrist when hidden
         // behind the index finger. Never let that valid two-finger candidate arm index gestures.
         val indexOnlyPose = indexOpen && middleFolded && ringFolded && pinkyFolded && !twoFingerTogetherPose
@@ -345,6 +358,9 @@ class GestureEngine(
             )
         ) return output
         output += GestureEvent.Cursor(cursor.x, cursor.y)
+        // G35 runs before the V countdown and before the two-finger movement chains: while the pose
+        // is held the hand is deliberately still, so nothing downstream may claim those frames.
+        if (features.twoFingerUp && advanceStaticHold(twoFingerUpPose, now, GestureEvent.TwoFingerUp, { twoFingerUpHold }, { twoFingerUpHold = it }, { twoFingerUpHoldAt }, { twoFingerUpHoldAt = it }, output, holdMs = 1500L, label = "两指并拢向上保持")) return output
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
             candidateAt = 0L
@@ -1194,6 +1210,8 @@ class GestureEngine(
         fistHoldAt = 0L
         pinkyHold = StaticHold.READY
         pinkyHoldAt = 0L
+        twoFingerUpHold = StaticHold.READY
+        twoFingerUpHoldAt = 0L
         lotusHold = StaticHold.READY
         lotusHoldAt = 0L
         orchidHold = StaticHold.READY

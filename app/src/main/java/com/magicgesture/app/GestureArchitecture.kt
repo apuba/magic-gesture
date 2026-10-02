@@ -6,7 +6,7 @@ import android.view.KeyEvent
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
     G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23,
-    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34
+    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34, G35
 }
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
@@ -46,7 +46,8 @@ val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G30 to "两指右挥",
     GestureCode.G31 to "两指上拉保持",
     GestureCode.G32 to "两指下拉保持",
-    GestureCode.G33 to "两指双击"
+    GestureCode.G33 to "两指双击",
+    GestureCode.G35 to "两指并拢向上"
 )
 
 enum class GestureAction {
@@ -179,6 +180,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureEvent.LoveLock -> GestureCode.G28
             GestureEvent.Six666 -> GestureCode.G34
             GestureEvent.TwoFingerDoubleTap -> GestureCode.G33
+            GestureEvent.TwoFingerUp -> GestureCode.G35
             is GestureEvent.TwoFingerSwipe -> when (event.direction) {
                 GestureEvent.TwoFingerDirection.LEFT -> GestureCode.G29
                 GestureEvent.TwoFingerDirection.RIGHT -> GestureCode.G30
@@ -364,7 +366,15 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G30 to dynamicMapping(GestureCode.G30, GestureAction.MEDIA_NEXT),
         GestureCode.G31 to dynamicMapping(GestureCode.G31, GestureAction.VOLUME_UP),
         GestureCode.G32 to dynamicMapping(GestureCode.G32, GestureAction.VOLUME_DOWN),
-        GestureCode.G33 to dynamicMapping(GestureCode.G33, GestureAction.PLAY_PAUSE)
+        GestureCode.G33 to dynamicMapping(GestureCode.G33, GestureAction.PLAY_PAUSE),
+        // G35 holds the two-finger pose still for 1.5s to scroll one screen up — the "next video"
+        // move in short-video apps, done without touching the phone.
+        GestureCode.G35 to GestureMapping(
+            GestureCode.G35,
+            GestureType.HOLD,
+            GestureAction.SCROLL_UP,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        )
     )
     }
 }
@@ -399,6 +409,7 @@ class GestureFeatureGate {
         GestureCode.G28 -> features.loveLock
         GestureCode.G34 -> features.six666
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33 -> features.twoFingerMedia
+        GestureCode.G35 -> features.twoFingerUp
         else -> false
     }
 }

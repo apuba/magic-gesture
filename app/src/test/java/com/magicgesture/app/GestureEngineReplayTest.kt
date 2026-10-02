@@ -421,6 +421,45 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.Six666>())
     }
 
+    /** G35: index and middle together reaching up, thumb stretched sideways, ring and pinky curled. */
+    private fun twoFingerUpPose(): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbSide
+    )
+
+    @Test fun twoFingerUpHoldFiresOnceAfter1500msAndRequiresRelease() {
+        val r = Replay()
+        r.feed(29, ::twoFingerUpPose)             // 1.45s elapsed: below the 1.5s hold
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
+        r.feed(2, ::twoFingerUpPose)              // 1.55s elapsed -> fires once
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerUp>())
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢向上保持") })
+        r.feed(20, ::twoFingerUpPose)             // still holding: no repeat
+        assertEquals(1, r.events.countOf<GestureEvent.TwoFingerUp>())
+        r.feed(8, ::restPose)                     // release
+        r.feed(31, ::twoFingerUpPose)             // re-enter: fires again
+        assertEquals(2, r.events.countOf<GestureEvent.TwoFingerUp>())
+        // Held still, it must not be read as the V countdown or the two-finger media chain.
+        assertEquals(0, r.events.countOf<GestureEvent.Selfie>())
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerSwipe>())
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerVolumeHold>())
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerDoubleTap>())
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+    }
+
+    /** The plain two-finger pose (thumb not stretched sideways) belongs to media control only. */
+    @Test fun plainTwoFingerPoseDoesNotScrollUp() {
+        val r = Replay()
+        r.feed(40, ::restPose)
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
+    }
+
+    @Test fun twoFingerUpFeatureDisabledSuppressesThePipeline() {
+        val r = Replay(GestureFeatureConfig(twoFingerUp = false))
+        r.feed(40, ::twoFingerUpPose)
+        assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
+    }
+
     @Test fun pinkyOnlyHoldFiresMuteOnceAndRequiresRelease() {
         val r = Replay()
         r.feed(20, ::pinkyOnlyPose)                   // 950ms elapsed: below the 1s hold

@@ -12,7 +12,7 @@
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 下 15 个类，全部单层包结构（含 `ActiveHandSelector.kt`、`GestureUnlock.kt`、`FavoriteButtonController.kt`）
-- **测试**：`app/src/test/` 下 6 个测试类，共 92 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界 1 例；G12 新增 3 例）
+- **测试**：`app/src/test/` 下 6 个测试类，共 95 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界 1 例；G12 新增 3 例；G35 新增 4 例）
 
 ## 2. 核心架构
 
@@ -196,6 +196,19 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 **后续顺序**：先安装 23:18 之后的新 APK 验证最近任务切换修复；若普通页面或 PIP 场景仍复现，再按 A 定位，命中 ② 做 B、③ 做 C，其他前台识别问题再从 D1/D2/D3 中选。
 
+### 2026-10-03 新增 G35「两指并拢向上」= 向上滑动（代码完成、待真机验收）
+
+需求（产品负责人原话）：食指与中指并拢向上、拇指向侧面伸出、其余二指收拢，保持 1.5 秒，默认绑定**向上滑动**，主要用于刷视频。
+
+- **判定**（`GestureEngine.kt`）：在既有「两指并拢」姿势之上再加两个条件——`thumbSideways`（拇指明显向侧面伸出）与「两指尖各自高于对应掌指关节 0.25 掌宽」。复用既有 `twoFingerTogetherPose` 是为了天然互斥 V 字（V 要求两指分开 > 0.32 且张开角度 > 25°），因此不需要额外排斥逻辑。
+- **节奏**：走 `advanceStaticHold`，`holdMs = 1500`，带浮层倒计时「两指并拢向上保持：还需 N 秒」；触发一次后必须放开才能再次触发；`resetTransient` 已清理状态。
+- **链路位置**：放在光标输出之后、V 字倒计时与两指音量/切歌链路之前。这样保持期间由 G35 独占帧，避免用户稳住不动时那些**位移型**手势来抢；手真的移动了才有机会进入音量链路。注意 `advanceActiveVolumeHold` 仍在最前面，已进入音量独占态时不会误触发 G35。
+- **默认动作**：`GestureMapping(defaultMappings G35)` = `HOLD` + `SCROLL_UP` + `GLOBAL_AFTER_SUCCESS`；执行走已有 `scrollDirectional`，无需改 `ControlAccessibilityService`。可在校准页换绑任意动作。
+- **开关与解锁**：新增 `GestureFeatureConfig.twoFingerUp`（偏好键 `feature_two_finger_up`），`GestureFeatureGate` 中 `G35 -> twoFingerUp`，`GESTURE_CODES_BY_FEATURE` 增加 `two_finger_up`。G35 归入第 12 次签到的功能包（原「点赞手势与高级自定义手势」已改名为「点赞手势与高级手势」）——`GestureUnlockTest` 断言所有编号必须被覆盖，因此新增编号**必须**同时进包。
+- **UI**：首页新增卡片（沿用 `gesture_two_fingers_together` 图）；校准页手势列表由 `GESTURE_DISPLAY_NAMES` 自动生成，无需改。
+- **验证**：`testDebugUnitTest` 95/95 通过（新增 4 例：1.5 秒触发且不重复、释放后可再次触发、不误判 V/两指媒体/比心、普通两指并拢姿势不触发、开关关闭不触发；架构层 1 例），`assembleDebug` 成功。**真机待验收**：刷短视频 App 保持 1.5 秒是否真的翻页；做上下拉音量、V 字自拍、比心时是否互不干扰；左右手与 40–80cm 距离下 `thumbSideways`（0.45 掌宽）是否过严——这是后续最可能需要按真机手感放松的阈值。
+- 文档已同步 `GESTURE_ACTION_MAPPING_CHECKLIST.md`（表格、编号范围、保持节奏）与本文档第 1、4 节。
+
 ### 前半段（95864c6 → 2385186，详见被取代的 PM 版文档）
 
 荣耀真机无障碍授权持久化闭环验收与启动管理白名单引导（`KeepAuthorizationActivity`）；自拍体验优化（缩略图、倒计时音效、期间冻结手势）；可回放关键点样本回归测试；首页卡片拆分；**映射可配置化**（覆盖表 + 校准页配置区 + 运行中即时生效）；接入 7 项系统动作；G24-G28 新手势；G29/G30 两指并拢切歌；V 字/两指并拢误识别修复（角度区分）。
@@ -221,7 +234,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（34） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G16-G19 张掌后收成 1/2/3/4 指→打开指定 App、G20 大拇指点赞、G21 OK=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 伸出小指=静音开关**、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形返回桌面、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停、G34 666（默认未绑定） |
+| 已实现（35） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G16-G19 张掌后收成 1/2/3/4 指→打开指定 App、G20 大拇指点赞、G21 OK=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 伸出小指=静音开关**、G24 左 L 返回、G25 L 形保持 2s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形返回桌面、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停、G34 666（默认未绑定）、**G35 两指并拢向上保持 1.5s=向上滑动（刷短视频）** |
 | 已移除 | G18/G19 食指画圈音量已移除；编号后续已复用于张掌收指打开 App |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。

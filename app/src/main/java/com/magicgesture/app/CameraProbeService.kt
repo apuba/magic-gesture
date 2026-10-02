@@ -227,7 +227,7 @@ class CameraProbeService : Service() {
                                 GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
                                 GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
-                                is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.
+                                GestureEvent.TwoFingerUp, is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.
                                 is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 GestureEvent.Six666 -> overlayIndicator.showFeedback("666 手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
