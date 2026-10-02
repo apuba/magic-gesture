@@ -3,6 +3,7 @@
 > 本文档取代 `IDE_DEVELOPMENT_HANDOFF_2026-10-01.md` 与 `IDE_DEVELOPMENT_HANDOFF_2026-10-01_PM.md`（均已删除）。
 > 需求基线见 `MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`；手势↔动作完整映射表见 `GESTURE_ACTION_MAPPING_CHECKLIST.md`（**无日期命名**；今后任何手势/动作绑定变更或新增，必须同步更新该文档——这是产品负责人的既定规则）。
 > 所有 AI/开发者必须先读仓库根目录 `AGENTS.md`；当前正式版签到解锁需求见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`，二期账号、付费和分享须等 App 真实上线后重新规划。
+> 已确认的现有功能行为变更统一记录在 `REQUIREMENTS_CHANGELOG.md`；多人多手场景采用“视觉最近手独占控制权”。
 > 接手前请通读第 2、6、7、9 节。
 
 ## 1. 项目概况
@@ -10,13 +11,14 @@
 - **工程**：`e:/2026/MagicGesture-v0.9`，单模块 Android 应用（Kotlin，无 Compose，自绘 View）
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
-- **源码**：`app/src/main/java/com/magicgesture/app/` 下 14 个类，全部单层包结构（含 `GestureUnlock.kt`、`FavoriteButtonController.kt`）
-- **测试**：`app/src/test/` 下 5 个测试类，共 83 个用例，当前全绿（Replay 40、Architecture 24、Unlock 14、Orientation 2、Cooldown 3）
+- **源码**：`app/src/main/java/com/magicgesture/app/` 下 15 个类，全部单层包结构（含 `ActiveHandSelector.kt`、`GestureUnlock.kt`、`FavoriteButtonController.kt`）
+- **测试**：`app/src/test/` 下 6 个测试类，共 89 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界 1 例）
 
 ## 2. 核心架构
 
 ```text
-HandPipeline（MediaPipe 20fps 关键点）
+HandPipeline（MediaPipe 20fps，最多两只手）
+  → ActiveHandSelector      掌部尺度判断视觉最近手、身份锁定与接管
   → GestureEngine.kt        姿势/状态机检测，产出 GestureEvent（sealed，含 Feedback）
   → GestureMappingManager   手势码→动作：默认映射 + 用户覆盖表（持久化于 SharedPreferences 键 mapping_Gxx）
   → GestureFeatureGate      手势开关门控（跟手势走，不跟动作走）
@@ -35,8 +37,26 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 3. **G01 光标固定不可换绑**；其余已有检测管线的手势均可换绑。G18/G19 画圈识别已移除，但编号已改用于张掌组合手势；`DRAG` 只有爪形手势能提供坐标，已从换绑选单移除但动作枚举保留（G26 默认不绑定，触发时提示未绑定）。
 4. `GestureEngine` 中部分状态机**吞帧**（提前 return 阻断后续检测器），部分**不吞帧**（旁路只发事件）。不吞帧的典型：两指并拢系列 G29-G33（该姿势同时是常见"自然手型"，吞帧会阻断其他手势的释放检测，见状态机注释与回放测试 `restPose`）。
 5. **冷却期冻结识别管线**：冷却期间光标也停（注意与早期版本"光标白名单"行为不同，首页文案已同步为准确描述）。
+6. **最近手独占控制权**：后方手永远不进入 `GestureEngine`；挑战手需明显且持续靠前才接管，接管时清空上一只手全部瞬态状态。完整规则见 `REQUIREMENTS_CHANGELOG.md`。
 
-## 3. 本阶段完成工作（截至 2026-10-02）
+### 2026-10-02 多人多手最近手优先（代码完成、待真机验收）
+
+- 新增 `ActiveHandSelector.kt`，MediaPipe `numHands` 从 1 调整为 2；距离代理只使用手腕 0 与掌指关节 5/9/13/17 的掌宽、掌高，不把随姿势变化的指尖范围用于前后判断。
+- 无控制手时，视觉最近手稳定 200ms 后取得控制权；控制手存在时，即使它不做有效手势，后方手也完全不参与识别。
+- 挑战手掌部尺度至少为当前手的 1.20 倍并持续 250ms 才接管；当前手连续丢失 300ms 后才允许画面中的最近手接管。
+- 结合掌心位置、掌部尺度和 MediaPipe 左右手分类保持身份；相反左右手不会被直接当成原控制手。
+- 接管时通过 `engine.stop()` / `resume()` 清除静态保持、轨迹、双击、组合、持续音量和光标平滑状态，新手不能继承上一只手已经积累的进度。
+- 新增 `ActiveHandSelectorTest` 5 例，覆盖最近手独占、后方手动作无效、20%/250ms 接管、尺度波动不抖动、丢失 300ms 与重置重新获取。当前全部 88 个 JVM 测试通过，Debug APK 构建成功。
+- 尚未真机验收：40/60/80/100cm、两人同框、两手交叉、不同大小手掌、左右手组合，以及双手检测对帧率、耗电和发热的影响。
+
+### 2026-10-03 G24 左 L 增加拇指—食指夹角（代码完成、待真机验收）
+
+- G24 在原有“食指水平向左、拇指向上、其余三指收拢、保持约 0.6 秒”基础上，新增拇指与食指方向夹角 45°–90°，包含边界。
+- 角度按拇指根部→拇指尖与食指根部→食指尖两条向量计算；小于45°或大于90°不会进入 G24 保持状态，G25 等其他手势不受影响。
+- 首页、校准页、映射清单、开发规格和需求变更记录已同步。
+- 新增回放同时验证标准90°可触发、小于45°不触发、大于90°不触发；当前89项测试全部通过。仍需真机确认45°和90°附近的关键点抖动容忍度。
+
+## 3. 本阶段完成工作（截至 2026-10-03）
 
 ### 2026-10-02 G23 提交内容（已完成构建、尚未装机）
 
@@ -240,23 +260,19 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-02 **23:18** 生成，约 68.9 MB，Debug（全部手势解锁）。**该版本已包含**：最近任务切换后前台包名重新确认与短暂重试、G22/G23 保持 1 秒、G34 独立 666 图片，以及此前 systemui/输入法/桌面/设置判定、收藏提示、两指左右挥放宽和播放手势唤起音乐应用回退链。真机每次反馈前先确认 APK 时间是否晚于源码改动时间。
+最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-03 **02:12** 生成，约 68.4 MB，Debug（全部手势解锁）。**该版本已包含**：G24 拇指—食指夹角 45°–90°、恢复原单程食指挑动、最多两手检测与视觉最近手独占控制、最近任务切换后前台包名重新确认与短暂重试、G22/G23 保持 1 秒、G34 独立 666 图片，以及此前 systemui/输入法/桌面/设置判定、收藏提示、两指左右挥放宽和播放手势唤起音乐应用回退链。
 
 手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先验证 G23 小指静音/恢复、保持不重触发、释放后可再触发以及不误判比心；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1 秒。G18/G19 画圈识别已经移除，不再测试旧画圈音量流程。
 
 荣耀机型注意：安装时保持手机解锁并确认 USB 安装弹窗；无障碍授权丢失时引导用户在 设置→应用→魔法手势→电池 关闭"自动管理"（详见 §8.1/§10.1 of 旧文档记录，或提交 95864c6 系列）。
 
-## 9. Git 状态（2026-10-02 14:10 核对）
+## 9. Git 状态（2026-10-03 00:21 核对）
 
-- 分支 `main`，HEAD = `1b0288c`，与 `origin/main` **完全同步**（无本地领先提交、无未推送内容）。用户未要求提交前**不要推送远程**。
-- **未提交的工作区改动（15 个已改文件 + 2 个新增文件，约 711 行新增 / 127 行删除）**：
-  - 新增：`GestureUnlock.kt`、`GestureUnlockTest.kt`
-  - 源码：`CameraProbeService.kt`、`ControlAccessibilityService.kt`、`FavoriteButtonController.kt`、`GestureEngine.kt`、`GestureArchitecture.kt`、`GesturePreferences.kt`、`HandPipeline.kt`、`MainActivity.kt`、`CalibrationActivity.kt`
-  - 配置：`app/build.gradle.kts`、`AndroidManifest.xml`（`queries` 增加 `MAIN + APP_MUSIC`）
-  - 文档：`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`、本交接文档
-  - 测试：`GestureEngineReplayTest.kt`
-- 这批改动**尚未提交**的原因：连日阈值调参与真机验收尚未收口（含本轮收藏判断），等真机结论回来后一次性提交更安全。若中途需要安全点，可仅做本地提交、不动远程。
-- `git diff --check` 只报 Git 的 LF→CRLF 工作区换行提示，无实质空白错误；`testDebugUnitTest assembleDebug` 已通过（83/83）。
+- 分支 `main`，HEAD = `f6f8399`，与 `origin/main` 无领先或落后提交。用户未要求提交前**不要推送远程**。
+- 本轮未提交修改：`AGENTS.md`、`CalibrationActivity.kt`、`GestureEngine.kt`、`HandPipeline.kt`、`MainActivity.kt`、`GestureEngineReplayTest.kt`、三份既有主文档；新增 `ActiveHandSelector.kt`、`ActiveHandSelectorTest.kt`、`REQUIREMENTS_CHANGELOG.md`。
+- 工作区另有未跟踪的 `app/src/main/res/drawable-nodpi.zip`，来源未确认，不属于本轮代码实现，禁止擅自删除或提交。
+- “单食指必须去程并返回”方案因真机操作效果差，已按产品负责人要求完整撤回；代码、回放、首页/校准文案和需求记录均恢复到原单程挑动行为。
+- `git diff --check` 只报 Git 的 LF→CRLF 工作区换行提示，无实质空白错误；`testDebugUnitTest assembleDebug --rerun-tasks` 已通过（89/89）。
 
 ## 10. 文件速查
 

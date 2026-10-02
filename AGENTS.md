@@ -21,7 +21,8 @@
 3. `docs/GESTURE_ACTION_MAPPING_CHECKLIST.md`（G01–G34 与动作映射唯一对照表）
 4. `docs/MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`（架构与历史规格）
 5. `docs/GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`（当前正式版签到解锁需求；账号、付费、分享部分仅作二期记录）
-6. 涉及第三方收藏时，再读 `docs/THIRD_PARTY_APP_FAVORITE_BUTTON_REQUIREMENTS.md`
+6. `docs/REQUIREMENTS_CHANGELOG.md`（已确认的现有功能行为变更，包含多人多手控制权）
+7. 涉及第三方收藏时，再读 `docs/THIRD_PARTY_APP_FAVORITE_BUTTON_REQUIREMENTS.md`
 
 文档与代码不一致时，不得自行猜测。先核对当前代码、Git 历史和产品负责人最新明确指示，并在交付中指出冲突。
 
@@ -41,6 +42,7 @@
 - 正式用户每天主动签到永久解锁下一个功能包；一天最多一次，断签不清零，12 次有效签到完成全部奖励。
 - 所有正式 Release 用户适用同一规则，不设置历史用户全开、收费用户全开、管理员全开或秘密口令。
 - Debug/内部测试构建允许全部解锁，但该能力必须通过构建类型隔离，禁止进入正式 Release。
+- 多人多手画面中，视觉上最近的手独占控制权；最近手没有做手势时，后方手也不得触发。控制权规则与初始参数见 `docs/REQUIREMENTS_CHANGELOG.md`。
 
 ## 4. 架构边界
 
@@ -193,4 +195,5 @@ Camera frame
 - 架构和状态机变化更新 `MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`。
 - 当前状态、验证和接手事项更新 `IDE_DEVELOPMENT_HANDOFF.md`。
 - 当前签到解锁需求和二期构想统一维护在 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`；二期内容仍受真实上线硬门槛约束。
+- 已确认的现有功能行为变更统一追加到 `REQUIREMENTS_CHANGELOG.md`，不得创建按日期重复的需求变更文档。
 - 文档不能把“计划”“代码完成”“构建通过”“真机通过”和“真实上线”混写成同一状态。

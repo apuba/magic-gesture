@@ -84,6 +84,10 @@ V1 先建立 `Gesture -> Mapping -> FeatureGate -> Action` 边界，不在识别
 
 已具备：前置摄像头前台服务、MediaPipe Hand Landmarker、无障碍点击/滑动/全局动作/截图、悬浮光标与状态球、三档灵敏度、左右反转、识别反馈、八组功能开关、G01-G13 中的大部分基础识别链路。
 
+多人多手控制权已按 `REQUIREMENTS_CHANGELOG.md` 实现第一阶段：MediaPipe 最多返回两只手，`ActiveHandSelector` 以手腕和掌指关节估算掌部尺度，视觉最近手独占进入 `GestureEngine`；挑战手需领先 20% 并持续 250ms 才能接管，原手丢失 300ms 后才允许替代手接管。控制权切换会清空全部瞬态识别状态，尚待多人真机和性能验收。
+
+G24 左 L 手形在原有方向、手指开合和 0.6 秒保持条件上，增加拇指方向与食指方向夹角 45°–90°（含边界）的约束；角度超出范围不得进入保持状态。
+
 本次 P0 已调整：
 
 - 新增独立 `GlobalCooldownManager`，统一 2 秒全局动作冷却。
