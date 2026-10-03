@@ -36,7 +36,7 @@ val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G21 to "OK 手势",
     GestureCode.G22 to "握拳",
     GestureCode.G23 to "伸出小指",
-    GestureCode.G24 to "左 L 手形",
+    GestureCode.G24 to "手枪手势",
     GestureCode.G25 to "L 手形",
     GestureCode.G26 to "爪形手势",
     GestureCode.G27 to "C 手形",
@@ -348,8 +348,15 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.NOTIFICATIONS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
-        // G26 (claw) is deliberately unbound for now: the pipeline stays, the user can
-        // assign any action to it in the mapping UI. DRAG itself is no longer offered.
+        // G26 (claw) now performs a continuous drag: it presses on START, follows the palm with
+        // MOVE and lifts on END. Cooldown is NONE because one drag may legitimately run for many
+        // seconds — the cooldown starts only when END arrives, see executeMapped in the service.
+        GestureCode.G26 to GestureMapping(
+            GestureCode.G26,
+            GestureType.HOLD,
+            GestureAction.DRAG,
+            CooldownPolicy.NONE
+        ),
         GestureCode.G27 to GestureMapping(
             GestureCode.G27,
             GestureType.HOLD,
@@ -367,7 +374,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G31 to dynamicMapping(GestureCode.G31, GestureAction.VOLUME_UP),
         GestureCode.G32 to dynamicMapping(GestureCode.G32, GestureAction.VOLUME_DOWN),
         GestureCode.G33 to dynamicMapping(GestureCode.G33, GestureAction.PLAY_PAUSE),
-        // G35 holds the two-finger pose still for 1.5s to scroll one screen up — the "next video"
+        // G35 holds the two-finger pose still for 1s to scroll one screen up — the "next video"
         // move in short-video apps, done without touching the phone.
         GestureCode.G35 to GestureMapping(
             GestureCode.G35,
@@ -497,9 +504,14 @@ class GestureActionExecutor(
             }
             GestureAction.DRAG -> {
                 val service = accessibilityService() ?: return false
-                // Only the claw gesture produces the start/end coordinates a drag needs.
+                // Only the claw gesture produces the coordinates a drag needs, and it delivers
+                // them as a START/MOVE/END stream that keeps the finger down in between.
                 val drag = mapped.event as? GestureEvent.ClawDrag ?: return false
-                service.injectDrag(drag.startX, drag.startY, drag.endX, drag.endY, callback)
+                when (drag.phase) {
+                    GestureEvent.DragPhase.START -> service.beginDrag(drag.startX, drag.startY, callback)
+                    GestureEvent.DragPhase.MOVE -> service.moveDrag(drag.endX, drag.endY, callback)
+                    GestureEvent.DragPhase.END -> service.endDrag(drag.endX, drag.endY, callback)
+                }
                 true
             }
             GestureAction.LIKE, GestureAction.THUMBS_UP_LIKE -> {

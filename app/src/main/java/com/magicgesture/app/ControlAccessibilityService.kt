@@ -20,6 +20,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -201,18 +202,67 @@ class ControlAccessibilityService : AccessibilityService() {
         dispatch(path, 420, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
     }
 
-    /** Press-move-release stroke between two normalized screen points (G26 claw drag). */
-    fun injectDrag(startX: Float, startY: Float, endX: Float, endY: Float, callback: (Boolean) -> Unit = {}) = main.post {
+    /**
+     * Continuous drag (G26 claw): START only anchors the finger position, every MOVE injects one
+     * short completed swipe from the previous point to the new one, and END closes the drag.
+     *
+     * The finger is deliberately not kept pressed between segments. A touch that rests still for a
+     * few hundred milliseconds becomes a long-press, and on a web page that selects text instead of
+     * scrolling it. Injecting one short swipe per palm movement scrolls the page the same way while
+     * the touch is never still long enough to turn into a selection. Each swipe keeps the real palm
+     * travel over a fixed short duration, so the page follows the hand: quick palms fling, slow
+     * palms creep, and the drag may last as long as the pose is held.
+     */
+    private var dragActive = false
+    private var dragLastX = 0f
+    private var dragLastY = 0f
+    /** Short enough that the touch never rests long enough to be read as a long-press. */
+    private val dragSwipeMs = 120L
+    /** Below this a swipe does nothing on screen; skip it and let the travel accumulate. */
+    private val dragMinTravelPx = 10f
+
+    fun beginDrag(x: Float, y: Float, callback: (Boolean) -> Unit = {}) = main.post {
+        val m = resources.displayMetrics
+        dragLastX = x * m.widthPixels
+        dragLastY = y * m.heightPixels
+        dragActive = true
+        callback(true)
+    }
+
+    fun moveDrag(x: Float, y: Float, callback: (Boolean) -> Unit = {}) = main.post {
+        if (!dragActive) { callback(false); return@post }
+        // Skip while the previous swipe is still running; the travel accumulates into the next one.
         if (busy) { callback(false); return@post }
         val m = resources.displayMetrics
-        val x1 = startX * m.widthPixels
-        val y1 = startY * m.heightPixels
-        val x2 = endX * m.widthPixels
-        val y2 = endY * m.heightPixels
-        val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
-        // Longer drags take proportionally longer so the target app can follow the movement.
-        val duration = (hypot(x2 - x1, y2 - y1) * 1.2f).toLong().coerceIn(350L, 900L)
-        dispatch(path, duration, onDone = { busy = false; callback(true) }, onCancelled = { busy = false; callback(false) })
+        val nextX = x * m.widthPixels
+        val nextY = y * m.heightPixels
+        if (hypot(nextX - dragLastX, nextY - dragLastY) < dragMinTravelPx) { callback(true); return@post }
+        busy = true
+        val path = Path().apply { moveTo(dragLastX, dragLastY); lineTo(nextX, nextY) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, dragSwipeMs, false)
+        val accepted = dispatchGesture(
+            GestureDescription.Builder().addStroke(stroke).build(),
+            object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    busy = false; dragLastX = nextX; dragLastY = nextY; callback(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    Log.d("CameraProbe", "drag swipe cancelled by the system")
+                    busy = false; callback(false)
+                }
+            },
+            main
+        )
+        if (!accepted) {
+            Log.d("CameraProbe", "drag swipe refused")
+            busy = false; callback(false)
+        }
+    }
+
+    fun endDrag(x: Float, y: Float, callback: (Boolean) -> Unit = {}) = main.post {
+        // The last swipe already put the finger down and up, so ending only closes the drag.
+        dragActive = false
+        callback(true)
     }
 
     /** System screenshot; mirrors the API-28 guard inside inject(). */

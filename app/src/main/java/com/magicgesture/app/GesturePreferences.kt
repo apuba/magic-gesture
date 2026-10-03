@@ -30,7 +30,7 @@ data class GestureFeatureConfig(
     // G34 "666": thumb and pinky out, other fingers curled. Unbound by default.
     val six666: Boolean = true,
     val twoFingerMedia: Boolean = true,
-    // G35: two fingers together pointing up with the thumb sideways, held 1.5s to scroll feeds.
+    // G35: two fingers together pointing up with the thumb sideways, held 1s to scroll feeds.
     val twoFingerUp: Boolean = true,
     // G16-G19 open-app sequences: open palm, then fold to 1-4 fingers.
     val openApp1: Boolean = true,

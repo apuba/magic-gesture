@@ -10,6 +10,9 @@ import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayInputStream
 import android.hardware.camera2.*
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
@@ -52,9 +55,12 @@ class CameraProbeService : Service() {
     private var selfieReader: ImageReader? = null
     private var cameraOpening = false
     private var cameraGeneration = 0
-    private var stopped = false
+    @Volatile private var stopped = false
     private var firstFrameLogged = false
-    private var pipeline: HandPipeline? = null
+    @Volatile private var pipeline: HandPipeline? = null
+    private val modelInitLock = Any()
+    private var modelInitGeneration = 0
+    private var modelInitInProgress = false
     private var sensorRotation = 0
     private var lastFrameRotation = Int.MIN_VALUE
     private var controlMode = false
@@ -199,10 +205,26 @@ class CameraProbeService : Service() {
                 // Model initialization is CPU-heavy (several seconds on mid-range devices).
                 // Run it on its own thread so camera opening and auto-exposure warm-up overlap
                 // with it instead of running back to back on the camera-probe thread.
-                Thread({
-                    val t0 = SystemClock.uptimeMillis()
-                    try {
-                        pipeline = HandPipeline(this) { event ->
+                startModelInitialization()
+            }
+            handler.post {
+                Log.d("CameraProbe", "startup: opening camera ${SystemClock.uptimeMillis() - startedAt} ms after start request")
+                openCamera()
+            }
+        }
+        return START_NOT_STICKY
+    }
+    private fun startModelInitialization() {
+        val generation = synchronized(modelInitLock) {
+            if (stopped || pipeline != null || modelInitInProgress) return
+            modelInitInProgress = true
+            ++modelInitGeneration
+        }
+        Thread({
+            var createdPipeline: HandPipeline? = null
+            val t0 = SystemClock.uptimeMillis()
+            try {
+                val newPipeline = HandPipeline(this) { event ->
                             val service = ControlAccessibilityService.active
                             if (favoriteFlowActive) return@HandPipeline
                             // 自拍倒计时期间冻结全部手势：连识别提示也不显示，避免与倒计时抢占浮层。
@@ -238,22 +260,40 @@ class CameraProbeService : Service() {
                                 GestureEvent.Recents -> service?.inject(event) { finishAction(it, "打开最近任务") }
                                     ?: finishAction(false, "最近任务", "无障碍服务未连接")
                             }
-                        }
-                        Log.d("CameraProbe", "startup: model ready ${SystemClock.uptimeMillis() - t0} ms after thread start")
-                    } catch (e: Exception) {
-                        Log.e("CameraProbe", "model init failed", e)
-                        controlMode = false
-                        val reason = if (e is java.io.FileNotFoundException) "模型文件缺失：hand_landmarker.task" else "模型初始化失败：${e.javaClass.simpleName}"
-                        mainHandler.post { fail(reason) }
+                }
+                createdPipeline = newPipeline
+                val accepted = synchronized(modelInitLock) {
+                    if (!stopped && generation == modelInitGeneration && pipeline == null) {
+                        pipeline = newPipeline
+                        modelInitInProgress = false
+                        true
+                    } else {
+                        if (generation == modelInitGeneration) modelInitInProgress = false
+                        false
                     }
-                }, "model-init").start()
+                }
+                if (accepted) {
+                    Log.d("CameraProbe", "startup: model ready ${SystemClock.uptimeMillis() - t0} ms after thread start")
+                } else {
+                    // The service stopped or a newer initialization won while this native
+                    // model was being created. It was never published, so close it here.
+                    newPipeline.close()
+                }
+            } catch (e: Exception) {
+                Log.e("CameraProbe", "model init failed", e)
+                createdPipeline?.close()
+                val shouldReport = synchronized(modelInitLock) {
+                    val current = !stopped && generation == modelInitGeneration
+                    if (generation == modelInitGeneration) modelInitInProgress = false
+                    current
+                }
+                if (shouldReport) {
+                    controlMode = false
+                    val reason = if (e is java.io.FileNotFoundException) "模型文件缺失：hand_landmarker.task" else "模型初始化失败：${e.javaClass.simpleName}"
+                    mainHandler.post { if (!stopped) fail(reason) }
+                }
             }
-            handler.post {
-                Log.d("CameraProbe", "startup: opening camera ${SystemClock.uptimeMillis() - startedAt} ms after start request")
-                openCamera()
-            }
-        }
-        return START_NOT_STICKY
+        }, "model-init").start()
     }
     private fun openCamera() {
         try {
@@ -331,9 +371,18 @@ class CameraProbeService : Service() {
         // 未解锁的手势不得执行；功能开关是独立的一层，不能代替解锁权益判断。
         if (!entitlement.owns(mapped.mapping.code)) return
         if (!featureGate.allows(mapped.mapping, featureConfig)) return
-        Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
+        val dragPhase = (mapped.event as? GestureEvent.ClawDrag)?.phase
+        val isDrag = mapped.mapping.action == GestureAction.DRAG
+        // A drag is one action delivered as START/MOVE/END. Cooling down on any MOVE would freeze
+        // the pipeline mid-drag, so the cooldown starts only when the finger is lifted; MOVE is
+        // also kept out of the log so one long drag does not flood it.
+        if (!(isDrag && dragPhase == GestureEvent.DragPhase.MOVE)) {
+            Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
+        }
         val submitted = actionExecutor.execute(mapped) { success ->
-            if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS) {
+            if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS ||
+                (isDrag && dragPhase == GestureEvent.DragPhase.END)
+            ) {
                 finishAction(success, mapped.mapping.action.successMessage(), mapped.mapping.action.failureMessage())
             }
         }
@@ -564,6 +613,7 @@ class CameraProbeService : Service() {
         null
     }
     private fun previewThumbnail(jpeg: ByteArray): Bitmap? = try {
+        val rotation = selfieRotationDegrees(jpeg)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
         var sample = 1
@@ -574,8 +624,9 @@ class CameraProbeService : Service() {
             jpeg.size,
             BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
         ) ?: return null
-        val thumbnail = previewThumbnail(decoded)
-        if (thumbnail !== decoded) decoded.recycle()
+        val upright = rotateBitmap(decoded, rotation)
+        val thumbnail = previewThumbnail(upright)
+        if (thumbnail !== upright) upright.recycle()
         thumbnail
     } catch (e: Exception) {
         Log.w("CameraProbe", "high quality selfie preview failed", e)
@@ -792,8 +843,53 @@ class CameraProbeService : Service() {
             false
         }
     }
+    /**
+     * Devices answer JPEG_ORIENTATION differently: asked to rotate, some rotate the pixels while
+     * others only write an orientation tag. Galleries read the tag, BitmapFactory and many viewers
+     * do not, so the selfie looked sideways in the overlay. Baking the rotation into the pixels once
+     * here leaves every consumer looking at the same upright picture. Original bytes are kept
+     * whenever there is no rotation or the bitmap could not be built, so picture quality is intact.
+     */
     private fun saveSelfie(jpeg: ByteArray): Boolean {
-        return saveSelfieBytes { output -> output.write(jpeg) }
+        val rotation = selfieRotationDegrees(jpeg)
+        if (rotation == 0) return saveSelfieBytes { output -> output.write(jpeg) }
+        val upright = uprightBitmap(jpeg, rotation) ?: return saveSelfieBytes { output -> output.write(jpeg) }
+        return try {
+            saveSelfieBytes { output -> upright.compress(Bitmap.CompressFormat.JPEG, 94, output) }
+        } finally {
+            upright.recycle()
+        }
+    }
+    /** Clockwise rotation the captured JPEG declares; 0 when its pixels are already upright. */
+    private fun selfieRotationDegrees(jpeg: ByteArray): Int = try {
+        val constant = ExifInterface(ByteArrayInputStream(jpeg))
+            .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        CameraFrameOrientation.exifRotationDegrees(constant).also {
+            Log.d("CameraProbe", "selfie orientation tag=$constant -> rotating $it deg")
+        }
+    } catch (e: Exception) {
+        Log.w("CameraProbe", "selfie orientation read failed", e)
+        0
+    }
+    private fun uprightBitmap(jpeg: ByteArray, rotation: Int): Bitmap? = try {
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.let { rotateBitmap(it, rotation) }
+    } catch (e: Exception) {
+        Log.w("CameraProbe", "selfie rotation failed", e)
+        null
+    }
+    private fun rotateBitmap(source: Bitmap, rotation: Int): Bitmap {
+        if (rotation == 0) return source
+        val rotated = Bitmap.createBitmap(
+            source,
+            0,
+            0,
+            source.width,
+            source.height,
+            Matrix().apply { postRotate(rotation.toFloat()) },
+            true
+        )
+        if (rotated !== source) source.recycle()
+        return rotated
     }
     private fun saveSelfieBytes(write: (java.io.OutputStream) -> Unit): Boolean {
         return try {
@@ -854,6 +950,11 @@ class CameraProbeService : Service() {
     override fun onDestroy() {
         isControlRunning = false
         stopped = true
+        val pipelineToClose = synchronized(modelInitLock) {
+            modelInitGeneration++
+            modelInitInProgress = false
+            pipeline.also { pipeline = null }
+        }
         if (::overlayIndicator.isInitialized) favoriteController.dismiss()
         globalCooldown.reset()
         cameraGeneration++
@@ -863,7 +964,7 @@ class CameraProbeService : Service() {
         camera?.close(); camera = null
         reader?.close(); reader = null
         selfieReader?.close(); selfieReader = null
-        pipeline?.close(); pipeline = null
+        pipelineToClose?.close()
         selfieWriter.shutdownNow()
         try { toneGenerator?.release() } catch (_: Exception) { }
         toneGenerator = null

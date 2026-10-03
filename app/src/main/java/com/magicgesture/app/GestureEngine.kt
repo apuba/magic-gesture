@@ -28,7 +28,13 @@ sealed interface GestureEvent {
     data object LShape : GestureEvent
     data object CShape : GestureEvent
     data object LoveLock : GestureEvent
-    data class ClawDrag(val startX: Float, val startY: Float, val endX: Float, val endY: Float) : GestureEvent
+    /**
+     * Phases of one continuous drag: START puts the finger down, MOVE keeps it down while it
+     * follows the palm, END lifts it. The drag has no time limit — it lasts exactly as long as
+     * the claw pose is held.
+     */
+    enum class DragPhase { START, MOVE, END }
+    data class ClawDrag(val phase: DragPhase, val startX: Float, val startY: Float, val endX: Float, val endY: Float) : GestureEvent
     /** Four-direction wave of the two-finger (index+middle together) pose. */
     enum class TwoFingerDirection { LEFT, RIGHT, UP, DOWN }
     data class TwoFingerSwipe(val direction: TwoFingerDirection) : GestureEvent
@@ -107,6 +113,23 @@ class GestureEngine(
     private var clawConfirmAt = 0L
     private var clawAnchor: Point? = null
     private var clawPalmAt: Point? = null
+    /** Last time a MOVE segment was emitted, so an ongoing drag is not dispatched every frame. */
+    private var clawLastMoveAt = 0L
+    private var clawLastX = 0f
+    private var clawLastY = 0f
+    /** Min interval between two drag segments; matches the stroke duration on the service side. */
+    private val clawMoveIntervalMs = 90L
+    /** Min travel between two segments, in normalized units; filters hand tremor. */
+    private val clawMoveStep = .010f
+    /**
+     * Fallback only: how long the strict claw test may fail before a drag is considered over. The
+     * test needs seven conditions at once, so circling the palm drops it for a second or more as the
+     * wrist rotates; an opened hand or a fist ends the drag well before this runs out.
+     */
+    private val clawReleaseGraceMs = 2000L
+    private var clawLostAt = 0L
+    /** Where the drag really began; the anchor moves when the finger is re-anchored on an edge. */
+    private var clawOrigin: Point? = null
     private var twoFingerState = TwoFingerSwipeState.IDLE
     private var twoFingerStart: Point? = null
     private var twoFingerStartWrist: Point? = null
@@ -211,7 +234,14 @@ class GestureEngine(
         // so wrist-based angles incorrectly make a closed hand look spread.
         // Direction pose: index, middle, ring and little fingers are extended and touching.
         // The thumb is intentionally not part of this requirement.
-        val directionPalm = fourFingersOpen && fourFingerGapAngles.all { it <= 5f }
+        // G07/G08 and the palm swipes: the four fingers held together like a blade. A real hand
+        // never keeps them perfectly parallel and the outer two curl slightly behind the others, so
+        // the gate accepts a small splay and only asks that each finger still reaches past its PIP.
+        // Requiring a full extension here made the swipe almost impossible to start on a device.
+        val fourFingersBlade = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).all { (tipIndex, pipIndex) ->
+            dist(points[tipIndex], points[0]) > dist(points[pipIndex], points[0]) * 1.02f
+        }
+        val directionPalm = fourFingersBlade && fourFingerGapAngles.all { it <= 12f }
         val screenshotPalmOpen = fourFingersOpen && thumbOpen && fiveFingerGapAngles.all { it > 5f }
         val fist = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).all { (tipIndex, pipIndex) ->
             dist(points[tipIndex], points[0]) < dist(points[pipIndex], points[0]) * 1.08f
@@ -252,10 +282,19 @@ class GestureEngine(
         val thumbUpStrong = thumbOpen && points[4].y < points[2].y - handScale * .15f
         val thumbSideways = thumbOpen && kotlin.math.abs(points[4].y - points[2].y) < handScale * .35f &&
             dist(points[4], points[5]) / handScale > .45f
-        // G24: index horizontal pointing to the user's left (mirrored view), thumb up.
-        val leftLPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
+        // G24 gun: the index points left while the thumb rises from behind the index PIP.
+        // Requiring the thumb tip to stay on the wrist side of PIP and clear of MCP/PIP keeps
+        // a finger-heart (whose thumb presses those joints) from being claimed as Back.
+        val indexPipToTipLength = dist(points[6], points[8]).coerceAtLeast(.001f)
+        val thumbBehindIndexPip = (
+            (points[4].x - points[6].x) * (points[8].x - points[6].x) +
+                (points[4].y - points[6].y) * (points[8].y - points[6].y)
+            ) / indexPipToTipLength <= -handScale * .15f
+        val thumbClearOfIndexJoints = dist(points[4], points[5]) / handScale >= .35f &&
+            dist(points[4], points[6]) / handScale >= .35f
+        val gunPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x &&
-            thumbIndexAngle in 45f..90f
+            thumbIndexAngle in 45f..90f && thumbBehindIndexPip && thumbClearOfIndexJoints
         // G25: index vertical, thumb stretched sideways.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
@@ -281,12 +320,21 @@ class GestureEngine(
         // side-on hand collapses this width and must never enter the claw pipeline.
         val palmFrontality = handScale / dist(points[0], points[9]).coerceAtLeast(.001f)
         val palmFacingCamera = palmFrontality >= .65f
+        // 2026-10-03 real-device feedback: the claw was practically unreachable and kept firing
+        // play/pause as a fist. Both poses curl the fingers, so "every fingertip pulled inside its
+        // own PIP" is true for a claw too — curl alone cannot tell them apart. What a fist adds is
+        // that the tips also bunch together or tuck into the palm, while a claw keeps them spread
+        // out in front of it. Exclude only that clenched shape so a curled-but-spread hand stays a
+        // claw, and no longer arms the fist hold.
+        val fistTipsBunched = cFingerTipGaps.average() < .28f
+        val fistTipsTucked = tipPalmRatios.average() < .45f
+        val closedFist = fist && (fistTipsBunched || fistTipsTucked)
         // G26: all five fingers are independently visible and the four curled fingertips
         // stay separated. The deliberate dead band between this and C avoids cross-firing.
         val clawFourFingersSeparated = cFingerTipGaps.count { it >= .30f } >= 2 &&
             cFingerTipGaps.all { it >= .22f }
         val clawThumbSeparated = dist(points[4], points[8]) / handScale >= .55f
-        val clawPose = !fist && palmFacingCamera && clawFourFingersSeparated && clawThumbSeparated &&
+        val clawPose = !closedFist && palmFacingCamera && clawFourFingersSeparated && clawThumbSeparated &&
             fingerReachRatios.count { it in .55f..1.12f } >= 3 &&
             tipPalmRatios.count { it in .45f..1.25f } >= 3 &&
             tipPalmRatios.average() < 1.10f
@@ -304,7 +352,7 @@ class GestureEngine(
         // front of the camera. The four curved fingers must still remain visibly grouped.
         // 2026-10-01 real-device feedback: a plain open palm was firing the C, so the curl
         // envelope is narrowed on every axis (tip gaps, reach ratios, tip-to-palm ratios).
-        val cShapePose = !fist && !clawPose && cThumbOpen && cFourFingersTogether &&
+        val cShapePose = !closedFist && !clawPose && cThumbOpen && cFourFingersTogether &&
             fingerReachRatios.count { it in .58f..1.62f } >= 3 &&
             fingerReachRatios.count { it < 1.30f } >= 2 &&
             tipPalmRatios.count { it in .48f..1.72f } >= 3 &&
@@ -328,7 +376,14 @@ class GestureEngine(
         // apart), and the sideways thumb keeps it clear of the plain two-finger pose used for
         // volume and track control. "Up" is measured from each finger's own MCP, so a tilted hand
         // still reads as up as long as both fingertips are clearly above the knuckles.
-        val twoFingerUpPose = twoFingerTogetherPose && thumbSideways &&
+        // `!directionPalm` keeps this off the four-finger swipe (G07/G08): with the fingers held
+        // together the outer two only look folded because they curl behind the index and middle, so
+        // the two-finger test alone would claim a swipe and hold the hand for a second.
+        // The angle makes it the two-finger gun the gesture actually is: index and middle form the
+        // barrel and the thumb sticks out as the grip, so the two must clearly diverge (same test as
+        // G24) and the barrel must point up, not forward at the camera.
+        val twoFingerUpPose = twoFingerTogetherPose && thumbSideways && !directionPalm &&
+            thumbIndexAngle >= 45f && kotlin.math.abs(indexAngleDegrees) >= 50f &&
             points[8].y < points[5].y - handScale * .25f &&
             points[12].y < points[9].y - handScale * .25f
         // A close, parallel middle finger may look folded relative to the wrist when hidden
@@ -360,7 +415,7 @@ class GestureEngine(
         output += GestureEvent.Cursor(cursor.x, cursor.y)
         // G35 runs before the V countdown and before the two-finger movement chains: while the pose
         // is held the hand is deliberately still, so nothing downstream may claim those frames.
-        if (features.twoFingerUp && advanceStaticHold(twoFingerUpPose, now, GestureEvent.TwoFingerUp, { twoFingerUpHold }, { twoFingerUpHold = it }, { twoFingerUpHoldAt }, { twoFingerUpHoldAt = it }, output, holdMs = 1500L, label = "两指并拢向上保持")) return output
+        if (features.twoFingerUp && advanceStaticHold(twoFingerUpPose, now, GestureEvent.TwoFingerUp, { twoFingerUpHold }, { twoFingerUpHold = it }, { twoFingerUpHoldAt }, { twoFingerUpHoldAt = it }, output, holdMs = 1000L, label = "两指并拢向上保持")) return output
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
             candidateAt = 0L
@@ -386,8 +441,8 @@ class GestureEngine(
         }
         // G24-G28 checked before the click/swipe chains: their index-based poses would
         // otherwise arm click or horizontal-swipe detection while the L shapes are held.
-        if (features.leftL && advanceStaticHold(leftLPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
-        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 2000L, label = "L 手形保持")) return output
+        if (features.leftL && advanceStaticHold(gunPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
+        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 1000L, label = "L 手形保持")) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (pinkyOnlyPose) {
             // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and
@@ -399,7 +454,8 @@ class GestureEngine(
         if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持")) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
-        if (advanceClawDrag(clawPose, palm, cursor, now, output)) return output
+        // screenshotPalmOpen is the open hand and closedFist the fist: both mean "let go" mid-drag.
+        if (advanceClawDrag(clawPose, screenshotPalmOpen, closedFist, palm, cursor, now, output)) return output
         advanceTwoFingerTap(twoFingerTogetherPose, now, output)
         advanceTwoFingerSwipe(twoFingerTogetherPose, palm, points[0], now, output)
         if (twoFingerState == TwoFingerSwipeState.VOLUME_UP || twoFingerState == TwoFingerSwipeState.VOLUME_DOWN) return output
@@ -459,7 +515,12 @@ class GestureEngine(
             indexClick = IndexClick.READY
             indexClickPoint = null
         }
-        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, fist, palm, points[0], now, output)) {
+        // A sequence already running owns the hand, so it is advanced before the static holds: the
+        // screenshot cycle's fist stage would otherwise be claimed as a PlayPause hold and the
+        // sequence would never complete.
+        if (screenshotSequence != ScreenshotSequence.IDLE &&
+            advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, closedFist, palm, points[0], now, output)
+        ) {
             if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
                 indexClick = IndexClick.READY
                 indexClickPoint = null
@@ -469,12 +530,25 @@ class GestureEngine(
             releaseAt = 0L
             return output
         }
+        // Static holds are decided before a wave arms: an OK, lotus or orchid hand also reads as
+        // four fingers held together, so letting the wave arm first would swallow their frames and
+        // no hold could ever reach its confirmation time.
         if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
         if (features.ok && okPose) okPoseAt = now
         if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
-        if (features.playPause && advanceStaticHold(fist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持")) return output
+        if (features.playPause && advanceStaticHold(closedFist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持")) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
+        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, closedFist, palm, points[0], now, output)) {
+            if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
+                indexClick = IndexClick.READY
+                indexClickPoint = null
+            }
+            pinch = Pinch.READY
+            candidateAt = 0L
+            releaseAt = 0L
+            return output
+        }
         // Finger-heart uses thumb/index proximity independently from index-bend clicking, but
         // OK is the very same thumb/index contact *with* the other three fingers extended, so:
         //  - the heart requires those fingers to be curled (matches the "其余三指收拢" wording);
@@ -495,8 +569,12 @@ class GestureEngine(
         val indexCurledIntoFist = dist(points[8], points[5]) / handScale < .30f
         val fingerHeartPose = (thumbMeetsIndexTip || thumbPressesIndexJoint) &&
             middleFolded && ringFolded && pinkyFolded &&
-            !indexCurledIntoFist && !threeFingersExtended && !okOwnsHand
-        val fingersClearlyReleased = ratio > .58f
+            !indexCurledIntoFist && !gunPose && !threeFingersExtended && !okOwnsHand
+        // The heart may contact the index tip, PIP, or MCP. It is released only after the thumb
+        // leaves all three zones; using tip distance alone cancels every joint-contact heart.
+        val fingersClearlyReleased = ratio > .58f &&
+            dist(points[4], points[6]) / handScale > .50f &&
+            dist(points[4], points[5]) / handScale > .50f
         if (features.like) when (pinch) {
             Pinch.READY -> if (fingerHeartPose) {
                 pinch = Pinch.CANDIDATE
@@ -585,11 +663,18 @@ class GestureEngine(
         return false
     }
     /**
-     * G26 claw drag: hold the claw ~600ms to anchor at the current cursor, move the palm,
-     * then open the hand to dispatch one press-move-release stroke from anchor to end.
+     * G26 claw drag: hold the claw ~600ms to anchor at the current cursor, then keep dragging until
+     * the hand lets go. Starting needs the strict `pose`, but a live drag is held by a much looser
+     * rule: only an opened hand (`released`) or a fist (`fist`) ends it at once. Circling the palm
+     * rotates the wrist, which drops the strict test for a while by changing perspective and the
+     * palm facing; treating that as a release would cut every circling drag short. The strict test
+     * is still the fallback, so a hand that changes shape without opening or closing ends the drag
+     * after clawReleaseGraceMs instead of holding the pose slot forever.
      */
     private fun advanceClawDrag(
         pose: Boolean,
+        released: Boolean,
+        fist: Boolean,
         palm: Point,
         cursor: Point,
         now: Long,
@@ -615,31 +700,72 @@ class GestureEngine(
                 if (now - clawConfirmAt >= 600L) {
                     clawDragState = ClawDragState.DRAGGING
                     clawAnchor = cursor
+                    clawOrigin = cursor
                     clawPalmAt = palm
+                    clawLastMoveAt = now
+                    clawLastX = cursor.x
+                    clawLastY = cursor.y
+                    // The finger goes down right away and stays down until the claw is released.
+                    // The drag is continuous and carries no time limit, so holding it for tens of
+                    // seconds is fine; the cooldown only starts once END is emitted.
+                    output += GestureEvent.ClawDrag(
+                        GestureEvent.DragPhase.START, cursor.x, cursor.y, cursor.x, cursor.y
+                    )
                     output += GestureEvent.Feedback("拖动已开始：移动手掌，张开手指完成拖动", 100)
                 }
                 return true
             }
             ClawDragState.DRAGGING -> {
-                if (!pose) {
-                    val anchor = clawAnchor
-                    val palmAt = clawPalmAt
-                    if (anchor != null && palmAt != null) {
-                        // The palm travels less than a fingertip; amplify to keep drags reachable.
-                        val dx = (palm.x - palmAt.x) * 1.5f
-                        val dy = (palm.y - palmAt.y) * 1.5f
-                        if (hypot(dx, dy) >= .03f) {
-                            output += GestureEvent.ClawDrag(
-                                anchor.x, anchor.y,
-                                (anchor.x + dx).coerceIn(0f, 1f),
-                                (anchor.y + dy).coerceIn(0f, 1f)
-                            )
-                        } else output += GestureEvent.Feedback("拖动距离太短，已取消")
+                val anchor = clawAnchor
+                val palmAt = clawPalmAt
+                if (anchor == null || palmAt == null) {
+                    clawDragState = ClawDragState.READY
+                    return true
+                }
+                val raw = clawDragPoint(palm, palmAt, anchor)
+                // Circling the palm easily pushes the finger past an edge, and plain clamping would
+                // freeze it there for the rest of the circle, so re-anchor on the edge instead.
+                val point = Point(raw.x.coerceIn(0f, 1f), raw.y.coerceIn(0f, 1f))
+                if (raw.x != point.x || raw.y != point.y) {
+                    clawAnchor = point
+                    clawPalmAt = palm
+                }
+                // Opening the hand or closing it into a fist is the deliberate "let go" and ends the
+                // drag at once. A dropped claw frame is not: circling rotates the wrist and drops the
+                // strict test for a while, which must not end a live drag.
+                if (pose) clawLostAt = 0L else if (clawLostAt == 0L) clawLostAt = now
+                val ended = released || fist || (clawLostAt > 0L && now - clawLostAt >= clawReleaseGraceMs)
+                if (ended) {
+                    // Release: the finger must always be lifted, even without travel, otherwise
+                    // the synthetic touch would stay pressed down for good.
+                    val origin = clawOrigin ?: anchor
+                    if (hypot(point.x - origin.x, point.y - origin.y) < .02f) {
+                        output += GestureEvent.Feedback("拖动距离太短，相当于一次点击")
                     }
+                    output += GestureEvent.ClawDrag(
+                        GestureEvent.DragPhase.END, origin.x, origin.y, point.x, point.y
+                    )
                     clawDragState = ClawDragState.READY
                     clawAnchor = null
+                    clawOrigin = null
                     clawPalmAt = null
-                } else if (now - lastFeedbackAt >= 600) {
+                    clawLastMoveAt = 0L
+                    clawLostAt = 0L
+                    return true
+                }
+                // Still holding: keep feeding the ongoing stroke, throttled so the accessibility
+                // service is not flooded and each segment stays long enough to be dispatched.
+                if (now - clawLastMoveAt >= clawMoveIntervalMs &&
+                    hypot(point.x - clawLastX, point.y - clawLastY) >= clawMoveStep
+                ) {
+                    output += GestureEvent.ClawDrag(
+                        GestureEvent.DragPhase.MOVE, anchor.x, anchor.y, point.x, point.y
+                    )
+                    clawLastMoveAt = now
+                    clawLastX = point.x
+                    clawLastY = point.y
+                }
+                if (now - lastFeedbackAt >= 600) {
                     output += GestureEvent.Feedback("拖动中：张开手指结束拖动")
                     lastFeedbackAt = now
                 }
@@ -647,6 +773,13 @@ class GestureEngine(
             }
         }
         return false
+    }
+    /** Where the held finger is before clamping: the press point plus the amplified palm travel. */
+    private fun clawDragPoint(palm: Point, palmAt: Point, anchor: Point): Point {
+        // The palm travels less than a fingertip; amplify to keep drags reachable.
+        val dx = (palm.x - palmAt.x) * 1.5f
+        val dy = (palm.y - palmAt.y) * 1.5f
+        return Point(anchor.x + dx, anchor.y + dy)
     }
     /**
      * 整只手向左右轻挑：掌心位移达标，且手腕同向位移达到掌心位移的 wholeHandWristRatio。
@@ -1014,21 +1147,25 @@ class GestureEngine(
                     val dy = palm.y - start.y
                     val absDx = kotlin.math.abs(dx)
                     val absDy = kotlin.math.abs(dy)
-                    if (openPalmAxis == PalmAxis.NONE && kotlin.math.max(absDx, absDy) >= .035f * movementScale) {
-                        openPalmAxis = when {
-                            absDx >= absDy * 1.45f -> PalmAxis.HORIZONTAL
-                            absDy >= absDx * 1.35f -> PalmAxis.VERTICAL
+                    if (kotlin.math.max(absDx, absDy) >= .035f * movementScale) {
+                        val axis = when {
+                            absDx >= absDy * 1.15f -> PalmAxis.HORIZONTAL
+                            absDy >= absDx * 1.15f -> PalmAxis.VERTICAL
                             else -> PalmAxis.NONE
                         }
+                        // Keep re-deciding until a swipe fires: a wave that begins with a small
+                        // vertical wobble used to lock the axis to VERTICAL for good, after which
+                        // the left/right swipe could never fire however far the hand travelled.
+                        if (axis != PalmAxis.NONE) openPalmAxis = axis
                     }
-                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmLeftScroll && dx <= -.075f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmLeftScroll && dx <= -.065f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
                         backCooldownUntil = now + localRepeatGuardMs
                         return true
                     }
-                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmRightScroll && dx >= .075f * movementScale && elapsed <= 5000) {
+                    if (openPalmAxis == PalmAxis.HORIZONTAL && features.palmRightScroll && dx >= .065f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.HorizontalSwipe(left = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
                         openPalmStart = null
@@ -1230,6 +1367,11 @@ class GestureEngine(
         clawConfirmAt = 0L
         clawAnchor = null
         clawPalmAt = null
+        clawLastMoveAt = 0L
+        clawLastX = 0f
+        clawLastY = 0f
+        clawLostAt = 0L
+        clawOrigin = null
         twoFingerState = TwoFingerSwipeState.IDLE
         twoFingerStart = null
         twoFingerStartWrist = null

@@ -183,8 +183,8 @@ class GestureEngineReplayTest {
     private fun horizontalIndexFlicked(): List<Point> = horizontalIndex()
         .withLandmark(8, Point(.65f, .45f))
 
-    /** G24: index points left, thumb points up, forming a 90-degree L. */
-    private fun leftLPose(): List<Point> = pointingIndex()
+    /** G24 gun: index points left and the raised thumb stays behind the index PIP. */
+    private fun gunPose(): List<Point> = pointingIndex()
         .withLandmark(5, Point(.40f, .60f))
         .withLandmark(6, Point(.32f, .60f))
         .withLandmark(7, Point(.25f, .60f))
@@ -194,15 +194,25 @@ class GestureEngineReplayTest {
         .withLandmark(3, thumbUp.p3)
         .withLandmark(4, thumbUp.p4)
 
+    /** Thumb is behind PIP toward the wrist, but does not need to pass behind MCP. */
+    private fun gunThumbBetweenPipAndMcp(): List<Point> = gunPose()
+        .withLandmark(4, Point(.38f, .52f))
+
     /** Thumb leans too close to the left-pointing index: included angle is below 45 degrees. */
-    private fun leftLTooAcute(): List<Point> = leftLPose()
+    private fun gunTooAcute(): List<Point> = gunPose()
         .withLandmark(2, Point(.46f, .68f))
         .withLandmark(4, Point(.30f, .59f))
 
     /** Thumb opens past the approved L range: included angle is above 90 degrees. */
-    private fun leftLTooObtuse(): List<Point> = leftLPose()
+    private fun gunTooObtuse(): List<Point> = gunPose()
         .withLandmark(2, Point(.40f, .68f))
         .withLandmark(4, Point(.56f, .59f))
+
+    /** Heart-like contact: thumb presses the index PIP, so this must never be the gun. */
+    private fun horizontalFingerHeartPose(): List<Point> = gunPose()
+        .withLandmark(2, Point(.36f, .70f))
+        .withLandmark(3, Point(.35f, .65f))
+        .withLandmark(4, Point(.33f, .595f))
 
     /** G34 "666": thumb and pinky out, index/middle/ring curled. */
     private fun six666Pose(): List<Point> = baseHand(
@@ -222,6 +232,23 @@ class GestureEngineReplayTest {
         .withLandmark(12, Point(.47f, .50f))
         .withLandmark(16, Point(.54f, .50f))
         .withLandmark(20, Point(.59f, .52f))
+
+    /** The same claw translated across the frame: what the camera sees while the palm is moved. */
+    private fun clawPoseShiftedBy(dx: Float, dy: Float): List<Point> =
+        clawPose().map { Point(it.x + dx, it.y + dy) }
+
+    /**
+     * Real-device claw: every fingertip curls back past its own PIP — exactly the frame that
+     * satisfied the plain fist test, blocked the claw and fired play/pause instead — while the
+     * tips stay splayed and off the palm.
+     */
+    private fun deepClawPose(): List<Point> = baseHand(
+        FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED, FingerPose.FOLDED
+    ).withLandmark(8, Point(.40f, .56f))
+        .withLandmark(12, Point(.47f, .54f))
+        .withLandmark(16, Point(.54f, .54f))
+        .withLandmark(20, Point(.59f, .56f))
+        .withLandmark(4, Point(.27f, .62f)) // thumb held clear of the index tip
 
     /** Same claw curl viewed too far from the side: projected palm width collapses. */
     private fun sideOnClawPose(): List<Point> = clawPose().map { point ->
@@ -281,8 +308,8 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.Selfie>())
         r.feed(45, ::vSign)                       // still holding: latched, no retrigger
         assertEquals(1, r.events.countOf<GestureEvent.Selfie>())
-        r.feed(8, ::restPose)                     // release
-        r.feed(45, ::vSign)                       // re-enter: fires again
+        r.feed(8, ::restPose)                     // release (the first frame back hands control to the
+        r.feed(45, ::vSign)                       // two-finger machine, so V restarts one frame late)
         assertEquals(2, r.events.countOf<GestureEvent.Selfie>())
         // Progress feedback accompanies the hold.
         assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("V 字保持") })
@@ -349,18 +376,33 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.LotusRecents>())
     }
 
-    @Test fun leftLRequiresThumbIndexAngleBetweenFortyFiveAndNinetyDegrees() {
+    @Test fun gunRequiresThumbIndexAngleBetweenFortyFiveAndNinetyDegrees() {
         val valid = Replay()
-        valid.feed(14, ::leftLPose)
+        valid.feed(14, ::gunPose)
         assertEquals(1, valid.events.countOf<GestureEvent.LeftLBack>())
+        assertEquals(0, valid.events.countOf<GestureEvent.Like>())
 
         val tooAcute = Replay()
-        tooAcute.feed(20, ::leftLTooAcute)
+        tooAcute.feed(20, ::gunTooAcute)
         assertEquals(0, tooAcute.events.countOf<GestureEvent.LeftLBack>())
 
         val tooObtuse = Replay()
-        tooObtuse.feed(20, ::leftLTooObtuse)
+        tooObtuse.feed(20, ::gunTooObtuse)
         assertEquals(0, tooObtuse.events.countOf<GestureEvent.LeftLBack>())
+    }
+
+    @Test fun horizontalFingerHeartNeverFiresGunBack() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::horizontalFingerHeartPose)
+        assertEquals(0, r.events.countOf<GestureEvent.LeftLBack>())
+        assertEquals(1, r.events.countOf<GestureEvent.Like>())
+    }
+
+    @Test fun gunAcceptsThumbBehindPipWithoutRequiringItBehindMcp() {
+        val r = Replay()
+        r.feed(14, ::gunThumbBetweenPipAndMcp)
+        assertEquals(1, r.events.countOf<GestureEvent.LeftLBack>())
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
     }
 
     @Test fun cleanOkHoldFiresOkWithoutLiking() {
@@ -427,11 +469,11 @@ class GestureEngineReplayTest {
         ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbSide
     )
 
-    @Test fun twoFingerUpHoldFiresOnceAfter1500msAndRequiresRelease() {
+    @Test fun twoFingerUpHoldFiresOnceAfter1000msAndRequiresRelease() {
         val r = Replay()
-        r.feed(29, ::twoFingerUpPose)             // 1.45s elapsed: below the 1.5s hold
+        r.feed(19, ::twoFingerUpPose)             // 0.95s elapsed: below the 1s hold
         assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
-        r.feed(2, ::twoFingerUpPose)              // 1.55s elapsed -> fires once
+        r.feed(2, ::twoFingerUpPose)              // 1.05s elapsed -> fires once
         assertEquals(1, r.events.countOf<GestureEvent.TwoFingerUp>())
         assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢向上保持") })
         r.feed(20, ::twoFingerUpPose)             // still holding: no repeat
@@ -794,6 +836,46 @@ class GestureEngineReplayTest {
         r.feed(8, ::spreadPalm)
         r.feed(14, ::cShapePose)
         assertEquals(1, r.events.countOf<GestureEvent.CShape>())
+    }
+
+    /**
+     * The 2026-10-03 real-device complaint: a claw reads as a fist because both curl the fingers.
+     * Curling must no longer cost the claw, and it must not arm the fist hold either.
+     */
+    @Test fun deeplyCurledClawStillStartsTheDragAndNeverBecomesAFist() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(25, ::deepClawPose)                // 1.25s: past the 600ms confirm and the 1s fist hold
+        assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
+        assertEquals(0, r.events.countOf<GestureEvent.CShape>())
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("拖动已开始") })
+    }
+
+    /**
+     * 2026-10-03: the drag is one continuous action. The finger goes down as soon as the claw is
+     * confirmed, follows the palm for as long as the pose is held — there is no time limit, so a
+     * 20 second drag is legal — and lifts only when the hand opens again.
+     */
+    @Test fun clawDragStaysPressedWhileHeldAndLiftsOnlyOnRelease() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::clawPose)                     // 0.7s: past the 600ms confirm
+        assertEquals(
+            listOf(GestureEvent.DragPhase.START),
+            r.events.filterIsInstance<GestureEvent.ClawDrag>().map { it.phase }
+        )
+        // Holding the pose for 20 s must neither time the drag out nor lift the finger.
+        r.feed(400, ::clawPose)
+        val held = r.events.filterIsInstance<GestureEvent.ClawDrag>().map { it.phase }
+        assertTrue("the drag must stay pressed while the claw is held", !held.contains(GestureEvent.DragPhase.END))
+        // Walking the palm across the frame feeds MOVE segments into the same ongoing stroke.
+        r.feedPoses((1..12).map { step -> clawPoseShiftedBy(step * .02f, 0f) })
+        val moving = r.events.filterIsInstance<GestureEvent.ClawDrag>().map { it.phase }
+        assertTrue("palm travel must drive MOVE segments", moving.contains(GestureEvent.DragPhase.MOVE))
+        assertTrue("the finger must still be down while moving", !moving.contains(GestureEvent.DragPhase.END))
+        r.feed(8, ::spreadPalm)                    // release
+        assertEquals(
+            GestureEvent.DragPhase.END,
+            r.events.filterIsInstance<GestureEvent.ClawDrag>().last().phase
+        )
     }
 
     @Test fun clawRequiresFrontFacingPalmAndSeparatedFingers() {

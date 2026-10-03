@@ -33,5 +33,7 @@ android {
 
 dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.21")
+    // Reads the orientation tag of captured JPEGs so selfies are stored upright on every device.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     testImplementation("junit:junit:4.13.2")
 }

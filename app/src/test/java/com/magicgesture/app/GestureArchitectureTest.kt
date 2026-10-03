@@ -201,8 +201,9 @@ class GestureArchitectureTest {
         val manager = GestureMappingManager()
         assertTrue(manager.isRemappable(GestureCode.G02))
         assertTrue(manager.isRemappable(GestureCode.G22))
-        // G26 is unbound by default but its pipeline exists, so it stays bindable.
+        // G26 ships bound to the drag action and stays remappable like any other gesture.
         assertTrue(manager.isRemappable(GestureCode.G26))
+        assertEquals(GestureAction.DRAG, manager.actionFor(GestureCode.G26))
         // G01 is the continuous cursor. G16-G19 and G23 all have real pipelines.
         // 2026-10-02 as open-app sequences, so they are remappable again.
         assertFalse(manager.isRemappable(GestureCode.G01))
@@ -280,8 +281,9 @@ class GestureArchitectureTest {
     @Test fun g24ThroughG28DefaultToTheirSpecifiedActions() {
         assertEquals(GestureAction.BACK, GestureMappingManager.defaultActionOf(GestureCode.G24))
         assertEquals(GestureAction.NOTIFICATIONS, GestureMappingManager.defaultActionOf(GestureCode.G25))
-        // G26 is deliberately unbound; users can assign any action to it themselves.
-        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G26))
+        // G26 now defaults to the continuous drag. Drag is an ordinary action reached through the
+        // mapping, not part of the claw, so users can still rebind the gesture to anything else.
+        assertEquals(GestureAction.DRAG, GestureMappingManager.defaultActionOf(GestureCode.G26))
         assertEquals(GestureAction.RECENTS, GestureMappingManager.defaultActionOf(GestureCode.G27))
         assertEquals(GestureAction.HOME, GestureMappingManager.defaultActionOf(GestureCode.G28))
     }
@@ -305,27 +307,35 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LShape)).mapping, GestureFeatureConfig(lShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.CShape)).mapping, GestureFeatureConfig(cShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LoveLock)).mapping, GestureFeatureConfig(loveLock = false)))
-        // G26 keeps its own switch even though it has no default action.
-        val claw = GestureMapping(GestureCode.G26, GestureType.HOLD, GestureAction.DRAG, CooldownPolicy.GLOBAL_AFTER_SUCCESS)
+        // G26 keeps its own switch and now ships with the drag action by default.
+        val claw = GestureMapping(GestureCode.G26, GestureType.HOLD, GestureAction.DRAG, CooldownPolicy.NONE)
         assertTrue(gate.allows(claw, GestureFeatureConfig()))
         assertFalse(gate.allows(claw, GestureFeatureConfig(clawDrag = false)))
-        // An unbound gesture stays silent without an override...
-        assertNull(mappings.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f)))
-        // ...and accepts a user override that supplies the missing default.
-        val bound = GestureMappingManager(mapOf(GestureCode.G26 to GestureAction.DRAG))
-        val mappedClaw = requireNotNull(bound.resolve(GestureEvent.ClawDrag(0f, 0f, 0f, 0f)))
+        // The claw is bound out of the box. A drag carries no cooldown, otherwise the first MOVE
+        // would freeze the pipeline mid-drag; the cooldown starts when the drag ends instead.
+        val defaultClaw = requireNotNull(
+            mappings.resolve(GestureEvent.ClawDrag(GestureEvent.DragPhase.START, 0f, 0f, 0f, 0f))
+        )
+        assertEquals(GestureCode.G26, defaultClaw.mapping.code)
+        assertEquals(GestureAction.DRAG, defaultClaw.mapping.action)
+        assertEquals(CooldownPolicy.NONE, defaultClaw.mapping.cooldownPolicy)
+        // Drag stays an ordinary mapped action, so an override still wins over the default.
+        val bound = GestureMappingManager(mapOf(GestureCode.G26 to GestureAction.CLICK))
+        val mappedClaw = requireNotNull(bound.resolve(GestureEvent.ClawDrag(GestureEvent.DragPhase.START, 0f, 0f, 0f, 0f)))
         assertEquals(GestureCode.G26, mappedClaw.mapping.code)
-        assertEquals(GestureAction.DRAG, mappedClaw.mapping.action)
+        assertEquals(GestureAction.CLICK, mappedClaw.mapping.action)
         // The new codes are remappable like the rest.
         assertTrue(mappings.isRemappable(GestureCode.G24))
         assertTrue(mappings.isRemappable(GestureCode.G28))
     }
 
     @Test fun dragEventKeepsItsCoordinatesThroughThePipeline() {
-        val bound = GestureMappingManager(mapOf(GestureCode.G26 to GestureAction.DRAG))
-        val mapped = requireNotNull(bound.resolve(GestureEvent.ClawDrag(.25f, .30f, .75f, .80f)))
+        val mapped = requireNotNull(
+            mappings.resolve(GestureEvent.ClawDrag(GestureEvent.DragPhase.MOVE, .25f, .30f, .75f, .80f))
+        )
         assertEquals(GestureAction.DRAG, mapped.mapping.action)
         val drag = mapped.event as GestureEvent.ClawDrag
+        assertEquals(GestureEvent.DragPhase.MOVE, drag.phase)
         assertEquals(.25f, drag.startX)
         assertEquals(.30f, drag.startY)
         assertEquals(.75f, drag.endX)
