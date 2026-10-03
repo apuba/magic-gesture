@@ -97,6 +97,13 @@ class GestureEngine(
     private var fistHoldAt = 0L
     private var pinkyHold = StaticHold.READY
     private var pinkyHoldAt = 0L
+    /**
+     * First frame the pose of the currently fired hold was missing. A hold that has fired stays
+     * fired until the pose has been gone for the whole grace window: lowering the hand or a
+     * landmark wobble drops the pose for a frame or two, and re-arming on that would fire the
+     * action a second time for one deliberate gesture.
+     */
+    private var holdLostAt = 0L
     private var lotusHold = StaticHold.READY
     private var lotusHoldAt = 0L
     private var orchidHold = StaticHold.READY
@@ -121,13 +128,6 @@ class GestureEngine(
     private val clawMoveIntervalMs = 90L
     /** Min travel between two segments, in normalized units; filters hand tremor. */
     private val clawMoveStep = .010f
-    /**
-     * Fallback only: how long the strict claw test may fail before a drag is considered over. The
-     * test needs seven conditions at once, so circling the palm drops it for a second or more as the
-     * wrist rotates; an opened hand or a fist ends the drag well before this runs out.
-     */
-    private val clawReleaseGraceMs = 2000L
-    private var clawLostAt = 0L
     /** Where the drag really began; the anchor moves when the finger is re-anchored on an edge. */
     private var clawOrigin: Point? = null
     private var twoFingerState = TwoFingerSwipeState.IDLE
@@ -195,9 +195,15 @@ class GestureEngine(
             TwoFingerSwipeState.VOLUME_DOWN -> GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.END)
             else -> null
         }
+        // A drag deliberately outlives the pose, so a hand that leaves the frame is its last exit.
+        // Without this the drag would keep running with no END ever reaching the service.
+        val dragEnd = if (clawDragState == ClawDragState.DRAGGING) {
+            val origin = clawOrigin ?: clawAnchor ?: Point(.5f, .5f)
+            GestureEvent.ClawDrag(GestureEvent.DragPhase.END, origin.x, origin.y, clawLastX, clawLastY)
+        } else null
         resetTransient()
         smoothed = null
-        return listOfNotNull(ending)
+        return listOfNotNull(dragEnd, ending)
     }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) {
         twoFingerState = if (waitForRelease) TwoFingerSwipeState.WAIT_RELEASE else TwoFingerSwipeState.IDLE
@@ -413,9 +419,17 @@ class GestureEngine(
             )
         ) return output
         output += GestureEvent.Cursor(cursor.x, cursor.y)
+        // A running drag owns the hand. Every pose below is tested before the drag is advanced, so
+        // any of them firing mid-drag would return before the drag is updated, leaving it running
+        // with no way to end it. While dragging, only letting go counts: an open hand or a fist.
+        // A hand that leaves the frame is ended by lost().
+        if (clawDragState == ClawDragState.DRAGGING) {
+            advanceClawDrag(clawPose, screenshotPalmOpen, closedFist, palm, cursor, now, output)
+            return output
+        }
         // G35 runs before the V countdown and before the two-finger movement chains: while the pose
         // is held the hand is deliberately still, so nothing downstream may claim those frames.
-        if (features.twoFingerUp && advanceStaticHold(twoFingerUpPose, now, GestureEvent.TwoFingerUp, { twoFingerUpHold }, { twoFingerUpHold = it }, { twoFingerUpHoldAt }, { twoFingerUpHoldAt = it }, output, holdMs = 1000L, label = "两指并拢向上保持")) return output
+        if (features.twoFingerUp && advanceStaticHold(twoFingerUpPose, now, GestureEvent.TwoFingerUp, { twoFingerUpHold }, { twoFingerUpHold = it }, { twoFingerUpHoldAt }, { twoFingerUpHoldAt = it }, output, holdMs = 1000L, label = "双指枪·竖向保持")) return output
         if (features.selfie && vPose && twoFingerState == TwoFingerSwipeState.IDLE) {
             pinch = Pinch.READY
             candidateAt = 0L
@@ -426,7 +440,7 @@ class GestureEngine(
                 if (now - lastFeedbackAt >= 250) {
                     val progress = ((held * 100L) / 2000L).toInt().coerceIn(0, 100)
                     val remaining = ((2000L - held).coerceAtLeast(0L) + 999L) / 1000L
-                    output += GestureEvent.Feedback("V 字保持：还需 ${remaining} 秒", progress)
+                    output += GestureEvent.Feedback("V 手势保持：还需 ${remaining} 秒", progress)
                     lastFeedbackAt = now
                 }
                 if (now - vHoldAt >= 2000) {
@@ -442,7 +456,7 @@ class GestureEngine(
         // G24-G28 checked before the click/swipe chains: their index-based poses would
         // otherwise arm click or horizontal-swipe detection while the L shapes are held.
         if (features.leftL && advanceStaticHold(gunPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
-        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 1000L, label = "L 手形保持")) return output
+        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 1000L, label = "单指枪·竖向保持")) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (pinkyOnlyPose) {
             // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and
@@ -451,7 +465,10 @@ class GestureEngine(
             candidateAt = 0L
             releaseAt = 0L
         }
-        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持")) return output
+        // Lowering the hand after the pinky pose passes back through pinky-like shapes for a moment,
+        // which used to re-arm the hold and toggle mute a second time; 800ms of grace makes one
+        // deliberate pinky fire exactly once while still allowing the next one right after.
+        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持", releaseGraceMs = 800L)) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         // screenshotPalmOpen is the open hand and closedFist the fist: both mean "let go" mid-drag.
@@ -624,7 +641,9 @@ class GestureEngine(
         setStartedAt: (Long) -> Unit,
         output: MutableList<GestureEvent>,
         holdMs: Long = 600L,
-        label: String? = null
+        label: String? = null,
+        /** How long the pose must stay gone after firing before the hold may fire again. */
+        releaseGraceMs: Long = 0L
     ): Boolean {
         when (state()) {
             StaticHold.READY -> if (pose) {
@@ -653,10 +672,17 @@ class GestureEngine(
                 return true
             }
             StaticHold.FIRED -> {
+                // One deliberate gesture must fire once. The pose blinks off while the hand is
+                // still lowering, and it also flickers on landmark noise; only a pose that stays
+                // gone for releaseGraceMs counts as really letting go, so the next hold can arm.
                 if (!pose) {
-                    setState(StaticHold.READY)
-                    setStartedAt(0L)
-                }
+                    if (holdLostAt == 0L) holdLostAt = now
+                    if (now - holdLostAt >= releaseGraceMs) {
+                        setState(StaticHold.READY)
+                        setStartedAt(0L)
+                        holdLostAt = 0L
+                    }
+                } else holdLostAt = 0L
                 return true
             }
         }
@@ -668,8 +694,9 @@ class GestureEngine(
      * rule: only an opened hand (`released`) or a fist (`fist`) ends it at once. Circling the palm
      * rotates the wrist, which drops the strict test for a while by changing perspective and the
      * palm facing; treating that as a release would cut every circling drag short. The strict test
-     * is still the fallback, so a hand that changes shape without opening or closing ends the drag
-     * after clawReleaseGraceMs instead of holding the pose slot forever.
+     * is not a fallback either: a hand that takes another shape while staying in frame keeps
+     * dragging, and the only exit left outside letting go is the hand leaving the frame, which
+     * lost() turns into an END so the drag can never be left running.
      */
     private fun advanceClawDrag(
         pose: Boolean,
@@ -733,8 +760,11 @@ class GestureEngine(
                 // Opening the hand or closing it into a fist is the deliberate "let go" and ends the
                 // drag at once. A dropped claw frame is not: circling rotates the wrist and drops the
                 // strict test for a while, which must not end a live drag.
-                if (pose) clawLostAt = 0L else if (clawLostAt == 0L) clawLostAt = now
-                val ended = released || fist || (clawLostAt > 0L && now - clawLostAt >= clawReleaseGraceMs)
+                // Letting go is the only way out of a live drag: an open hand or a fist. A hand that
+                // turns into some other pose while still in frame keeps dragging — it is the same
+                // wrist rotation that used to drop the strict claw test and cut circling short.
+                // The one remaining case, the hand leaving the frame, is ended by lost().
+                val ended = released || fist
                 if (ended) {
                     // Release: the finger must always be lifted, even without travel, otherwise
                     // the synthetic touch would stay pressed down for good.
@@ -750,7 +780,6 @@ class GestureEngine(
                     clawOrigin = null
                     clawPalmAt = null
                     clawLastMoveAt = 0L
-                    clawLostAt = 0L
                     return true
                 }
                 // Still holding: keep feeding the ongoing stroke, throttled so the accessibility
@@ -1347,6 +1376,7 @@ class GestureEngine(
         fistHoldAt = 0L
         pinkyHold = StaticHold.READY
         pinkyHoldAt = 0L
+        holdLostAt = 0L
         twoFingerUpHold = StaticHold.READY
         twoFingerUpHoldAt = 0L
         lotusHold = StaticHold.READY
@@ -1370,7 +1400,6 @@ class GestureEngine(
         clawLastMoveAt = 0L
         clawLastX = 0f
         clawLastY = 0f
-        clawLostAt = 0L
         clawOrigin = null
         twoFingerState = TwoFingerSwipeState.IDLE
         twoFingerStart = null

@@ -12,7 +12,28 @@
 - **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 下 15 个类，全部单层包结构（含 `ActiveHandSelector.kt`、`GestureUnlock.kt`、`FavoriteButtonController.kt`）
-- **测试**：`app/src/test/` 下 6 个测试类，共 100 个用例，当前全绿（ActiveHandSelector 5 例；G24 夹角边界、PIP 新位置基准及 G12/G24 互斥；G12 接触位置；G35 4 例；EXIF 方向换算 2 例；G26 爪形/握拳 1 例）
+- **测试**：`app/src/test/` 下 6 个测试类，共 103 个用例，当前全绿（含最近手选择、G24/PIP 与比心互斥、G35、自拍 EXIF、抓取拖动独占、小指释放防重复等回放）
+
+### 1.1 G01–G35 最新统一名称（2026-10-03 产品确认）
+
+| 编号 | 最新名称 | 编号 | 最新名称 | 编号 | 最新名称 |
+|---|---|---|---|---|---|
+| G01 | 指尖移动 | G13 | 开合掌 | G25 | 单指枪·竖向 |
+| G02 | 指尖轻点 | G14 | 莲花指 | G26 | 抓取手势 |
+| G03 | 指尖上挑 | G15 | 兰花指 | G27 | C 手势 |
+| G04 | 指尖下挑 | G16 | 张掌变一指 | G28 | Love 手势 |
+| G05 | 并掌上挥 | G17 | 张掌变二指 | G29 | 双指左挥 |
+| G06 | 并掌下挥 | G18 | 张掌变三指 | G30 | 双指右挥 |
+| G07 | 并掌左挥 | G19 | 张掌变四指 | G31 | 双指上拉 |
+| G08 | 并掌右挥 | G20 | 拇指赞 | G32 | 双指下拉 |
+| G09 | 单指左挑 | G21 | OK 手势 | G33 | 双指双点 |
+| G10 | 单指右挑 | G22 | 握拳 | G34 | 六六顺手势 |
+| G11 | V 手势 | G23 | 小指手势 | G35 | 双指枪·竖向 |
+| G12 | 指尖比心 | G24 | 单指枪·横向 |  |  |
+
+- 代码中的 `GESTURE_DISPLAY_NAMES`、首页指南、校准页功能开关和映射清单必须使用本表，不得继续使用旧名称。
+- G35 首页指南已改用独立透明图片 `gesture_two_finger_gun.png`，不再复用 `gesture_two_fingers_together.png`。
+- **待产品确认的图形/算法差异**：新 G35 图片按“食指与中指水平向左、拇指竖起、其余二指收拢”生成；当前识别算法仍判定“两指并拢向上、拇指侧伸、保持 1 秒”。本轮只获准更新名称与指南图片，没有修改 G35 识别姿势，后续不得擅自把图片描述当作算法变更授权。
 
 ## 2. 核心架构
 
@@ -27,7 +48,7 @@ HandPipeline（MediaPipe 20fps，最多两只手）
        ├─ CameraProbeService 内部动作（自拍、缩略图、悬浮反馈、媒体键与音量）
        ├─ FavoriteButtonController     收藏：前台包名 → 已存坐标 tapPixels，未存则弹出全屏标定浮层
        └─ 媒体/音量           KeyEvent 派发 + AudioManager（音量走 setStreamVolume）
-GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间冻结全部识别（含光标）
+GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作成功回调后启动；冷却期间冻结全部识别（含光标）
 ```
 
 关键设计决策（勿破坏）：
@@ -49,9 +70,9 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 - 新增 `ActiveHandSelectorTest` 5 例，覆盖最近手独占、后方手动作无效、20%/250ms 接管、尺度波动不抖动、丢失 300ms 与重置重新获取。当前全部 88 个 JVM 测试通过，Debug APK 构建成功。
 - 尚未真机验收：40/60/80/100cm、两人同框、两手交叉、不同大小手掌、左右手组合，以及双手检测对帧率、耗电和发热的影响。
 
-### 2026-10-03 G24 手枪手势及其与比心互斥（代码完成、待真机验收）
+### 2026-10-03 G24 单指枪·横向及其与指尖比心互斥（代码完成、待真机验收）
 
-- G24 对外名称由“左 L 手形”改为“手枪手势”；默认动作仍为返回，内部事件和偏好键保留原名以兼容已有用户配置。
+- G24 最新对外名称为“单指枪·横向”；默认动作仍为返回，内部事件和偏好键保留原名以兼容已有用户配置。
 - 在“食指水平向左、拇指向上、其余三指收拢、保持约0.6秒、夹角45°–90°”基础上，拇指尖以食指第二关节 PIP 为位置基准，必须位于 PIP 外侧的掌心/手腕方向，不再要求越过第三关节 MCP；与食指 MCP/PIP 均保持至少约35%掌宽距离。
 - G12 拇指压食指关节时不再满足手枪条件；G12 同时显式排除完整手枪姿势。新增水平食指比心不得返回、标准手枪不得点赞的双向互斥回放。
 - 同步修复G12关节接触与释放条件不一致：释放现在要求拇指同时远离食指尖、PIP和MCP，不能再因“拇指压PIP但离食指尖较远”而在220ms后取消候选。
@@ -209,7 +230,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 **后续顺序**：先安装 23:18 之后的新 APK 验证最近任务切换修复；若普通页面或 PIP 场景仍复现，再按 A 定位，命中 ② 做 B、③ 做 C，其他前台识别问题再从 D1/D2/D3 中选。
 
-### 2026-10-03 新增 G35「两指并拢向上」= 向上滑动（代码完成、待真机验收）
+### 2026-10-03 G35「双指枪·竖向」= 向上滑动（代码完成、图片与算法姿势待确认）
 
 产品负责人已再次确认：G35 已完成开发并正式纳入当前版本；现有范围为 G01–G35，后续继续冻结 G36 及新手势概念。姿势为食指与中指并拢向上、拇指向侧面伸出、其余二指收拢，保持 1 秒，默认绑定**向上滑动**，主要用于刷视频。
 
@@ -302,7 +323,7 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（35） | G01 光标、G02 点击、G03-G10 八个方向滚动、G11 V 字自拍、G12 比心点赞、G13 截图序列、G14 莲花→返回桌面、G15 兰花→最近任务、G16-G19 张掌后收成 1/2/3/4 指→打开指定 App、G20 大拇指点赞、G21 OK=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 伸出小指=静音开关**、G24 手枪手势返回、G25 L 形保持 1s=通知栏、G26 爪形（默认未绑定）、G27 C 形最近任务、G28 Love 形返回桌面、G29/G30 两指左右切歌、G31/G32 两指保持持续音量、G33 两指双击=播放/暂停、G34 666（默认未绑定）、**G35 两指并拢向上保持 1s=向上滑动（刷短视频）** |
+| 已实现（35） | G01 指尖移动、G02 指尖轻点、G03 指尖上挑、G04 指尖下挑、G05-G08 并掌四向挥动、G09/G10 单指左右挑、G11 V 手势自拍、G12 指尖比心点赞、G13 开合掌截图、G14 莲花指→返回桌面、G15 兰花指→最近任务、G16-G19 张掌变一/二/三/四指→打开指定 App、G20 拇指赞、G21 OK 手势=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 小指手势=静音开关**、G24 单指枪·横向返回、G25 单指枪·竖向保持 1s=通知栏、G26 抓取手势（默认未绑定）、G27 C 手势=最近任务、G28 Love 手势=返回桌面、G29/G30 双指左右挥=切歌、G31/G32 双指上下拉=持续音量、G33 双指双点=播放/暂停、G34 六六顺手势（默认未绑定）、**G35 双指枪·竖向保持 1s=向上滑动（刷短视频）** |
 | 已移除 | G18/G19 食指画圈音量已移除；编号后续已复用于张掌收指打开 App |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
@@ -353,25 +374,26 @@ GlobalCooldownManager：2000ms，仅动作成功回调后启动；冷却期间�
 
 ```powershell
 cd e:/2026/MagicGesture-v0.9
-.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 83/83 通过）
+.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 103/103 通过）
 .\gradlew.bat installDebug                       # 安装到已连接设备
 D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整路径
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-03 **02:12** 生成，约 68.4 MB，Debug（全部手势解锁）。**该版本已包含**：G24 拇指—食指夹角 45°–90°、恢复原单程食指挑动、最多两手检测与视觉最近手独占控制、最近任务切换后前台包名重新确认与短暂重试、G22/G23 保持 1 秒、G34 独立 666 图片，以及此前 systemui/输入法/桌面/设置判定、收藏提示、两指左右挥放宽和播放手势唤起音乐应用回退链。
+最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-03 **15:52** 生成，72,811,942 字节，Debug 签名（Debug 构建全部手势解锁）。该 APK 已包含最新 G01–G35 对外名称、G35 独立双指枪图片、模型初始化生命周期修复、自拍 EXIF 方向修复、G24 PIP 位置基准及当前工作区中的小指释放防重复和抓取拖动独占修复。**尚未安装到真机，不能写成真机通过。**
 
 手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先验证 G23 小指静音/恢复、保持不重触发、释放后可再触发以及不误判比心；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1 秒。G18/G19 画圈识别已经移除，不再测试旧画圈音量流程。
 
 荣耀机型注意：安装时保持手机解锁并确认 USB 安装弹窗；无障碍授权丢失时引导用户在 设置→应用→魔法手势→电池 关闭"自动管理"（详见 §8.1/§10.1 of 旧文档记录，或提交 95864c6 系列）。
 
-## 9. Git 状态（2026-10-03 00:21 核对）
+## 9. Git 状态（2026-10-03 15:52 核对）
 
-- 分支 `main`，HEAD = `f6f8399`，与 `origin/main` 无领先或落后提交。用户未要求提交前**不要推送远程**。
-- 本轮未提交修改：`AGENTS.md`、`CalibrationActivity.kt`、`GestureEngine.kt`、`HandPipeline.kt`、`MainActivity.kt`、`GestureEngineReplayTest.kt`、三份既有主文档；新增 `ActiveHandSelector.kt`、`ActiveHandSelectorTest.kt`、`REQUIREMENTS_CHANGELOG.md`。
-- 工作区另有未跟踪的 `app/src/main/res/drawable-nodpi.zip`，来源未确认，不属于本轮代码实现，禁止擅自删除或提交。
-- "单食指必须去程并返回"方案因真机操作效果差，已按产品负责人要求完整撤回；代码、回放、首页/校准文案和需求记录均恢复到原单程挑动行为。
-- `git diff --check` 只报 Git 的 LF→CRLF 工作区换行提示，无实质空白错误；`testDebugUnitTest assembleDebug --rerun-tasks` 已通过（89/89）。
+- 分支 `main`，HEAD = `4d79a86`（`修爪形拖动为滚动语义，并修复 G07/G08 与 G35 互相抢帧`），相对 `origin/main` **ahead 6**；尚未推送。
+- 当前未提交代码改动：`CalibrationActivity.kt`、`GestureArchitecture.kt`、`GestureUnlock.kt`、`MainActivity.kt` 为本轮统一手势名称；`GestureEngineReplayTest.kt` 含本轮反馈文案断言，同时已有小指释放/抓取独占测试改动；`CameraProbeService.kt` 含最新名称以及此前未提交的静音结果文案修复；`GestureEngine.kt` 含最新反馈名称以及此前未提交的小指释放宽限和抓取独占修复。
+- 当前未提交文档：`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`、`REQUIREMENTS_CHANGELOG.md`、本交接文档。
+- 当前新增项目资产：`app/src/main/res/drawable-nodpi/gesture_two_finger_gun.png`，本轮由内置 imagegen 根据现有手势图风格生成，透明背景，供 G35 首页指南使用。
+- 当前另有未跟踪 `w.xml`、`window.xml`，来源和用途未确认，不属于本轮名称/图片任务；禁止擅自删除或夹带提交。
+- `git diff --check` 通过，仅显示 Windows LF→CRLF 提示；`testDebugUnitTest assembleDebug` 已通过（103/103）。本轮未提交、未推送。
 
 ## 10. 文件速查
 
@@ -390,8 +412,8 @@ D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app
 
 ## 11. 接手后的第一步（按当前实际进度）
 
-1. **先问用户要 OK 收藏的复测结果**（§3 末节：三条候选根因 + 方案 A/B/C/D）。这是当前唯一的阻塞项；拿到结果前不要改收藏相关代码（用户已明确"确认了再改代码"）。
-2. 确认手机装的 APK 是 **14:05 版**（`app\build\outputs\apk\debug\app-debug.apk`，67.9 MB）；不是就重装。连接荣耀手机（历史设备 `AXYP6R4A30002818`，HONOR ALP-AN00，Android 14），`adb devices -l` 确认后再安装。
-3. 结果回来后按推荐顺序动刀：**A 定位 → 命中②做 B、③做 C、①再做 D**（D1 触碰 §7 隐私底线，须产品负责人同意）。每次只改一个变量，改完重跑 `testDebugUnitTest assembleDebug` 再让用户复测。
-4. 其余待验真机项（§6）：G23 小指静音回环、播放手势唤起默认音乐应用、两指左右挥放宽后的手感、自拍倒计时无提示、持续音量与双击、签到解锁 Release 行为。
-5. 改动同步 `docs/GESTURE_ACTION_MAPPING_CHECKLIST.md` 与本交接文档；**未获明确指示不要推送远程**，提交前先 `git diff --check`。
+1. **先让产品负责人确认 G35 图片与识别算法的姿势差异**：新图是双指水平向左、拇指竖起；算法仍是双指向上、拇指侧伸。确认前不要修改 G35 几何判定。
+2. 安装 2026-10-03 15:52 生成的 Debug APK，优先真机验证首页/校准页最新名称是否完整、G35 图片是否清晰且没有裁切；当前仅构建成功，尚未安装。
+3. 继续做高风险真机回归：模型加载中立即停止与快速启停的内存回落；自拍方向/镜像/连续拍摄与识别恢复；G24 单指枪·横向新 PIP 基准；G23 小指手势一次动作只切换一次；抓取手势拖动独占与释放。
+4. 验证多人多手最近手控制、G29–G33 双指媒体、签到解锁 Release 行为和 G21 收藏多 App/横竖屏标定。
+5. 当前工作区包含多批未提交改动和两个来源不明 XML。提交前必须按归属审查完整差异，只暂存获准范围；**未获明确推送授权不要同步远程**。

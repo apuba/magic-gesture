@@ -144,32 +144,32 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(14))
         })
 
-        content.addView(gestureCard(R.drawable.gesture_point, "食指移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "食指弯曲再伸直", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "食指挑动", actionLabelOf(GestureCode.G03, GestureCode.G04), "伸出食指保持接近水平，上挑或下挑指尖。", "↕", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢上下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向左", actionLabelOf(GestureCode.G07), "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指左挑", actionLabelOf(GestureCode.G09), "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "四指并拢向右", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "竖直食指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_v, "V 字保持", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_finger_heart, "手指比心保持", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_thumbs_up, "竖起大拇指", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "指尖移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "指尖轻点", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "指尖上挑 / 指尖下挑", actionLabelOf(GestureCode.G03, GestureCode.G04), "伸出食指保持接近水平，上挑或下挑指尖。", "↕", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌上挥 / 并掌下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌左挥", actionLabelOf(GestureCode.G07), "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "单指左挑", actionLabelOf(GestureCode.G09), "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌右挥", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "单指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_v, "V 手势", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_finger_heart, "指尖比心", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_thumbs_up, "拇指赞", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。", "OK", "ok", features.ok), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_fist, "握拳保持", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。", "拳", "play_pause", features.playPause), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_pinky, "伸出小指", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_fist, "握拳", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。", "拳", "play_pause", features.playPause), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_pinky, "小指手势", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_left_l, "手枪手势", actionLabelOf(GestureCode.G24), "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", "L", "left_l", features.leftL), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_l_shape, "L 手形", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 1 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_claw, "爪形手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手形", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_love, "Love 手形", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_666, "666 手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢左右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢上下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢双击", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "两指并拢向上", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指向侧面伸出，无名指和小指收拢，稳定保持 1 秒；主要用于刷短视频时翻到下一个视频。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_left_l, "单指枪·横向", actionLabelOf(GestureCode.G24), "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", "L", "left_l", features.leftL), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_l_shape, "单指枪·竖向", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持 1 秒（有倒计时提示）。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_claw, "抓取手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手势", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_love, "Love 手势", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_666, "六六顺手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指左挥 / 双指右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指上拉 / 双指下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指双点", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_finger_gun, "双指枪·竖向", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指向侧面伸出，无名指和小指收拢，稳定保持 1 秒；主要用于刷短视频时翻到下一个视频。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
         content.addView(palmSeriesCard(features), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -383,29 +383,29 @@ class MainActivity : Activity() {
             setLineSpacing(0f, 1.15f)
         })
         addView(screenshotCard(features.screenshot), margins(bottom = 12))
-        addView(label("张掌后收成 1–4 指", 14f, Color.rgb(66, 63, 160), true).apply {
+        addView(label("张掌变一指至四指", 14f, Color.rgb(66, 63, 160), true).apply {
             setPadding(0, dp(2), 0, dp(9))
         })
         addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_1), "张掌后收成食指",
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_1), "张掌变一指",
             actionLabelOf(GestureCode.G16),
             "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。",
             "open_app_1", features.openApp1
         ), margins(bottom = 10))
         addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_2), "张掌后收成两指",
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_2), "张掌变二指",
             actionLabelOf(GestureCode.G17),
             "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。",
             "open_app_2", features.openApp2
         ), margins(bottom = 10))
         addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_3), "张掌后收成三指",
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_3), "张掌变三指",
             actionLabelOf(GestureCode.G18),
             "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。",
             "open_app_3", features.openApp3
         ), margins(bottom = 10))
         addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_4), "张掌后收成四指",
+            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_4), "张掌变四指",
             actionLabelOf(GestureCode.G19),
             "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。",
             "open_app_4", features.openApp4
@@ -415,7 +415,7 @@ class MainActivity : Activity() {
     /** G13: spread → fist → spread, so the open palm is shown twice. */
     private fun screenshotCard(enabled: Boolean): View = sequenceCard(
         listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm),
-        "五指张开 → 握拳 → 五指张开",
+        "开合掌",
         actionLabelOf(GestureCode.G13),
         "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持。手指并拢时不会进入该组合。",
         "screenshot",
@@ -520,7 +520,7 @@ class MainActivity : Activity() {
     private fun featureName(feature: String) = when (feature) {
         "cursor" -> "食指光标"
         "click" -> "食指弯曲点击"
-        "index_vertical_scroll" -> "食指上下挑"
+        "index_vertical_scroll" -> "指尖上挑 / 指尖下挑"
         "palm_vertical_scroll" -> "四指上下挥"
         "palm_left_scroll" -> "四指左挥"
         "index_left_scroll" -> "食指左挑"
@@ -529,23 +529,23 @@ class MainActivity : Activity() {
         "screenshot" -> "截图"
         "selfie" -> "V 字自拍"
         "like" -> "比心双击点赞"
-        "thumbs_up" -> "大拇指点赞"
+        "thumbs_up" -> "拇指赞"
         "ok" -> "OK 收藏当前内容"
         "play_pause" -> "握拳播放/暂停"
-        "pinky_mute" -> "伸出小指静音开关"
+        "pinky_mute" -> "小指手势"
         "lotus_recents" -> "莲花指最近任务"
         "orchid_back" -> "兰花指最近任务"
-        "left_l" -> "手枪手势返回"
-        "l_shape" -> "L 手形通知栏"
-        "claw_drag" -> "爪形手势"
-        "c_shape" -> "C 手形最近任务"
-        "love_lock" -> "Love 手形返回桌面"
-        "six666" -> "666 手势"
-        "two_finger_media" -> "两指媒体控制"
-        "open_app_1" -> "张掌后收成食指"
-        "open_app_2" -> "张掌后收成两指"
-        "open_app_3" -> "张掌后收成三指"
-        "open_app_4" -> "张掌后收成四指"
+        "left_l" -> "单指枪·横向"
+        "l_shape" -> "单指枪·竖向"
+        "claw_drag" -> "抓取手势"
+        "c_shape" -> "C 手势"
+        "love_lock" -> "Love 手势"
+        "six666" -> "六六顺手势"
+        "two_finger_media" -> "双指媒体控制"
+        "open_app_1" -> "张掌变一指"
+        "open_app_2" -> "张掌变二指"
+        "open_app_3" -> "张掌变三指"
+        "open_app_4" -> "张掌变四指"
         else -> "手势"
     }
 

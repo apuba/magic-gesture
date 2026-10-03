@@ -294,6 +294,11 @@ class GestureEngineReplayTest {
             poses.forEach { events += engine.consume(it, ++t * 50L) }
         }
 
+        /** The hand leaves the frame: what HandPipeline does when no hand is detected anymore. */
+        fun loseHand() {
+            repeat(8) { events += engine.lost(++t * 50L) }
+        }
+
         /** Applies a new sensitivity live, exactly what the preference listener does. */
         fun setSensitivity(scale: Float) = engine.updateMovementScale(scale)
     }
@@ -312,7 +317,7 @@ class GestureEngineReplayTest {
         r.feed(45, ::vSign)                       // two-finger machine, so V restarts one frame late)
         assertEquals(2, r.events.countOf<GestureEvent.Selfie>())
         // Progress feedback accompanies the hold.
-        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("V 字保持") })
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("V 手势保持") })
     }
 
     @Test fun selfieFeatureDisabledSuppressesTheVSignPipeline() {
@@ -475,7 +480,7 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
         r.feed(2, ::twoFingerUpPose)              // 1.05s elapsed -> fires once
         assertEquals(1, r.events.countOf<GestureEvent.TwoFingerUp>())
-        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("两指并拢向上保持") })
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("双指枪·竖向保持") })
         r.feed(20, ::twoFingerUpPose)             // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.TwoFingerUp>())
         r.feed(8, ::restPose)                     // release
@@ -513,7 +518,24 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.Like>())
         r.feed(20, ::pinkyOnlyPose)
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
-        r.feed(4, ::restPose)
+        // The hand has to stay out of the pose for the whole 800ms grace before the hold arms again.
+        r.feed(17, ::restPose)
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * Lowering the hand makes the pinky pose blink off for a moment before it is really gone. That
+     * flicker must not re-arm the hold, otherwise one deliberate pinky toggles mute twice.
+     */
+    @Test fun pinkyFlickerAfterFiringDoesNotToggleMuteTwice() {
+        val r = Replay()
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(10, ::restPose)                        // 500ms gone: inside the 800ms grace
+        r.feed(22, ::pinkyOnlyPose)                   // pose returns and is held past 1s again
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(17, ::restPose)                        // 850ms gone: a real release
         r.feed(22, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
@@ -875,6 +897,35 @@ class GestureEngineReplayTest {
         assertEquals(
             GestureEvent.DragPhase.END,
             r.events.filterIsInstance<GestureEvent.ClawDrag>().last().phase
+        )
+    }
+
+    /**
+     * 2026-10-03: while a drag runs, the hand owns every frame. The pinky pose is tested before the
+     * drag is advanced, so it used to fire mute mid-drag and return first, leaving the drag running
+     * with no way to end it. A running drag must keep the pose slot; a hand that really stopped
+     * being a claw still ends it through the pose grace, so nothing can stay armed forever.
+     */
+    @Test fun runningDragIsNotStolenByAnotherPose() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(14, ::clawPose)                      // 0.7s: past the 600ms confirm
+        assertEquals(
+            1,
+            r.events.filterIsInstance<GestureEvent.ClawDrag>()
+                .count { it.phase == GestureEvent.DragPhase.START }
+        )
+        r.feed(30, ::pinkyOnlyPose)                 // 1.5s: long enough to fire mute on its own
+        assertEquals("a running drag must not let another pose fire", 0, r.events.countOf<GestureEvent.PinkyMute>())
+        assertTrue(
+            "the hand is still in frame, so the drag must keep running",
+            r.events.filterIsInstance<GestureEvent.ClawDrag>()
+                .none { it.phase == GestureEvent.DragPhase.END }
+        )
+        // The hand leaving the frame is the last exit, and it has to lift the finger.
+        r.loseHand()
+        assertTrue(
+            "a hand that leaves the frame must end the drag",
+            r.events.filterIsInstance<GestureEvent.ClawDrag>().any { it.phase == GestureEvent.DragPhase.END }
         )
     }
 

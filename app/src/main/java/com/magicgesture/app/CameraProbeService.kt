@@ -93,6 +93,12 @@ class CameraProbeService : Service() {
         launchApp = ::launchAppForGesture,
         favoriteCurrent = ::favoriteCurrentContent
     )
+    /**
+     * Wording of the last mute toggle. The generic success text reads the same whether the toggle
+     * muted or restored, which tells the user nothing about the state they are now in, so the
+     * toggle reports its own direction and that wording is what stays on screen.
+     */
+    private var lastMuteMessage: String? = null
     private val favoriteController by lazy {
         FavoriteButtonController(
             context = this,
@@ -250,8 +256,8 @@ class CameraProbeService : Service() {
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
                                 GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
                                 GestureEvent.TwoFingerUp, is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.
-                                is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("爪形手势未绑定动作，可在校准页映射中指定") // Unbound by default.
-                                GestureEvent.Six666 -> overlayIndicator.showFeedback("666 手势未绑定动作，可在校准页映射中指定") // Unbound by default.
+                                is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("抓取手势未绑定动作，可在校准页映射中指定") // Unbound by default.
+                                GestureEvent.Six666 -> overlayIndicator.showFeedback("六六顺手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
                                 GestureEvent.Back -> service?.inject(event) { finishAction(it, "返回") }
                                     ?: finishAction(false, "返回", "无障碍服务未连接")
@@ -383,7 +389,12 @@ class CameraProbeService : Service() {
             if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS ||
                 (isDrag && dragPhase == GestureEvent.DragPhase.END)
             ) {
-                finishAction(success, mapped.mapping.action.successMessage(), mapped.mapping.action.failureMessage())
+                // The mute toggle knows which way it flipped, so its wording wins over the generic
+                // success text, which reads the same for muting and for restoring the sound.
+                val message = if (mapped.mapping.action == GestureAction.TOGGLE_MUTE) {
+                    lastMuteMessage ?: mapped.mapping.action.successMessage()
+                } else mapped.mapping.action.successMessage()
+                finishAction(success, message, mapped.mapping.action.failureMessage())
             }
         }
         if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
@@ -756,7 +767,9 @@ class CameraProbeService : Service() {
                 if (wasMuted) AudioManager.ADJUST_UNMUTE else AudioManager.ADJUST_MUTE,
                 AudioManager.FLAG_SHOW_UI
             )
-            overlayIndicator.showFeedback(if (wasMuted) "已恢复媒体声音" else "媒体已静音")
+            val message = if (wasMuted) "已恢复媒体声音" else "媒体已静音"
+            lastMuteMessage = message
+            overlayIndicator.showFeedback(message)
             // Some vendor audio services publish the mute bit a few frames after accepting
             // ADJUST_MUTE/UNMUTE. Verify shortly afterward instead of reporting a false failure.
             mainHandler.postDelayed({
