@@ -61,8 +61,21 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
             .build()
         landmarker = HandLandmarker.createFromOptions(context, options)
     }
-    @Synchronized fun resume() { activeHandSelector.reset(); engine.resume() }
-    @Synchronized fun pause() { activeHandSelector.reset(); engine.stop() }
+    /**
+     * Resuming after a freeze must not look like the hand disappeared. No frame reaches the
+     * landmarker while frozen, so the gap since the last result is longer than the 300ms the
+     * listener reads as "the hand is gone" — reporting that would clear the lock of a hold that
+     * already fired, and a pose the user is still holding would act again. The clock restarts with
+     * the recognition that is now running again.
+     */
+    @Synchronized fun resume() {
+        // The selector deliberately keeps the hand it had: freezing for a cooldown does not move
+        // the hand, and resetting here makes the next few frames report no hand at all, which reads
+        // to the engine as the hand being lowered and frees the lock of a hold that already fired.
+        lastResultAt = SystemClock.uptimeMillis()
+        engine.resume()
+    }
+    @Synchronized fun pause() { engine.stop() }
     @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)

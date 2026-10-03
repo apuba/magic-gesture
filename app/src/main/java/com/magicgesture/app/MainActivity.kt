@@ -278,7 +278,7 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，12 次签到后 G01–G34 全部拥有。
+     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，12 次签到后 G01–G35 全部拥有。
      * 权益只保存在本机，不联网、无账号、无付费入口。
      */
     private fun checkInCard(): View = LinearLayout(this).apply {
@@ -312,7 +312,7 @@ class MainActivity : Activity() {
         val total = GestureUnlockPlan.TOTAL_CHECK_INS
         val complete = GestureUnlockPlan.isComplete(state.checkInCount)
         checkInSummary.text = if (complete) {
-            "已完成 $total 次签到，G01–G34 全部解锁。"
+            "已完成 $total 次签到，G01–G35 全部解锁。"
         } else {
             "已签到 ${state.checkInCount} / $total 次 · 每天主动签到一次，断签不清零，已解锁的功能永久保留。"
         }

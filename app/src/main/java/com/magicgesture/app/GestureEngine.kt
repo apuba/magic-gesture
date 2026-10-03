@@ -54,6 +54,17 @@ class GestureEngine(
     private var movementScale: Float = 1f,
     private var features: GestureFeatureConfig = GestureFeatureConfig()
 ) {
+    companion object {
+        /**
+         * How long a fired hold's pose must stay gone before the hold may fire again. Recognition is
+         * frozen for the post-action cooldown and cannot see whether the hand was lowered, so the
+         * clock starts from the first frame after resuming — which also means a single noisy frame
+         * that reads the pose as gone cannot free the hold.
+         */
+        private const val RELEASE_GRACE_MS = 800L
+        /** How long the hand must be out of frame before that counts as letting go. */
+        private const val HAND_GONE_MS = 600L
+    }
     private enum class Pinch { READY, CANDIDATE, FIRED }
     private enum class IndexClick { READY, STABILIZING, ARMED, BENT }
     private enum class PalmAxis { NONE, HORIZONTAL, VERTICAL }
@@ -201,7 +212,10 @@ class GestureEngine(
             val origin = clawOrigin ?: clawAnchor ?: Point(.5f, .5f)
             GestureEvent.ClawDrag(GestureEvent.DragPhase.END, origin.x, origin.y, clawLastX, clawLastY)
         } else null
-        resetTransient()
+        // Tracking blinks out for a few frames whenever it restarts — right after the post-action
+        // cooldown, for instance. Only a hand that stays away is a real release; a brief gap must
+        // not free a fired hold, or a pose the user is still holding acts again.
+        resetTransient(handGone = now - lastSeenAt >= HAND_GONE_MS)
         smoothed = null
         return listOfNotNull(dragEnd, ending)
     }
@@ -288,6 +302,12 @@ class GestureEngine(
         val thumbUpStrong = thumbOpen && points[4].y < points[2].y - handScale * .15f
         val thumbSideways = thumbOpen && kotlin.math.abs(points[4].y - points[2].y) < handScale * .35f &&
             dist(points[4], points[5]) / handScale > .45f
+        // A finger heart presses the thumb onto the index tip or onto its joints, and that contact
+        // is its signature. These two tests are reused by the gun below: real MediaPipe frames read
+        // a heart's index as straight often enough that geometry alone let the gun claim the hand.
+        val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .40f
+        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .32f ||
+            dist(points[4], points[5]) / handScale < .32f
         // G24 gun: the index points left while the thumb rises from behind the index PIP.
         // Requiring the thumb tip to stay on the wrist side of PIP and clear of MCP/PIP keeps
         // a finger-heart (whose thumb presses those joints) from being claimed as Back.
@@ -300,7 +320,8 @@ class GestureEngine(
             dist(points[4], points[6]) / handScale >= .35f
         val gunPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x &&
-            thumbIndexAngle in 45f..90f && thumbBehindIndexPip && thumbClearOfIndexJoints
+            thumbIndexAngle in 45f..90f && thumbBehindIndexPip && thumbClearOfIndexJoints &&
+            !thumbMeetsIndexTip && !thumbPressesIndexJoint
         // G25: index vertical, thumb stretched sideways.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
@@ -465,10 +486,22 @@ class GestureEngine(
             candidateAt = 0L
             releaseAt = 0L
         }
+        // Advance the release of a hold that already fired before any branch can take the frame.
+        // Every branch below ends the frame with `return output`, and a hand being lowered often
+        // reads as one of those other gestures first, so a release counted only inside the hold's
+        // own branch would never be seen and the hold would stay latched for good.
+        if (fistHold == StaticHold.FIRED) {
+            if (closedFist) holdLostAt = 0L
+            else releaseFiredHold(now, RELEASE_GRACE_MS, { fistHold = it }, { fistHoldAt = it })
+        }
+        if (pinkyHold == StaticHold.FIRED) {
+            if (pinkyOnlyPose) holdLostAt = 0L
+            else releaseFiredHold(now, RELEASE_GRACE_MS, { pinkyHold = it }, { pinkyHoldAt = it })
+        }
         // Lowering the hand after the pinky pose passes back through pinky-like shapes for a moment,
         // which used to re-arm the hold and toggle mute a second time; 800ms of grace makes one
         // deliberate pinky fire exactly once while still allowing the next one right after.
-        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持", releaseGraceMs = 800L)) return output
+        if (features.pinkyMute && advanceStaticHold(pinkyOnlyPose, now, GestureEvent.PinkyMute, { pinkyHold }, { pinkyHold = it }, { pinkyHoldAt }, { pinkyHoldAt = it }, output, holdMs = 1000L, label = "小指手势保持", releaseGraceMs = RELEASE_GRACE_MS)) return output
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         // screenshotPalmOpen is the open hand and closedFist the fist: both mean "let go" mid-drag.
@@ -553,7 +586,10 @@ class GestureEngine(
         if (features.thumbsUp && advanceStaticHold(thumbUpPose, now, GestureEvent.ThumbsUp, { thumbsUpHold }, { thumbsUpHold = it }, { thumbsUpHoldAt }, { thumbsUpHoldAt = it }, output)) return output
         if (features.ok && okPose) okPoseAt = now
         if (features.ok && advanceStaticHold(okPose, now, GestureEvent.Ok, { okHold }, { okHold = it }, { okHoldAt }, { okHoldAt = it }, output)) return output
-        if (features.playPause && advanceStaticHold(closedFist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持")) return output
+        // Same lock as the pinky: a fist kept up through the cooldown must toggle play/pause once,
+        // not once per cooldown. 800ms of grace covers the frames where the fist reads open while
+        // the hand is still lowering.
+        if (features.playPause && advanceStaticHold(closedFist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持", releaseGraceMs = RELEASE_GRACE_MS)) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
         if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, closedFist, palm, points[0], now, output)) {
@@ -580,9 +616,6 @@ class GestureEngine(
         // rotation, so all three are accepted rather than betting on one joint. The index itself stays
         // visibly bent here — never require it to be extended, that filtered every real pose out before.
         // Only a fully closed hand is rejected: it pulls the index tip back onto its own MCP.
-        val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .40f
-        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .32f ||
-            dist(points[4], points[5]) / handScale < .32f
         val indexCurledIntoFist = dist(points[8], points[5]) / handScale < .30f
         val fingerHeartPose = (thumbMeetsIndexTip || thumbPressesIndexJoint) &&
             middleFolded && ringFolded && pinkyFolded &&
@@ -675,16 +708,29 @@ class GestureEngine(
                 // One deliberate gesture must fire once. The pose blinks off while the hand is
                 // still lowering, and it also flickers on landmark noise; only a pose that stays
                 // gone for releaseGraceMs counts as really letting go, so the next hold can arm.
-                if (!pose) {
-                    if (holdLostAt == 0L) holdLostAt = now
-                    if (now - holdLostAt >= releaseGraceMs) {
-                        setState(StaticHold.READY)
-                        setStartedAt(0L)
-                        holdLostAt = 0L
-                    }
-                } else holdLostAt = 0L
+                if (!pose) releaseFiredHold(now, releaseGraceMs, setState, setStartedAt)
+                else holdLostAt = 0L
                 return true
             }
+        }
+        return false
+    }
+    /**
+     * Frees a fired hold once its pose has been gone long enough, or at once when the release
+     * happened while recognition was frozen. Returns true when the hold is free to fire again.
+     */
+    private fun releaseFiredHold(
+        now: Long,
+        releaseGraceMs: Long,
+        setState: (StaticHold) -> Unit,
+        setStartedAt: (Long) -> Unit
+    ): Boolean {
+        if (holdLostAt == 0L) holdLostAt = now
+        if (now - holdLostAt >= releaseGraceMs) {
+            setState(StaticHold.READY)
+            setStartedAt(0L)
+            holdLostAt = 0L
+            return true
         }
         return false
     }
@@ -1350,7 +1396,7 @@ class GestureEngine(
         }
         return false
     }
-    private fun resetTransient() {
+    private fun resetTransient(handGone: Boolean = false) {
         pinch = Pinch.READY
         indexClick = IndexClick.READY
         indexClickAt = 0
@@ -1372,11 +1418,22 @@ class GestureEngine(
         thumbsUpHoldAt = 0L
         okHold = StaticHold.READY
         okHoldAt = 0L
-        fistHold = StaticHold.READY
-        fistHoldAt = 0L
-        pinkyHold = StaticHold.READY
-        pinkyHoldAt = 0L
-        holdLostAt = 0L
+        // A hold that already fired keeps its lock across a reset. The cooldown that follows a
+        // successful action resets the engine, and dropping the lock there makes a pose the user
+        // is still holding act again the moment recognition resumes: play/pause and mute then
+        // retrigger every cooldown for as long as the hand stays up. Only an unfinished hold is
+        // dropped here. A hand that left the frame altogether is the one exception: that is an
+        // unmistakable release, and keeping the lock would strand it, so the fist could never
+        // toggle play/pause again.
+        if (handGone || fistHold != StaticHold.FIRED) {
+            fistHold = StaticHold.READY
+            fistHoldAt = 0L
+        }
+        if (handGone || pinkyHold != StaticHold.FIRED) {
+            pinkyHold = StaticHold.READY
+            pinkyHoldAt = 0L
+        }
+        if (handGone || (fistHold != StaticHold.FIRED && pinkyHold != StaticHold.FIRED)) holdLostAt = 0L
         twoFingerUpHold = StaticHold.READY
         twoFingerUpHoldAt = 0L
         lotusHold = StaticHold.READY

@@ -295,12 +295,18 @@ class GestureEngineReplayTest {
         }
 
         /** The hand leaves the frame: what HandPipeline does when no hand is detected anymore. */
-        fun loseHand() {
-            repeat(8) { events += engine.lost(++t * 50L) }
+        fun loseHand(frames: Int = 8) {
+            repeat(frames) { events += engine.lost(++t * 50L) }
         }
 
         /** Applies a new sensitivity live, exactly what the preference listener does. */
         fun setSensitivity(scale: Float) = engine.updateMovementScale(scale)
+
+        /**
+         * The post-action cooldown: the service freezes recognition for its whole duration and then
+         * resumes it. Nothing observes the hand while frozen.
+         */
+        fun cooldown() { engine.stop(); engine.resume() }
     }
 
     private inline fun <reified T : GestureEvent> List<GestureEvent>.countOf(): Int = count { it is T }
@@ -357,9 +363,114 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(20, ::fistPose)                   // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
-        r.feed(8, ::restPose)
+        // The fist has to stay gone for the whole 800ms grace before the hold arms again.
+        r.feed(17, ::restPose)
         r.feed(22, ::fistPose)                   // re-enter: fires again
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
+    }
+
+    /**
+     * 2026-10-03 real-device complaint: play/pause fired again every cooldown while the fist was
+     * simply held up. The cooldown resets the engine, and that used to clear the fired lock even
+     * though the hand had never let go. One deliberate fist must act once however long it is held.
+     */
+    @Test fun fistKeptThroughCooldownFiresPlayPauseOnce() {
+        val r = Replay()
+        r.feed(22, ::fistPose)                   // 1.1s -> PlayPause
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.cooldown()
+        r.feed(60, ::fistPose)                   // still up after the cooldown: stays silent
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.cooldown()
+        r.feed(60, ::fistPose)                   // and through a second cooldown too
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.feed(17, ::restPose)                   // 850ms gone: a real release
+        r.feed(22, ::fistPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
+    }
+
+    /** Same lock as the fist: a pinky held through the cooldown must toggle mute exactly once. */
+    @Test fun pinkyKeptThroughCooldownMutesOnce() {
+        val r = Replay()
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.cooldown()
+        r.feed(60, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(17, ::restPose)
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * The hand leaving the frame is the clearest possible release. Lowering the hand out of shot
+     * after toggling play/pause must free the hold, or the fist can never act again.
+     */
+    @Test fun fistRearmsAfterTheHandLeavesTheFrame() {
+        val r = Replay()
+        r.feed(22, ::fistPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.loseHand(16)                           // hand dropped out of shot: let go
+        r.feed(22, ::fistPose)                   // fist again: must act
+        assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
+    }
+
+    /**
+     * 2026-10-04 real-device finding: tracking blinks out for a couple of frames right after the
+     * post-action cooldown, and reading that as "the hand is gone" freed the lock every single
+     * time — play/pause then fired again for a fist that was never lowered.
+     */
+    @Test fun aBriefTrackingGapDoesNotFreeTheFist() {
+        val r = Replay()
+        r.feed(22, ::fistPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.loseHand(8)                            // 400ms gap: tracking blinked, hand still up
+        r.feed(40, ::fistPose)                   // still holding: must stay silent
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+    }
+
+    /**
+     * 2026-10-04 real-device finding: the pose reads as gone for a frame or two while the hand is
+     * still held up, and the first frame after a cooldown is the noisiest of all. Freeing the hold
+     * on that made play/pause and mute retrigger every single cooldown — the release has to be a
+     * pose that stays gone, never a single dropped frame.
+     */
+    @Test fun aDroppedFrameAfterCooldownDoesNotRetriggerTheFist() {
+        val r = Replay()
+        r.feed(22, ::fistPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.cooldown()
+        r.feed(2, ::restPose)                    // 100ms of landmark noise, hand still up
+        r.feed(40, ::fistPose)                   // still holding: must stay silent
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
+        r.feed(17, ::restPose)                   // 850ms gone: a real release
+        r.feed(22, ::fistPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
+    }
+
+    /** Same for the pinky: noise right after a cooldown must not toggle mute a second time. */
+    @Test fun aDroppedFrameAfterCooldownDoesNotRetriggerThePinky() {
+        val r = Replay()
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.cooldown()
+        r.feed(2, ::restPose)
+        r.feed(40, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * Letting go while recognition is frozen cannot be seen, so the hold stays locked and the
+     * release clock starts on the first frame back, from when the pose must simply stay gone.
+     */
+    @Test fun releasingTheHandDuringCooldownRearmsTheHoldAfterTheGrace() {
+        val r = Replay()
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+        r.cooldown()                             // hand lowered while frozen
+        r.feed(17, ::restPose)                   // 850ms gone after resuming: release done
+        r.feed(22, ::pinkyOnlyPose)
+        assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
     @Test fun okHoldFiresConfirmOnce() {
@@ -437,6 +548,8 @@ class GestureEngineReplayTest {
         val r = Replay(GestureFeatureConfig(scroll = false))
         r.feed(14, ::fingerHeartTipPose)
         assertEquals(1, r.events.countOf<GestureEvent.Like>())
+        // Contact at the tip is a heart as well, so the gun must not read it as Back.
+        assertEquals(0, r.events.countOf<GestureEvent.LeftLBack>())
     }
 
     /** A closed fist also parks the thumb on the index joint; it must never like anything. */
