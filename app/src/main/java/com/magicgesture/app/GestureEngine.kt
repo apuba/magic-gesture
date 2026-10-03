@@ -303,10 +303,16 @@ class GestureEngine(
         val thumbSideways = thumbOpen && kotlin.math.abs(points[4].y - points[2].y) < handScale * .35f &&
             dist(points[4], points[5]) / handScale > .45f
         // A finger heart presses the thumb onto the index tip or onto its joints, and that contact
-        // is its signature. These two tests are reused by the gun below: real MediaPipe frames read
-        // a heart's index as straight often enough that geometry alone let the gun claim the hand.
-        val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .40f
-        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .32f ||
+        // is its signature. Measured on device (2026-10-04): a real heart reads tip 0.36-0.40 while
+        // the index stays straight, so the old 0.40 sat exactly on the measured value and dropped
+        // the pose whenever the hand rotated a little. 0.46 leaves room without reaching the OK and
+        // gun poses. The gun below keeps the pre-widening values: loosening its exclusion too would
+        // have let a heart-shaped hand veto Back, so those two stay strict on purpose.
+        val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .46f
+        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .40f ||
+            dist(points[4], points[5]) / handScale < .32f
+        val thumbMeetsIndexTipStrict = dist(points[4], points[8]) / handScale < .40f
+        val thumbPressesIndexJointStrict = dist(points[4], points[6]) / handScale < .32f ||
             dist(points[4], points[5]) / handScale < .32f
         // G24 gun: the index points left while the thumb rises from behind the index PIP.
         // Requiring the thumb tip to stay on the wrist side of PIP and clear of MCP/PIP keeps
@@ -321,7 +327,7 @@ class GestureEngine(
         val gunPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x &&
             thumbIndexAngle in 45f..90f && thumbBehindIndexPip && thumbClearOfIndexJoints &&
-            !thumbMeetsIndexTip && !thumbPressesIndexJoint
+            !thumbMeetsIndexTipStrict && !thumbPressesIndexJointStrict
         // G25: index vertical, thumb stretched sideways.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
@@ -610,11 +616,12 @@ class GestureEngine(
         //    heart arms on those wobble frames and fires a like instead of the OK action.
         val threeFingersExtended = middleOpen && ringOpen && pinkyOpen
         val okOwnsHand = features.ok && okPoseAt > 0L && now - okPoseAt < 500L
-        // G12 finger heart (2026-10-03): the thumb presses onto the index finger's first joint and
-        // the two fingers cross while the middle, ring and pinky curl into a loose grip. Real MediaPipe
-        // frames put that contact anywhere from the index MCP up to the index tip depending on hand
-        // rotation, so all three are accepted rather than betting on one joint. The index itself stays
-        // visibly bent here — never require it to be extended, that filtered every real pose out before.
+        // G12 finger heart: the thumb presses onto the index finger's first joint or tip and the two
+        // cross while the middle, ring and pinky curl into a loose grip. Real MediaPipe frames put
+        // that contact anywhere from the index MCP up to the index tip depending on hand rotation,
+        // so all three are accepted rather than betting on one joint. Measured on device (2026-10-04)
+        // the index reads straight (tip-to-MCP 1.2-1.35 of hand scale) with the thumb on its tip, so
+        // the index is never required to bend here — requiring that filtered every real pose out before.
         // Only a fully closed hand is rejected: it pulls the index tip back onto its own MCP.
         val indexCurledIntoFist = dist(points[8], points[5]) / handScale < .30f
         val fingerHeartPose = (thumbMeetsIndexTip || thumbPressesIndexJoint) &&
