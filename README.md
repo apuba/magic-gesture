@@ -1,47 +1,52 @@
-# 隔空手势 V0.1：Android 摄像头持续性探针
+# 魔法手势 V0.9
 
-这是 PRD 的第一项技术门槛验证工程，不包含 MediaPipe、手势识别、悬浮光标或无障碍触控。它验证用户从可见页面启动 camera 前台服务后，切换到其他 App，摄像头帧能否持续进入本 App。
+魔法手势是一款 Android 隔空手势控制应用。应用使用前置摄像头和随包内置的 MediaPipe 手部模型，在设备本机识别用户主动做出的手势，再通过 Android 无障碍服务执行点击、滑动、返回、媒体控制、截图等用户已配置动作。
 
-## 运行
+## 当前版本
 
-用 Android Studio 打开此目录；安装 Android SDK 36、JDK 17 和 Gradle 8.13。首次同步需要从 Google Maven、Maven Central 下载插件。当前交付未附 Gradle wrapper JAR；可用本地 Gradle 8.13 执行 `gradle wrapper --gradle-version 8.13`，随后 `./gradlew assembleDebug`。连接有前置摄像头的 Android 12/14/15 真机安装 APK。
+- 应用 ID：`com.magicgesture.app`
+- 版本：`0.9.0`（`versionCode=9`）
+- `minSdk=26`，`targetSdk=36`，`compileSdk=36`
+- 正式范围：G01–G35；未经产品负责人重新立项，不增加新编号
+- G03/G04/G09/G10 当前默认关闭且未绑定，保留给真实上线后的二期轨迹规划
+- 正式 Release 初始开放 7 个基础编号，通过 12 次本机离线每日签到逐步解锁全部功能
+- Debug 构建允许全部解锁；正式 Release 不提供付费、账号或隐藏全开入口
 
-打开 App，授予摄像头和“显示在其他应用上层”权限并点击开始。服务运行时会显示一个可拖动、自动贴边的全局悬浮圆点；轻点圆点可返回 App。蓝色表示启动中、绿色表示运行、红色表示错误。等待通知显示帧数，切到浏览器/阅读 App 使用 10 分钟，确认圆点仍可见且通知每 5 秒更新帧数。用通知里的停止按钮结束，确认圆点消失且摄像头指示灯熄灭。再测试撤销摄像头权限、切换视频通话 App、锁屏及返回 App。记录机型、系统版本、是否持续取帧、失败信息。
+完整手势与动作映射见 [`docs/GESTURE_ACTION_MAPPING_CHECKLIST.md`](docs/GESTURE_ACTION_MAPPING_CHECKLIST.md)，当前开发与验证状态见 [`docs/IDE_DEVELOPMENT_HANDOFF.md`](docs/IDE_DEVELOPMENT_HANDOFF.md)。
 
-## 注意
+## 隐私与权限
 
-此工程没有相机画面上传或保存。通知权限在 Android 13+ 仅用于更清晰的通知可见性；系统的前台服务通知行为由对应系统版本决定。`640×480` 是初始取帧尺寸，少数设备可能需要选择设备支持的 YUV 尺寸。由于当前执行环境没有 Android SDK/Gradle，也无法连接真机，这份源码尚未完成编译与设备验证。通过探针后才接入 MediaPipe、GestureEngine 和无障碍注入，避免将平台可行性当成既定事实。
+- 摄像头画面和手部关键点用于本机实时识别；日常识别帧不保存。
+- 用户主动触发自拍、截图或滚动长截图时，结果保存到系统相册 `Pictures/MagicGesture/`。
+- 无障碍服务只执行用户主动手势对应的确定性动作，`canRetrieveWindowContent=false`，不读取第三方页面文字或控件树。
+- 手势开关、映射、签到进度、指定 App 包名和收藏按钮坐标保存在应用本机私有存储。
+- 当前构建不声明 `INTERNET` 或 `ACCESS_NETWORK_STATE` 权限，不包含账号、广告、在线统计或服务端同步。
+- 完整草案见 [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md)。发布前必须补齐运营主体、联系方式、生效日期和公开访问网址。
 
-## 第二阶段源码（尚未接入摄像头）
+## 构建
 
-`GestureEngine.kt` 实现单手关键点输入后的平滑光标、捏合防抖、上下挥动、张掌暂停；`ControlAccessibilityService.kt` 封装无障碍覆盖层光标与 `dispatchGesture`。这两部分已经接入控制模式；普通摄像头探针模式不显示光标，也不执行点击。真机仍需校准坐标、阈值和无障碍权限。不要将源码存在等同于功能已通过验证。
+需要 JDK 17、Android SDK 36 和项目 Gradle Wrapper：
 
-## 第三阶段：关键点链路（待真机实测）
+```powershell
+.\gradlew.bat testDebugUnitTest assembleDebug
+.\gradlew.bat assembleRelease bundleRelease lintRelease
+```
 
-现已添加 MediaPipe `tasks-vision:0.10.21`、`HandPipeline.kt` 和从服务取帧到手势引擎、无障碍光标/点击/滑动的连接。Google 官方 MediaPipe Hand Landmarker float16 模型已保存为 `app/src/main/assets/hand_landmarker.task` 并打包进 APK。摄像头探针模式不运行模型；控制模式的通知会同时显示手部识别累计次数。
+主要产物：
 
-启动控制前，先到 Android 系统“无障碍”设置中手动开启本 App 的服务。控制模式只在用户从可见首页点击时启动；切换到其他 App 后，食指控制光标，捏合点击。滚动可使用水平食指上挑或下挑，也可将食指、中指、无名指和小拇指四指伸直并拢后整只手上下挥动，拇指姿态不限；四指并拢左右挥分别触发横向操作。并拢与张开通过相邻手指各自“掌指关节到指尖”的方向向量夹角判断：四指并拢要求三个相邻夹角均不超过 5°；截图的五指张开要求从拇指到小拇指的四个相邻夹角全部大于 5°。方向手势会先锁定横轴或纵轴，避免一次动作串到另一方向。点击、滚动、返回、回桌面或截图等离散动作执行成功后，系统进入 2 秒全局动作冷却期；期间阻止其他离散动作，但食指光标与识别反馈继续工作。冷却结束不会清空静态手势的锁存状态，必须先解除姿势再重新做，才允许再次触发。每次挑动或挥手只触发一次，回程不会触发反向动作。食指和中指组成 V 字并稳定保持 2 秒后进入 3 秒倒计时，随后将下一帧前置摄像头画面保存到系统相册。截图使用“五指明显分开并保持 → 握拳 → 再次五指明显分开并保持”的组合；五指中有多根并拢时不会进入截图流程。“停止”关闭摄像头和光标。无障碍服务不读取第三方页面文字。暂停手势已移除。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`
+- Release APK：`app/build/outputs/apk/release/app-release.apk`
+- Release AAB：`app/build/outputs/bundle/release/app-release.aab`
 
-首页的“手势练习与校准”提供稳定、标准、灵敏三档识别门槛，可反转左右方向，并可开关全局识别反馈。设置保存在本机并在下一次启动控制时生效。启用反馈后，屏幕顶部会短暂显示点击、滚动、返回、桌面、截图等动作结果；V 字保持会显示 0–100% 进度，截图准备完成时会提示握拳。
+构建通过不能代替真机验收、商店审核或真实上线。正式签名文件和口令不得提交到 Git 或写入文档。
 
-校准页还提供独立功能开关：食指光标、食指弯曲点击、上下滚动、左挥返回、右挥回桌面、五指张开组合截图、V 字自拍和比心点赞。关闭的功能会在识别引擎中跳过，而不仅是隐藏反馈，便于一次只测试一个手势并避免其他动作干扰。
+## 首次使用
 
-首页每张手势说明卡也提供相同的独立开关。首页开关保存后会通过本机设置监听即时更新正在运行的识别引擎，不需要停止或重新启动服务；校准页与首页始终读取同一份配置。
+1. 阅读应用内无障碍用途披露，自主决定是否继续。
+2. 按系统引导授予摄像头、悬浮窗和无障碍能力；Android 13 及以上可授予通知权限以显示前台服务状态。
+3. 点击“启动手势控制”。运行期间会显示前台服务通知和悬浮状态点。
+4. 点击“停止所有控制”后，应用停止摄像头识别并移除悬浮控件。
 
-该转换器按 YUV 像素逐点转换并旋转，方便先验证闭环，但尚未做性能优化。前置镜像、传感器旋转、不同分辨率和屏幕坐标仍需逐机校准。源码和模型已完成 debug APK 编译，但识别准确度、坐标方向和手势阈值仍需真机验证。首轮必须先运行探针，确认 10 分钟后台取帧，再开启控制模式。
+## 上架准备
 
-## 构建命令（在具备 Android SDK 的电脑上）
-
-1. 安装 Android Studio（JDK 17、SDK Platform 36、Android Build Tools）。
-2. 确认 `app/src/main/assets/hand_landmarker.task` 存在。
-3. 运行 `./gradlew :app:assembleDebug --stacktrace`。
-4. 成功后 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
-
-## V0.9 上架整理版
-
-- 正式应用 ID：`com.magicgesture.app`
-- `targetSdk`：36（Android 16）
-- 版本：`0.9.0`，`versionCode=9`
-- 无障碍服务不读取其他应用窗口内容，仅用于用户主动触发的点击、滑动、全局操作与截图能力。
-- 首次进入无障碍设置前增加独立用途披露与用户确认。
-- Release 签名配置已完成；正式上架前需妥善备份 release keystore，并重新生成最终签名 AAB/APK。
+应用市场申报建议、权限用途、Data Safety 答案草案和审核视频清单见 [`docs/APP_STORE_REVIEW_GUIDE.md`](docs/APP_STORE_REVIEW_GUIDE.md)。任何申报内容都必须以最终上传的 AAB/APK、发布主体和实际隐私政策网址为准。
