@@ -544,6 +544,29 @@ class GestureEngineReplayTest {
         assertEquals(0, tooObtuse.events.countOf<GestureEvent.LeftLBack>())
     }
 
+    /** G25 single-finger gun: index straight up, thumb stretched sideways, other three curled. */
+    private fun verticalGunPose(): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.FOLDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbSide
+    )
+
+    /**
+     * 2026-10-04: the vertical gun dropped from a full second to the usual short 600ms hold, so it
+     * fires noticeably earlier and no longer shows a countdown.
+     */
+    @Test fun verticalGunHoldFiresAfter600msAndRequiresRelease() {
+        val r = Replay()
+        r.feed(11, ::verticalGunPose)             // 0.55s elapsed: below the 0.6s hold
+        assertEquals(0, r.events.countOf<GestureEvent.LShape>())
+        r.feed(2, ::verticalGunPose)              // 0.65s elapsed -> fires once
+        assertEquals(1, r.events.countOf<GestureEvent.LShape>())
+        r.feed(20, ::verticalGunPose)             // still holding: no repeat
+        assertEquals(1, r.events.countOf<GestureEvent.LShape>())
+        r.feed(8, ::restPose)                     // release
+        r.feed(17, ::verticalGunPose)             // re-enter: fires again
+        assertEquals(2, r.events.countOf<GestureEvent.LShape>())
+    }
+
     @Test fun horizontalFingerHeartNeverFiresGunBack() {
         val r = Replay(GestureFeatureConfig(scroll = false))
         r.feed(14, ::horizontalFingerHeartPose)

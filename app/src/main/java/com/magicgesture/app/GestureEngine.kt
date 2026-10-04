@@ -542,7 +542,11 @@ class GestureEngine(
         // G24-G28 checked before the click/swipe chains: their index-based poses would
         // otherwise arm click or horizontal-swipe detection while the L shapes are held.
         if (features.leftL && advanceStaticHold(gunPose, now, GestureEvent.LeftLBack, { leftLHold }, { leftLHold = it }, { leftLHoldAt }, { leftLHoldAt = it }, output)) return output
-        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output, holdMs = 1000L, label = "单指枪·竖向保持")) return output
+        // G25 holds like the other short static poses: 600ms since 2026-10-04, when the product owner
+        // shortened it from a full second because waiting a second to scroll short video felt slow.
+        // Nothing is shown during a hold this short (the countdown needs a second or more), so the
+        // dedicated progress label went away with the longer time.
+        if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output)) return output
         if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (pinkyOnlyPose) {
             // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and

@@ -185,7 +185,7 @@ class CalibrationActivity : Activity() {
             lotusRecentsSwitch = featureSwitch("莲花指返回桌面", "拇指与无名指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.lotusRecents)
             orchidBackSwitch = featureSwitch("兰花指最近任务", "拇指与中指相触，其余指定手指伸展并保持约 0.6 秒。", savedFeatures.orchidBack)
             leftLSwitch = featureSwitch("单指枪·横向", "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", savedFeatures.leftL)
-            lShapeSwitch = featureSwitch("单指枪·竖向", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持 1 秒（有倒计时提示）。初版阈值，待真机校准。", savedFeatures.lShape)
+            lShapeSwitch = featureSwitch("单指枪·竖向", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.lShape)
             clawDragSwitch = featureSwitch("抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢；保持约 0.6 秒按下手指，移动手掌持续拖动，张开手指结束。默认动作为拖动，可在上方映射中更换。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手势", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             loveLockSwitch = featureSwitch("Love 手势", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒，返回手机桌面。", savedFeatures.loveLock)

@@ -159,15 +159,16 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(mapped, GestureFeatureConfig(six666 = false)))
     }
 
-    @Test fun twoFingerUpResolvesToG35AndDefaultsToScrollUp() {
+    // G25/G35 swapped their default actions on 2026-10-04; see the note above G25 in GestureArchitecture.kt.
+    @Test fun twoFingerUpResolvesToG35AndDefaultsToNotifications() {
         val mapped = requireNotNull(mappings.resolve(GestureEvent.TwoFingerUp)).mapping
         assertEquals(GestureCode.G35, mapped.code)
-        assertEquals(GestureAction.SCROLL_UP, mapped.action)
+        assertEquals(GestureAction.NOTIFICATIONS, mapped.action)
         assertEquals(GestureType.HOLD, mapped.type)
         assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.cooldownPolicy)
         assertTrue(gate.allows(mapped, GestureFeatureConfig()))
         assertFalse(gate.allows(mapped, GestureFeatureConfig(twoFingerUp = false)))
-        assertEquals(GestureAction.SCROLL_UP, GestureMappingManager.defaultActionOf(GestureCode.G35))
+        assertEquals(GestureAction.NOTIFICATIONS, GestureMappingManager.defaultActionOf(GestureCode.G35))
         assertTrue(mappings.isRemappable(GestureCode.G35))
         // Remapping keeps the hold/gate pairing that belongs to the gesture itself.
         val remapped = requireNotNull(
@@ -280,7 +281,8 @@ class GestureArchitectureTest {
 
     @Test fun g24ThroughG28DefaultToTheirSpecifiedActions() {
         assertEquals(GestureAction.BACK, GestureMappingManager.defaultActionOf(GestureCode.G24))
-        assertEquals(GestureAction.NOTIFICATIONS, GestureMappingManager.defaultActionOf(GestureCode.G25))
+        // Swapped with G35's old binding on 2026-10-04: scrolling moved to the single-finger gun.
+        assertEquals(GestureAction.SCROLL_UP, GestureMappingManager.defaultActionOf(GestureCode.G25))
         // G26 now defaults to the continuous drag. Drag is an ordinary action reached through the
         // mapping, not part of the claw, so users can still rebind the gesture to anything else.
         assertEquals(GestureAction.DRAG, GestureMappingManager.defaultActionOf(GestureCode.G26))

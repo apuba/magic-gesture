@@ -342,10 +342,15 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.BACK,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
+        // G25/G35 swapped their default actions on 2026-10-04 at the product owner's request.
+        // Scrolling now belongs to the single-finger gun, which is the quicker shape to strike while
+        // watching short video; opening the notification panel belongs to the two-finger gun, which
+        // has to be held still for a full second and is therefore easier to stop in time if it was
+        // accidental. Both stay ordinary bindings, so users can still swap them from the calibration page.
         GestureCode.G25 to GestureMapping(
             GestureCode.G25,
             GestureType.HOLD,
-            GestureAction.NOTIFICATIONS,
+            GestureAction.SCROLL_UP,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
         // G26 (claw) now performs a continuous drag: it presses on START, follows the palm with
@@ -374,12 +379,12 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         GestureCode.G31 to dynamicMapping(GestureCode.G31, GestureAction.VOLUME_UP),
         GestureCode.G32 to dynamicMapping(GestureCode.G32, GestureAction.VOLUME_DOWN),
         GestureCode.G33 to dynamicMapping(GestureCode.G33, GestureAction.PLAY_PAUSE),
-        // G35 holds the two-finger pose still for 1s to scroll one screen up — the "next video"
-        // move in short-video apps, done without touching the phone.
+        // G35 holds the two-finger pose still for 1s to open the notification panel. See the note on
+        // G25 above for why the panel moved here and scrolling moved to the single-finger gun.
         GestureCode.G35 to GestureMapping(
             GestureCode.G35,
             GestureType.HOLD,
-            GestureAction.SCROLL_UP,
+            GestureAction.NOTIFICATIONS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         )
     )
