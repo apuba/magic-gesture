@@ -32,6 +32,9 @@ class FavoriteButtonController(
     private val onMessage: (String) -> Unit = {}
 ) {
     private val main = Handler(Looper.getMainLooper())
+    /** 10 x 500ms: spans the whole window in which Recents may keep the target unknown. */
+    private val recentsRetryAttempts = 10
+    private val retryDelayMs = 500L
     private val window = context.getSystemService(WindowManager::class.java)
     private var overlay: View? = null
     private var completion: ((Boolean) -> Unit)? = null
@@ -47,12 +50,13 @@ class FavoriteButtonController(
         if (completion != null || resolvingForeground) { callback(false); return@post }
         val service = accessibilityService() ?: run { callback(false); return@post }
         resolvingForeground = true
-        resolveForeground(service, callback, attemptsLeft = 3)
+        resolveForeground(service, callback, attemptsLeft = recentsRetryAttempts)
     }
 
     /**
-     * A task restored from Recents may publish its window event a few frames after it is visible.
-     * Briefly retry only while that transition is pending; never fall back to the previous app.
+     * A task restored from Recents may publish its window event a few frames after it is visible,
+     * and some builds never publish it at all. Retry for the whole wait window — the old 600ms
+     * was shorter than a single task switch — and never fall back to the previous app.
      */
     private fun resolveForeground(
         service: ControlAccessibilityService,
@@ -61,8 +65,8 @@ class FavoriteButtonController(
     ) {
         val packageName = service.foregroundPackage()?.takeIf(::isAllowedTarget)
         if (packageName == null && service.isAwaitingRecentsTarget() && attemptsLeft > 0) {
-            if (attemptsLeft == 3) onMessage("正在确认当前应用，请稍候")
-            main.postDelayed({ resolveForeground(service, callback, attemptsLeft - 1) }, 200L)
+            if (attemptsLeft == recentsRetryAttempts) onMessage("正在确认当前应用，请稍候")
+            main.postDelayed({ resolveForeground(service, callback, attemptsLeft - 1) }, retryDelayMs)
             return
         }
         resolvingForeground = false

@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.DisplayMetrics
@@ -34,7 +35,13 @@ import kotlin.math.hypot
 
 /** Injection and cursor boundary. Called only while user-started control is active. */
 class ControlAccessibilityService : AccessibilityService() {
-    companion object { @Volatile var active: ControlAccessibilityService? = null; private set }
+    companion object {
+        @Volatile var active: ControlAccessibilityService? = null; private set
+        /** How long Recents may keep the foreground unknown before the wait is given up. */
+        const val RECENTS_TARGET_TIMEOUT_MS = 5_000L
+        /** How long after Recents a launcher event is treated as the switcher closing, not a target. */
+        const val RECENTS_LAUNCHER_GRACE_MS = 3_000L
+    }
     override fun onServiceConnected() { super.onServiceConnected(); active = this }
     override fun onRebind(intent: Intent?) { super.onRebind(intent); active = this }
     override fun onUnbind(intent: Intent?): Boolean {
@@ -52,6 +59,8 @@ class ControlAccessibilityService : AccessibilityService() {
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     @Volatile private var foregroundPackageName: String? = null
     @Volatile private var awaitingRecentsTarget = false
+    /** When Recents was last opened; the selected app may never announce itself at all. */
+    @Volatile private var recentsOpenedAt = 0L
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName } ?: return
         foregroundPackageName = when {
@@ -62,6 +71,12 @@ class ControlAccessibilityService : AccessibilityService() {
             // The launcher and Settings have nothing to favorite: clear the target so the gesture
             // cannot click the previously used app's coordinates while it is not even visible.
             isHomeOrSettings(pkg) -> {
+                // Honor reports the task switcher as the launcher, and it does so twice: once
+                // while Recents is handing control over, and again right after the restored app
+                // has already been announced. The second one wiped the app the user had just
+                // restored, leaving every later OK gesture with no target at all. Ignore the
+                // launcher briefly around Recents; the timeout above is what ends the wait.
+                if (awaitingRecentsTarget || withinRecentsLauncherGrace()) return
                 awaitingRecentsTarget = false
                 null
             }
@@ -85,6 +100,10 @@ class ControlAccessibilityService : AccessibilityService() {
     private fun isHomeOrSettings(pkg: String): Boolean =
         pkg == "com.android.settings" || pkg == homePackage()
 
+    /** Right after Recents a launcher event is the task switcher closing, not the destination. */
+    private fun withinRecentsLauncherGrace(): Boolean =
+        SystemClock.uptimeMillis() - recentsOpenedAt < RECENTS_LAUNCHER_GRACE_MS
+
     private fun homePackage(): String? = runCatching {
         packageManager.resolveActivity(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY
@@ -98,10 +117,21 @@ class ControlAccessibilityService : AccessibilityService() {
     override fun onInterrupt() { hideCursor(); busy = false }
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
 
-    fun foregroundPackage(): String? = if (awaitingRecentsTarget) null else foregroundPackageName
+    fun foregroundPackage(): String? = if (isAwaitingRecentsTarget()) null else foregroundPackageName
 
-    /** True only between opening Recents and receiving the selected app's real window event. */
-    fun isAwaitingRecentsTarget(): Boolean = awaitingRecentsTarget
+    /**
+     * True only between opening Recents and receiving the selected app's real window event.
+     * That event is not guaranteed to arrive at all, so the wait expires instead of sticking
+     * forever and failing every later favorite gesture.
+     */
+    fun isAwaitingRecentsTarget(): Boolean {
+        if (!awaitingRecentsTarget) return false
+        if (SystemClock.uptimeMillis() - recentsOpenedAt >= RECENTS_TARGET_TIMEOUT_MS) {
+            awaitingRecentsTarget = false
+            return false
+        }
+        return true
+    }
 
     fun tapNormalized(x: Float, y: Float, callback: (Boolean) -> Unit) = main.post {
         if (busy) { callback(false); return@post }
@@ -176,6 +206,7 @@ class ControlAccessibilityService : AccessibilityService() {
             // task switcher is still handing control to the newly selected application.
             foregroundPackageName = null
             awaitingRecentsTarget = true
+            recentsOpenedAt = SystemClock.uptimeMillis()
         }
         callback(success)
     }
