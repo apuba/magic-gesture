@@ -20,14 +20,14 @@
 |---|---|---|---|---|---|
 | G01 | 指尖移动 | G13 | 开合掌 | G25 | 单指枪·竖向 |
 | G02 | 指尖轻点 | G14 | 莲花指 | G26 | 抓取手势 |
-| G03 | 指尖上挑 | G15 | 兰花指 | G27 | C 手势 |
-| G04 | 指尖下挑 | G16 | 张掌变一指 | G28 | Love 手势 |
+| G03 | 轨迹预留一 | G15 | 兰花指 | G27 | C 手势 |
+| G04 | 轨迹预留二 | G16 | 张掌变一指 | G28 | Love 手势 |
 | G05 | 并掌上挥 | G17 | 张掌变二指 | G29 | 双指左挥 |
 | G06 | 并掌下挥 | G18 | 张掌变三指 | G30 | 双指右挥 |
 | G07 | 并掌左挥 | G19 | 张掌变四指 | G31 | 双指上拉 |
 | G08 | 并掌右挥 | G20 | 拇指赞 | G32 | 双指下拉 |
-| G09 | 单指左挑 | G21 | OK 手势 | G33 | 双指双点 |
-| G10 | 单指右挑 | G22 | 握拳 | G34 | 六六顺手势 |
+| G09 | 轨迹预留三 | G21 | OK 手势 | G33 | 双指双点 |
+| G10 | 轨迹预留四 | G22 | 握拳 | G34 | 六六顺手势 |
 | G11 | V 手势 | G23 | 小指手势 | G35 | 双指枪·竖向 |
 | G12 | 指尖比心 | G24 | 单指枪·横向 |  |  |
 
@@ -131,7 +131,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 ### 2026-10-02 每日签到解锁（需求已确认、代码已实现、尚未真机验收）
 
-- 当前正式版本不设置收费用户或付费入口；所有正式用户统一从 7 个基础编号开始：G01、G02、G03、G04、G24、G11、G13。
+- 当前正式版本不设置收费用户或付费入口；所有正式用户统一从 7 个基础编号开始：G01、G02、G05、G06、G24、G11、G13。
 - 用户每天主动签到，永久解锁下一个功能包；一天最多一次，断签不清零，共 12 次有效签到完成当前全部奖励。
 - 所有正式 Release 用户遵循同一规则，不设置历史用户、管理员或隐藏口令全开；Debug/内部测试构建允许全部解锁，但不得把测试入口带入正式包。
 - 微信登录、账号、付费全开、邀请分享、服务端和联网权益属于二期；必须等 App 真实公开上线后重新规划，当前不得开发。
@@ -171,6 +171,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 - 改动：`GestureEngine.movementScale` 改为可变并新增 `updateMovementScale()`（同步重算 `twoFingerHorizontalTrigger`、清空轨迹与保持状态，避免旧轨迹按新阈值触发）；`HandPipeline.updateSensitivity()`；`GesturePreferences.SENSITIVITY` 改为公开并新增 `saveSensitivity()`；`CameraProbeService` 偏好监听新增 `sensitivity` 分支，运行中下发并提示"识别灵敏度已即时更新"。
 - 校准页：点击"稳定 / 标准 / 灵敏"立即写入偏好并 Toast"识别灵敏度已即时生效"，分组说明补"点击即时生效，无需先保存"；底部保存按钮行为不变（仍写入当前选中值，不冲突）。
 - 验证：新增回放用例 `sensitivityChangeRetunesThresholdsWithoutRestart`（0.06 位移在标准档不触发，换到"灵敏"档后立即触发），全部测试 79/79 通过，`assembleDebug` 通过。**真机待验收**：手势控制运行中切档是否立刻改变灵敏度。
+- 2026-10-04 复核：三档缩放固定为灵敏 `0.78`、标准 `1.00`、稳定 `1.28`，新增纯映射顺序测试防止三档退化为相同值；“显示识别反馈”改为开关即保存并通过 Service 偏好监听实时更新 `OverlayIndicator`，关闭时立即移除正在显示的反馈，开启时显示确认提示。完整 JVM 测试现为 124/124 通过；即时开关仍待真机目视验收。
 - 未改："左右反向"仍随保存按钮生效，如需同样即时生效可照此处理。
 
 ### 2026-10-02 两指双击（G33）经常失效 / 被判成调音量
@@ -226,11 +227,34 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 - 真机复现范围进一步收窄：用手势打开最近任务并切换到另一个 App 后，OK 收藏很大概率失败。根因是无障碍原来只订阅 `typeWindowStateChanged`；部分 Android 系统恢复已有任务时只发 `TYPE_WINDOWS_CHANGED`，导致前台包名继续是旧 App 或为空。
 - `accessibility_service.xml` 现同时订阅 `typeWindowStateChanged|typeWindowsChanged`，仍保持 `canRetrieveWindowContent=false`，不读取第三方窗口内容，也没有新增权限。
 - `ControlAccessibilityService.globalAction(RECENTS)` 成功后立即清空旧前台包名并进入"等待目标 App"状态；收到非系统覆盖层、非桌面/设置的真实窗口事件后才接受新包名，避免按旧 App 坐标误点。
-- `FavoriteButtonController` 在最近任务切换尚未确认目标时，每 200ms 重试一次，最多 3 次；期间提示"正在确认当前应用，请稍候"。仍无法确认则明确提示未识别目标，不回退到旧包名。
+- `FavoriteButtonController` 在最近任务切换尚未确认目标时重试等待；期间提示"正在确认当前应用，请稍候"。仍无法确认则明确提示未识别目标，不回退到旧包名。（重试窗口 2026-10-04 由 3 次 × 200ms 调整为 10 次 × 500ms，见下节。）
 - 点击注入失败新增明确提示"收藏位置点击被系统取消，请确认页面没有被其他窗口遮挡"；无障碍断连也有独立提示。
 - 2026-10-02 产品负责人反馈真机测试通过：从最近任务切换 App 后再使用 OK 收藏已能正常工作。仍需在其他机型和 PIP/悬浮播放器场景继续做发布前回归。
 
 **后续顺序**：先安装 23:18 之后的新 APK 验证最近任务切换修复；若普通页面或 PIP 场景仍复现，再按 A 定位，命中 ② 做 B、③ 做 C，其他前台识别问题再从 D1/D2/D3 中选。
+
+### 2026-10-04 最近任务切换后 OK 收藏再次失败修复（荣耀机型，代码完成、真机验证通过）
+
+- **真机现象**：在抖音用手势打开最近任务 → 切换到另一个 App → 再用 C 手势（G27）打开最近任务 → 切回抖音 → 做 OK 收藏手势，提示"当前应用未定义收藏位置或点击失败"。时好时坏，且一旦失败会持续到用户切换到别的 App。
+- **定位方式**：临时在 `ControlAccessibilityService` 与 `FavoriteButtonController` 加 `MG_DIAG` tag 日志，定位后已全部移除，`git diff` 无残留。注意相机 HAL 每帧日志会在几分钟内填满 logcat 环形缓冲区，必须用后台持续抓取（`adb logcat -v time -s MG_DIAG > file`）才留得住记录，事后 `logcat -d` 读不到。
+- **根因**（与上一节不同：上一节是"目标 App 窗口事件不来"，本次是"事件来了又被抹掉"）：荣耀 Magic UI 把最近任务界面归属给桌面包名 `com.hihonor.android.launcher`，且在目标 App 窗口事件到达后约 0.3 秒**补发一次 launcher 事件**：
+
+```text
+21:06:02.140 recents opened -> awaiting=true
+21:06:02.494 pkg=com.ss.android.ugc.aweme -> foreground awaiting=false   ← 抖音已确认
+21:06:02.766 pkg=com.hihonor.android.launcher -> foreground=null         ← 0.27 秒后被清空
+21:06:07.435 fav attempt fg=null                                        ← OK 手势拿到空包名
+```
+
+此时 `awaitingRecentsTarget` 已被抖音事件解除，上一节的等待保护不再生效，launcher 分支照常清空前台，因此失败是粘性的。
+
+- **修复**（只动 `ControlAccessibilityService.kt` 与 `FavoriteButtonController.kt`）：
+  - 最近任务后 3 秒内（`RECENTS_LAUNCHER_GRACE_MS`）launcher/设置事件一律不作数，保护刚恢复的目标 App 不被补发事件抹掉；等待期间同样忽略。
+  - 等待目标加 5 秒超时兜底（`RECENTS_TARGET_TIMEOUT_MS`）：目标事件始终不来时自动复位，不再永久卡死。
+  - 收藏重试窗口由 3 次 × 200ms 调整为 10 次 × 500ms，覆盖整个等待窗口；原来的 600ms 比一次任务切换还短。
+  - 未新增权限，`canRetrieveWindowContent` 仍为 `false`。
+- **验证**：日志显示三次 OK 手势全部 `fav target=com.ss.android.ugc.aweme hasProfile=true` 且 `tap success=true`，期间 launcher 事件均被忽略；产品负责人真机确认收藏动作已正常激活。测试 124/124 通过，`assembleDebug` 通过，APK 已安装。
+- **遗留与观察点**：本修复依赖时序宽限，对 ROM 行为敏感，仍需日常使用观察。若再次失败，按提示文案定性——「未识别到可收藏的应用」= 前台包名仍拿不到（回到方案 D）；「收藏位置点击被系统取消」= 注入被遮挡；「无障碍服务未连接」= 服务掉线。彻底方案仍为 D1/D2/D3，均需产品负责人确认（D1 触碰 §5 隐私底线，D2 需新增 `PACKAGE_USAGE_STATS` 权限与授权引导）。
 
 ### 2026-10-03 G35「双指枪·竖向」（代码完成、图片与算法姿势待确认）
 
@@ -330,7 +354,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 | 状态 | 手势码 |
 |---|---|
-| 已实现（35） | G01 指尖移动、G02 指尖轻点、G03 指尖上挑、G04 指尖下挑、G05-G08 并掌四向挥动、G09/G10 单指左右挑、G11 V 手势自拍、G12 指尖比心点赞、G13 开合掌截图、G14 莲花指→返回桌面、G15 兰花指→最近任务、G16-G19 张掌变一/二/三/四指→打开指定 App、G20 拇指赞、G21 OK 手势=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 小指手势=静音开关**、G24 单指枪·横向返回、G25 单指枪·竖向保持 0.6s=向上滑动（2026-10-04 由通知栏换入，同日保持时长由 1 秒改为 0.6 秒）、G26 抓取手势（默认未绑定）、G27 C 手势=最近任务、G28 Love 手势=返回桌面、G29/G30 双指左右挥=切歌、G31/G32 双指上下拉=持续音量、G33 双指双点=播放/暂停、G34 六六顺手势（默认未绑定）、**G35 双指枪·竖向保持 1s=下拉通知栏**（2026-10-04 由向上滑动换入，刷短视频用途已由 G25 承担） |
+| 已实现（35 个编号） | G01 指尖移动、G02 指尖轻点；G03/G04/G09/G10 保留识别兼容入口但默认关闭且未绑定，作为二期轨迹预留；G05-G08 并掌四向挥动；G11 V 手势自拍、G12 指尖比心点赞、G13 开合掌截图、G14 莲花指→返回桌面、G15 兰花指→最近任务、G16-G19 张掌变一/二/三/四指→打开指定 App、G20 拇指赞、G21 OK 手势=收藏当前内容、G22 握拳保持 1s=播放/暂停、**G23 小指手势=静音开关**、G24 单指枪·横向返回、G25 单指枪·竖向保持 0.6s=向上滑动、G26 抓取手势（默认未绑定）、G27 C 手势=最近任务、G28 Love 手势=返回桌面、G29/G30 双指左右挥=切歌、G31/G32 双指上下拉=持续音量、G33 双指双点=播放/暂停、G34 六六顺手势（默认未绑定）、**G35 双指枪·竖向保持 1s=下拉通知栏** |
 | 已移除 | G18/G19 食指画圈音量已移除；编号后续已复用于张掌收指打开 App |
 
 两指系列 G29-G33 共用 `two_finger_media` 开关（显示名"两指媒体控制"），构成完整媒体控制家族；五向均为 DYNAMIC 类型、可换绑。
@@ -369,6 +393,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 16. **二期新手势候选（仅记录，真实上线前禁止开发）**：双指水平摆放，向左持续快退、向右持续快进，持续机制参考 G31/G32 音量调节。尚未分配编号，也未进入当前解锁和发布范围；与 G29/G30 双指左右挥切歌存在直接姿势冲突，二期重新立项时必须先定义速度、位移、保持时长和互斥优先级。详细记录见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.4。
 17. **自定义组合手势与个人模板（已列入二期待开发，当前未授权实施）**：产品模型为"基础手势 + 基本行为 -> 动作功能"；用户个人模板先支持对预设基础手势录制 3～5 轮进行本机校准，稳定后再评估完全自由的新手形。二期必须规划模板质量、正反例验证、相邻姿势冲突、默认模板回退、重新录制/删除、独占状态、释放复位、轨迹容错和真机验收；当前不新增 G36、不进入代码开发。详细记录见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.5，个人模板见 §7.5.5。
 18. **按前台 App 自动切换手势场景（下个里程碑候选，当前仅记录）**：依据前台应用包名及本机保存的 App 场景关联，自动启用短视频、媒体、阅读或通用等场景的有效手势集合，以减少跨场景冲突；不得读取第三方页面内容或控件树。需规划用户确认/手动覆盖、通用场景回退、切换时清空状态、独占动作安全结束以及同一 App 多业务页面无法仅凭包名区分的限制。详细记录见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6。
+19. **G03/G04/G09/G10 二期轨迹预留（当前版本代码已完成，轨迹未开发）**：一期单食指收敛为光标、单击和后续双击，四向滑动由 G05–G08 四指并掌覆盖。四个编号已改为默认关闭、默认未绑定并移入第 12 个签到包；升级时一次性关闭旧开关但保留已有动作映射。首页与校准页明确标为轨迹预留。S、圆圈、V 等轨迹识别、具体编号分配和验收仍必须等 App 真实公开上线后重新规划。
 
 ## 7. 硬约束（不可违反）
 
@@ -384,26 +409,27 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 ```powershell
 cd e:/2026/MagicGesture-v0.9
-.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 103/103 通过）
+.\gradlew.bat testDebugUnitTest assembleDebug   # 全量验证（当前 124/124 通过）
 .\gradlew.bat installDebug                       # 安装到已连接设备
 D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整路径
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次产物：`app\build\outputs\apk\debug\app-debug.apk`，2026-10-03 **15:52** 生成，72,811,942 字节，Debug 签名（Debug 构建全部手势解锁）。该 APK 已包含最新 G01–G35 对外名称、G35 独立双指枪图片、模型初始化生命周期修复、自拍 EXIF 方向修复、G24 PIP 位置基准及当前工作区中的小指释放防重复和抓取拖动独占修复。**尚未安装到真机，不能写成真机通过。**
+最近一次发布产物（2026-10-04 21:40）：`app\build\outputs\apk\release\app-release.apk`（70,604,024 字节，SHA-256 `734147218C5746A7F1263E2F9B70E2073407EF22DC353B0AD47749A4D437F4E0`）与 `app\build\outputs\bundle\release\app-release.aab`（45,877,804 字节，SHA-256 `A4177C40881A0C9629E317F24D4275ABE197119CF579B19F9E78033BEA04686D`）。`testDebugUnitTest assembleDebug assembleRelease bundleRelease lintRelease --rerun-tasks` 成功，124/124 JVM 测试通过；Release APK 经 `apksigner` 验证为有效 v2 签名并通过 16KB 页面对齐检查。Debug/Release 最终 APK 均只保留相机、前台服务、通知和悬浮窗权限，已确认不再包含传递合并的 `INTERNET` 与 `ACCESS_NETWORK_STATE`。产物**尚未安装到真机，也未提交应用市场**。
+
+上架文案材料（2026-10-04）：根目录 `README.md` 已按当前版本重写；新增 `docs/PRIVACY_POLICY.md` 与 `docs/APP_STORE_REVIEW_GUIDE.md`。隐私政策仍是待发布主体确认的草案，缺少运营主体、联系邮箱、生效日期和公开 HTTPS 地址；应用内目前只有无障碍显著披露与首页简要说明，尚未提供完整隐私政策入口。这些项目完成前不能标记为可正式提交。
 
 手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先验证 G23 小指静音/恢复、保持不重触发、释放后可再触发以及不误判比心；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1 秒。G18/G19 画圈识别已经移除，不再测试旧画圈音量流程。
 
 荣耀机型注意：安装时保持手机解锁并确认 USB 安装弹窗；无障碍授权丢失时引导用户在 设置→应用→魔法手势→电池 关闭"自动管理"（详见 §8.1/§10.1 of 旧文档记录，或提交 95864c6 系列）。
 
-## 9. Git 状态（2026-10-03 15:52 核对）
+## 9. Git 状态（2026-10-04 17:01 核对）
 
-- 分支 `main`，HEAD = `4d79a86`（`修爪形拖动为滚动语义，并修复 G07/G08 与 G35 互相抢帧`），相对 `origin/main` **ahead 6**；尚未推送。
-- 当前未提交代码改动：`CalibrationActivity.kt`、`GestureArchitecture.kt`、`GestureUnlock.kt`、`MainActivity.kt` 为本轮统一手势名称；`GestureEngineReplayTest.kt` 含本轮反馈文案断言，同时已有小指释放/抓取独占测试改动；`CameraProbeService.kt` 含最新名称以及此前未提交的静音结果文案修复；`GestureEngine.kt` 含最新反馈名称以及此前未提交的小指释放宽限和抓取独占修复。
-- 当前未提交文档：`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`、`REQUIREMENTS_CHANGELOG.md`、本交接文档。
-- 当前新增项目资产：`app/src/main/res/drawable-nodpi/gesture_two_finger_gun.png`，本轮由内置 imagegen 根据现有手势图风格生成，透明背景，供 G35 首页指南使用。
-- 当前另有未跟踪 `w.xml`、`window.xml`，来源和用途未确认，不属于本轮名称/图片任务；禁止擅自删除或夹带提交。
-- `git diff --check` 通过，仅显示 Windows LF→CRLF 提示；`testDebugUnitTest assembleDebug` 已通过（103/103）。本轮未提交、未推送。
+- 工程：`E:\2026\MagicGesture-v0.9`；分支 `main`，HEAD = `17d9452`，相对 `origin/main` **ahead 9**；远程 `origin` 为 Gitee、`github` 为 GitHub。本轮未提交、未推送。
+- 当前未提交代码改动包括本轮 G03/G04/G09/G10 收敛、校准设置即时生效及上架权限收敛；`AndroidManifest.xml` 明确移除 MediaPipe DataTransport 传递合并的网络与网络状态权限。
+- 当前未提交文档：`AGENTS.md`、`README.md`、`RELEASE_CHANGES.md`、`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`、`REQUIREMENTS_CHANGELOG.md`、`PRIVACY_POLICY.md`、`APP_STORE_REVIEW_GUIDE.md`、本交接文档，均已同步本轮产品边界、权限处理、隐私草案和验证状态。
+- 验证：针对性映射/解锁测试与灵敏度回放测试通过；完整 `testDebugUnitTest assembleDebug assembleRelease bundleRelease lintRelease --rerun-tasks` 成功，124/124 JVM 测试通过；Debug/Release APK 权限清单均无 `INTERNET`/`ACCESS_NETWORK_STATE`；Release APK v2 签名及 16KB 页面对齐通过；`git diff --check` 通过，仅显示 Windows LF→CRLF 提示。
+- 未验证：新 Release APK 未安装，无网络权限下的 MediaPipe 启动和识别仍需真机回归；G03/G04/G09/G10 在升级安装后的开关迁移、首页未绑定展示、基础 7 个编号和新签到顺序均未做真机验收；轨迹识别没有开发。
 
 ## 10. 文件速查
 

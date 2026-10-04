@@ -43,14 +43,14 @@ Camera frame -> Hand Landmarker -> Gesture detector/state machine
 |---|---|---|---|---|---|
 | G01 | 指尖移动 | 移动光标 | Continuous | 冷却白名单 | 已实现 |
 | G02 | 指尖轻点 | 点击 | Discrete | 成功后冷却，光标继续 | 已实现 |
-| G03 | 指尖上挑 | 上滑 | Dynamic | WAIT_RELEASE | 已实现 |
-| G04 | 指尖下挑 | 下滑 | Dynamic | WAIT_RELEASE | 已实现 |
+| G03 | 轨迹预留一 | 未绑定 | Dynamic | 出厂默认关闭，编号保留给二期轨迹动作；旧动态事件仅作升级兼容 | 已预留，轨迹未开发 |
+| G04 | 轨迹预留二 | 未绑定 | Dynamic | 出厂默认关闭，与 G03 共用开关；编号保留给二期轨迹动作 | 已预留，轨迹未开发 |
 | G05 | 并掌上挥 | 上滑 | Dynamic | WAIT_RELEASE | 已实现 |
 | G06 | 并掌下挥 | 下滑 | Dynamic | WAIT_RELEASE | 已实现 |
 | G07 | 并掌左挥 | 左滑/返回映射 | Dynamic | WAIT_RELEASE | 已实现 |
 | G08 | 并掌右挥 | 右滑/桌面映射 | Dynamic | WAIT_RELEASE | 已实现 |
-| G09 | 单指左挑 | 左滑/返回映射 | Dynamic | WAIT_RELEASE | 已实现 |
-| G10 | 单指右挑 | 右滑/桌面映射 | Dynamic | WAIT_RELEASE | 已实现 |
+| G09 | 轨迹预留三 | 未绑定 | Dynamic | 出厂默认关闭，编号保留给二期轨迹动作；单指四向滑动改由 G05–G08 并掌覆盖 | 已预留，轨迹未开发 |
+| G10 | 轨迹预留四 | 未绑定 | Dynamic | 出厂默认关闭，编号保留给二期轨迹动作；单指四向滑动改由 G05–G08 并掌覆盖 | 已预留，轨迹未开发 |
 | G11 | V 手势 | 自拍 | Hold | 保持确认、3 秒倒计时、保存前置画面、释放复位 | 已实现 |
 | G12 | 指尖比心 | 双击点赞 | Hold | 约 0.6 秒、释放复位 | 已实现 |
 | G13 | 开合掌 | 截图 | Sequence | 分阶段确认、释放复位 | 已实现 |
