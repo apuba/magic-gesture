@@ -503,8 +503,33 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         r.cooldown()                             // hand lowered while frozen
         r.feed(17, ::restPose)                   // 850ms gone after resuming: release done
-        r.feed(22, ::pinkyOnlyPose)
+        r.feed(25, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * OK is thumb-tip onto index-tip with the other three fingers up, so finger by finger it reads
+     * as an open palm with four fingers out. Reported 2026-10-04: after any open palm — the hand
+     * rising into frame, a wave — the open-app sequence either claimed it (app #4 opened) or the
+     * G13 pipeline held the frames, and OK never fired.
+     */
+    @Test fun okAfterAnOpenPalmFiresOkAndNeverOpensAnApp() {
+        val r = Replay()
+        r.feed(10, ::spreadPalm)                  // 500ms: every open-palm pipeline arms
+        r.feed(20, ::okPose)                      // 1s: OK must win the hand
+        assertEquals(1, r.events.countOf<GestureEvent.Ok>())
+        assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
+        assertEquals(0, r.events.countOf<GestureEvent.Screenshot>())
+    }
+
+    /** Same claim, arrived at mid-transition: a slot locked while the hand was still closing. */
+    @Test fun okRescuesTheHandFromASlotThatLockedOnTheWayIn() {
+        val r = Replay()
+        r.feed(10, ::spreadPalm)
+        r.feedPoses(morph(spreadPalm(), okPose(), 6))   // 250ms crossing the finger counts
+        r.feed(20, ::okPose)
+        assertEquals(1, r.events.countOf<GestureEvent.Ok>())
+        assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
     }
 
     @Test fun okHoldFiresConfirmOnce() {

@@ -336,6 +336,12 @@ class GestureEngine(
             dist(points[8], points[0]) < dist(points[6], points[0]) * 1.08f &&
             points[4].y < points[3].y - handScale * .18f
         val okPose = dist(points[4], points[8]) / handScale < .30f && middleOpen && ringOpen && pinkyOpen
+        // Counted finger by finger, OK is four fingers out: the index only curls far enough to meet
+        // the thumb while the other three stay up, so it satisfies the open palm and slot 4.
+        // Reported 2026-10-04: the open-app sequence claimed the pose and launched an app instead of
+        // letting OK fire, and the palm sequences treated OK as an open palm and swallowed every
+        // frame so OK never fired at all. While OK itself is enabled the shape belongs to G21 alone.
+        val okClaimsHand = features.ok && okPose
         // Provisional one-hand definitions; thresholds must be calibrated on real devices.
         val lotusPose = dist(points[4], points[16]) / handScale < .30f &&
             indexOpen && middleOpen && pinkyOpen && dist(points[4], points[12]) / handScale > .38f
@@ -493,12 +499,18 @@ class GestureEngine(
             "拇指" to thumbOpen, "食指" to indexOpen, "中指" to middleOpen,
             "无名指" to ringOpen, "小指" to pinkyOpen
         ).filter { it.second }.joinToString("、") { it.first }.ifEmpty { "收拢的手" }
+        // Same hand, two claimants: OK must not queue behind a sequence it never started. If G13
+        // armed on an earlier open palm, clear it here instead of letting it swallow OK's frames.
+        if (okClaimsHand && screenshotSequence == ScreenshotSequence.WAIT_FIST) {
+            screenshotSequence = ScreenshotSequence.IDLE
+        }
         if (advanceAppSequence(
-                screenshotPalmOpen,
-                slotExt(8, 6) && middleFolded && ringFolded && pinkyFolded && !thumbOpen,
-                slotExt(8, 6) && slotExt(12, 10) && ringFolded && pinkyFolded && !thumbOpen,
-                slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && pinkyFolded && !thumbOpen,
-                slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && slotExt(20, 18) && !thumbOpen,
+                screenshotPalmOpen && !okClaimsHand,
+                !okClaimsHand && slotExt(8, 6) && middleFolded && ringFolded && pinkyFolded && !thumbWideOpen,
+                !okClaimsHand && slotExt(8, 6) && slotExt(12, 10) && ringFolded && pinkyFolded && !thumbWideOpen,
+                !okClaimsHand && slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && pinkyFolded && !thumbWideOpen,
+                !okClaimsHand && slotExt(8, 6) && slotExt(12, 10) && slotExt(16, 14) && slotExt(20, 18) && !thumbWideOpen,
+                okClaimsHand,
                 fingersSeen,
                 now,
                 output
@@ -642,11 +654,19 @@ class GestureEngine(
             indexClick = IndexClick.READY
             indexClickPoint = null
         }
+        // A finger heart holds its index straight up, which is exactly what the horizontal-index
+        // swipe below reads as "vertical index, start swiping left/right". Left alone that branch
+        // claimed every frame and Like could never fire while the index swipes were enabled
+        // (verified offline: default features produced 0 likes, disabling scroll produced 1).
+        // The thresholds match the heart's contact test above, so the two stay a single decision.
+        val heartContact = dist(points[4], points[8]) / handScale < .46f ||
+            dist(points[4], points[6]) / handScale < .40f ||
+            dist(points[4], points[5]) / handScale < .32f
         // A sequence already running owns the hand, so it is advanced before the static holds: the
         // screenshot cycle's fist stage would otherwise be claimed as a PlayPause hold and the
         // sequence would never complete.
         if (screenshotSequence != ScreenshotSequence.IDLE &&
-            advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, closedFist, palm, points[0], now, output)
+            advanceOpenPalmSequence(directionPalm && !okClaimsHand, screenshotPalmOpen && !okClaimsHand, indexOnlyPose, indexAngleDegrees, closedFist, heartContact, palm, points[0], now, output)
         ) {
             if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
                 indexClick = IndexClick.READY
@@ -669,7 +689,8 @@ class GestureEngine(
         if (features.playPause && advanceStaticHold(closedFist, now, GestureEvent.PlayPause, { fistHold }, { fistHold = it }, { fistHoldAt }, { fistHoldAt = it }, output, holdMs = 1000L, label = "握拳保持", releaseGraceMs = RELEASE_GRACE_MS)) return output
         if (features.lotusRecents && advanceStaticHold(lotusPose, now, GestureEvent.LotusRecents, { lotusHold }, { lotusHold = it }, { lotusHoldAt }, { lotusHoldAt = it }, output)) return output
         if (features.orchidBack && advanceStaticHold(orchidPose, now, GestureEvent.OrchidBack, { orchidHold }, { orchidHold = it }, { orchidHoldAt }, { orchidHoldAt = it }, output)) return output
-        if (advanceOpenPalmSequence(directionPalm, screenshotPalmOpen, indexOnlyPose, indexAngleDegrees, closedFist, palm, points[0], now, output)) {
+
+        if (advanceOpenPalmSequence(directionPalm && !okClaimsHand, screenshotPalmOpen && !okClaimsHand, indexOnlyPose, indexAngleDegrees, closedFist, heartContact, palm, points[0], now, output)) {
             if (output.any { it is GestureEvent.Swipe || it is GestureEvent.HorizontalSwipe }) {
                 indexClick = IndexClick.READY
                 indexClickPoint = null
@@ -1140,6 +1161,7 @@ class GestureEngine(
         twoFinger: Boolean,
         threeFinger: Boolean,
         fourFinger: Boolean,
+        okClaimsHand: Boolean,
         fingersSeen: String,
         now: Long,
         output: MutableList<GestureEvent>
@@ -1192,6 +1214,14 @@ class GestureEngine(
                 return false
             }
             AppSequence.HOLDING -> {
+                // A slot locked before the hand finished closing into OK must be dropped the moment
+                // OK is recognisable, not after the 500ms cancel grace: that grace runs while the
+                // user is already holding OK still, which is exactly when the slot timer completes.
+                if (okClaimsHand) {
+                    appSequence = AppSequence.IDLE
+                    appHoldAt = now
+                    return false
+                }
                 // Folding naturally crosses other slots on the way (e.g. the thumb folds
                 // first -> slot 4 shows up, then the pinky joins -> slot 3). Follow the
                 // latest slot and restart the hold timer instead of cancelling outright.
@@ -1227,6 +1257,11 @@ class GestureEngine(
                 return true
             }
             AppSequence.WAIT_RELEASE -> {
+                // A finished sequence must not hold the hand either: these frames are swallowed too.
+                if (okClaimsHand) {
+                    appSequence = AppSequence.IDLE
+                    return false
+                }
                 // Wait for the hand to relax (no folded slot pose, no open palm) before re-arming.
                 if (now - appHoldAt > 600 && !palmOpen && slotPose == 0) {
                     appSequence = AppSequence.IDLE
