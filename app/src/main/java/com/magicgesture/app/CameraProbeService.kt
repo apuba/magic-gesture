@@ -21,7 +21,9 @@ import android.media.ToneGenerator
 import android.media.AudioManager
 import android.provider.MediaStore
 import android.os.*
+import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Size
 import android.view.Display
 import android.view.Surface
 import android.view.KeyEvent
@@ -43,6 +45,7 @@ class CameraProbeService : Service() {
         private const val PLAYBACK_RECHECK_DELAY_MS = 700L
         private const val MUSIC_APP_SESSION_DELAY_MS = 1_200L
         private const val PLAYBACK_FINAL_CHECK_DELAY_MS = 2_000L
+        private const val SELFIE_JPEG_OUTPUT_QUALITY = 95
     }
 
     private val channel = "camera_probe"
@@ -53,6 +56,8 @@ class CameraProbeService : Service() {
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
     private var selfieReader: ImageReader? = null
+    private var selfieJpegSizes: List<Size> = emptyList()
+    private var selfieJpegSizeIndex = -1
     private var cameraOpening = false
     private var cameraGeneration = 0
     @Volatile private var stopped = false
@@ -332,23 +337,13 @@ class CameraProbeService : Service() {
                     } catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
                 } }, handler)
             }
-            val bestJpegSize = characteristics
+            selfieJpegSizes = characteristics
                 .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                 ?.getOutputSizes(ImageFormat.JPEG)
-                ?.maxByOrNull { it.width.toLong() * it.height.toLong() }
-            selfieReader = bestJpegSize?.let { size ->
-                Log.d("CameraProbe", "high quality selfie size ${size.width}x${size.height}")
-                ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2).apply {
-                    setOnImageAvailableListener({ source ->
-                        source.acquireLatestImage()?.use { image ->
-                            val buffer = image.planes[0].buffer
-                            val bytes = ByteArray(buffer.remaining())
-                            buffer.get(bytes)
-                            completeHighQualitySelfie(bytes)
-                        }
-                    }, handler)
-                }
-            }
+                ?.sortedByDescending { it.width.toLong() * it.height.toLong() }
+                .orEmpty()
+            selfieJpegSizeIndex = -1
+            advanceSelfieReader()
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     cameraOpening = false
@@ -442,6 +437,15 @@ class CameraProbeService : Service() {
             else -> 0
         }
     }
+
+    /** Physical display pixels at the moment the selfie starts; system-bar insets are irrelevant. */
+    private fun currentDisplayPixelSize(): SelfieFraming.Size {
+        val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.getRealMetrics(metrics)
+        return SelfieFraming.Size(metrics.widthPixels, metrics.heightPixels)
+    }
     private fun configure(device: CameraDevice, includeHighQualitySelfie: Boolean = true) {
         try {
             val surface: Surface = reader?.surface ?: run { fail("图像读取器已关闭"); return }
@@ -462,17 +466,40 @@ class CameraProbeService : Service() {
                 override fun onConfigureFailed(s: CameraCaptureSession) {
                     s.close()
                     if (includeHighQualitySelfie && selfieReader != null) {
-                        // Some legacy cameras cannot combine a preview stream with their largest
-                        // JPEG stream. Keep gesture recognition available and use preview fallback.
-                        Log.w("CameraProbe", "high quality selfie stream unsupported; using preview fallback")
-                        selfieReader?.close()
-                        selfieReader = null
-                        configure(device, includeHighQualitySelfie = false)
+                        // Some devices cannot combine their largest JPEG with the 640x480 YUV
+                        // recognition stream. Try every smaller JPEG before accepting preview-only
+                        // quality; the first configured candidate is the best stable one.
+                        if (advanceSelfieReader()) {
+                            Log.w("CameraProbe", "selfie stream combination unsupported; trying a smaller JPEG")
+                            configure(device, includeHighQualitySelfie = true)
+                        } else {
+                            Log.w("CameraProbe", "all high quality selfie streams unsupported; using preview fallback")
+                            configure(device, includeHighQualitySelfie = false)
+                        }
                     } else recoverCamera("相机会话中断，等待恢复")
                 }
             }, handler)
         } catch (e: CameraAccessException) { recoverCamera("相机会话中断，等待恢复") }
         catch (e: Exception) { fail("配置失败：${e.javaClass.simpleName}") }
+    }
+
+    private fun advanceSelfieReader(): Boolean {
+        selfieReader?.close()
+        selfieReader = null
+        selfieJpegSizeIndex++
+        val size = selfieJpegSizes.getOrNull(selfieJpegSizeIndex) ?: return false
+        Log.d("CameraProbe", "high quality selfie candidate ${size.width}x${size.height}")
+        selfieReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2).apply {
+            setOnImageAvailableListener({ source ->
+                source.acquireLatestImage()?.use { image ->
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    completeHighQualitySelfie(bytes)
+                }
+            }, handler)
+        }
+        return true
     }
     private fun recoverCamera(message: String) {
         if (stopped) return
@@ -500,6 +527,7 @@ class CameraProbeService : Service() {
     private fun captureSelfie(callback: (Boolean) -> Unit) {
         if (selfieInProgress) { callback(false); return }
         selfieInProgress = true
+        val displaySize = currentDisplayPixelSize()
         // Countdown freezes every gesture (including the cursor), so the hand can be lowered right away.
         // Pausing the pipeline also clears holds and trajectories: nothing may fire when it resumes.
         pipeline?.pause()
@@ -517,8 +545,8 @@ class CameraProbeService : Service() {
                 return@postDelayed
             }
             captureHighQualitySelfie { jpeg ->
-                if (jpeg != null) finishHighQualitySelfie(jpeg, callback)
-                else capturePreviewSelfie(activePipeline, callback)
+                if (jpeg != null) finishHighQualitySelfie(jpeg, displaySize, callback)
+                else capturePreviewSelfie(activePipeline, displaySize, callback)
             }
         }, 3_000L)
     }
@@ -565,23 +593,43 @@ class CameraProbeService : Service() {
         pendingHighQualitySelfie = null
         callback(jpeg)
     }
-    private fun finishHighQualitySelfie(jpeg: ByteArray, callback: (Boolean) -> Unit) {
+    private fun finishHighQualitySelfie(
+        jpeg: ByteArray,
+        displaySize: SelfieFraming.Size,
+        callback: (Boolean) -> Unit
+    ) {
         selfieWriter.execute {
             playShutter()
-            val preview = previewThumbnail(jpeg)
-            val saved = saveSelfie(jpeg)
+            val framed = framedSelfieBitmap(jpeg, displaySize)
+            val preview = framed?.let(::previewThumbnail) ?: previewThumbnail(jpeg)
+            val saved = if (framed != null) {
+                try {
+                    saveSelfie(framed)
+                } finally {
+                    framed.recycle()
+                }
+            } else {
+                // Framing is best effort: a decode/OOM failure must not throw away a valid
+                // high-quality capture. Preserve the upright original as the safe fallback.
+                saveSelfie(jpeg)
+            }
             endSelfieFreeze()
             if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
             callback(saved)
         }
     }
-    private fun capturePreviewSelfie(activePipeline: HandPipeline, callback: (Boolean) -> Unit) {
+    private fun capturePreviewSelfie(
+        activePipeline: HandPipeline,
+        displaySize: SelfieFraming.Size,
+        callback: (Boolean) -> Unit
+    ) {
         activePipeline.captureNextFrame { bitmap ->
             selfieWriter.execute {
                 playShutter()
-                val preview = previewThumbnail(bitmap)
-                val saved = saveSelfie(bitmap)
-                bitmap.recycle()
+                val framed = frameSelfieBitmap(bitmap, displaySize)
+                val preview = previewThumbnail(framed)
+                val saved = saveSelfie(framed)
+                framed.recycle()
                 endSelfieFreeze()
                 if (saved && preview != null) overlayIndicator.showSelfiePreview(preview) else preview?.recycle()
                 callback(saved)
@@ -841,7 +889,9 @@ class CameraProbeService : Service() {
                 }
             }
             val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-            val saved = contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 94, it) } == true
+            val saved = contentResolver.openOutputStream(uri)?.use {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, SELFIE_JPEG_OUTPUT_QUALITY, it)
+            } == true
             if (!saved) {
                 contentResolver.delete(uri, null, null)
                 return false
@@ -869,11 +919,52 @@ class CameraProbeService : Service() {
         if (rotation == 0) return saveSelfieBytes { output -> output.write(jpeg) }
         val upright = uprightBitmap(jpeg, rotation) ?: return saveSelfieBytes { output -> output.write(jpeg) }
         return try {
-            saveSelfieBytes { output -> upright.compress(Bitmap.CompressFormat.JPEG, 94, output) }
+            saveSelfieBytes { output ->
+                upright.compress(Bitmap.CompressFormat.JPEG, SELFIE_JPEG_OUTPUT_QUALITY, output)
+            }
         } finally {
             upright.recycle()
         }
     }
+
+    /**
+     * Decodes the highest-quality JPEG, makes its pixels upright, then crops only the excess edges
+     * needed to match the physical display aspect ratio. The crop keeps the largest possible pixel
+     * dimensions; it never downsizes to the display resolution and never stretches the subject.
+     */
+    private fun framedSelfieBitmap(jpeg: ByteArray, displaySize: SelfieFraming.Size): Bitmap? {
+        val rotation = selfieRotationDegrees(jpeg)
+        val upright = uprightBitmap(jpeg, rotation) ?: return null
+        return frameSelfieBitmap(upright, displaySize)
+    }
+
+    private fun frameSelfieBitmap(source: Bitmap, displaySize: SelfieFraming.Size): Bitmap {
+        return try {
+            val crop = SelfieFraming.centerCrop(
+                SelfieFraming.Size(source.width, source.height),
+                displaySize
+            )
+            if (crop.left == 0 && crop.top == 0 && crop.width == source.width && crop.height == source.height) {
+                source
+            } else {
+                Bitmap.createBitmap(source, crop.left, crop.top, crop.width, crop.height).also { framed ->
+                    Log.d(
+                        "CameraProbe",
+                        "selfie framed ${source.width}x${source.height} -> ${framed.width}x${framed.height} " +
+                            "for display ${displaySize.width}x${displaySize.height}"
+                    )
+                    if (framed !== source) source.recycle()
+                }
+            }
+        } catch (e: OutOfMemoryError) {
+            Log.e("CameraProbe", "selfie framing ran out of memory; preserving uncropped image", e)
+            source
+        } catch (e: Exception) {
+            Log.e("CameraProbe", "selfie framing failed; preserving uncropped image", e)
+            source
+        }
+    }
+
     /** Clockwise rotation the captured JPEG declares; 0 when its pixels are already upright. */
     private fun selfieRotationDegrees(jpeg: ByteArray): Int = try {
         val constant = ExifInterface(ByteArrayInputStream(jpeg))
@@ -887,6 +978,9 @@ class CameraProbeService : Service() {
     }
     private fun uprightBitmap(jpeg: ByteArray, rotation: Int): Bitmap? = try {
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.let { rotateBitmap(it, rotation) }
+    } catch (e: OutOfMemoryError) {
+        Log.e("CameraProbe", "selfie decode ran out of memory", e)
+        null
     } catch (e: Exception) {
         Log.w("CameraProbe", "selfie rotation failed", e)
         null
