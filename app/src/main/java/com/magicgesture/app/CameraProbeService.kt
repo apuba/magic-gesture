@@ -190,6 +190,11 @@ class CameraProbeService : Service() {
                     pipeline?.updateSensitivity(GesturePreferences.movementScale(this))
                     overlayIndicator.showFeedback("识别灵敏度已即时更新")
                 }
+                key == GesturePreferences.FEEDBACK -> {
+                    val enabled = GesturePreferences.feedbackEnabled(this)
+                    overlayIndicator.updateFeedbackEnabled(enabled)
+                    if (enabled) overlayIndicator.showFeedback("识别反馈已开启")
+                }
             }
         }.also {
             getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(it)

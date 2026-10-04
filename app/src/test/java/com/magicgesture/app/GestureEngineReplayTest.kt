@@ -851,7 +851,8 @@ class GestureEngineReplayTest {
     }
 
     @Test fun horizontalIndexFlickUpFiresSingleIndexFingerSwipe() {
-        val r = Replay()
+        // The detector remains available for compatibility, but the product default is off.
+        val r = Replay(GestureFeatureConfig(indexVerticalScroll = true))
         r.feed(4, ::horizontalIndex)              // recognized as horizontal index
         r.feed(2, ::horizontalIndexFlicked)        // upward flick
         val swipes = r.events.filterIsInstance<GestureEvent.Swipe>()
@@ -868,7 +869,7 @@ class GestureEngineReplayTest {
     // index angle slowly, and that drift must never turn into a scroll. Measured on device (2026-10-04):
     // a real flick jumps 22.9deg..40.9deg inside 100-180ms, cursor steering stays under 4deg.
     @Test fun slowlyDriftingIndexAngleNeverScrolls() {
-        val r = Replay()
+        val r = Replay(GestureFeatureConfig(indexVerticalScroll = true))
         r.feed(4, ::horizontalIndex)
         r.feedPoses((1..12).map { horizontalIndexTipStep(it, 12) })
         assertEquals(0, r.events.filterIsInstance<GestureEvent.Swipe>().size)
@@ -955,6 +956,18 @@ class GestureEngineReplayTest {
         var dx2 = 0f
         r.feed(5) { dx2 -= .012f; twoFingerHand(dx2) }
         assertEquals(1, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
+
+    @Test fun allThreeSensitivityOptionsHaveDistinctOrderedScales() {
+        val high = GesturePreferences.movementScaleFor("high")
+        val normal = GesturePreferences.movementScaleFor("normal")
+        val stable = GesturePreferences.movementScaleFor("stable")
+
+        assertEquals(.78f, high)
+        assertEquals(1f, normal)
+        assertEquals(1.28f, stable)
+        assertTrue(high < normal)
+        assertTrue(normal < stable)
     }
 
     /** 摆好姿势后静止 6 秒再挥：超过动作窗口只重置基准，不再要求松手重来。 */

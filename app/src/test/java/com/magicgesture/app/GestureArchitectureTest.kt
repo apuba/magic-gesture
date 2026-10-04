@@ -95,16 +95,12 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(orchid, GestureFeatureConfig(orchidBack = false)))
     }
 
-    @Test fun directionGestureSourceAndDirectionResolveToG03ThroughG10() {
+    @Test fun palmDirectionsResolveWhileReservedIndexDirectionsStayUnbound() {
         val cases = listOf(
-            GestureEvent.Swipe(true, GestureEvent.MotionSource.INDEX_FINGER) to GestureCode.G03,
-            GestureEvent.Swipe(false, GestureEvent.MotionSource.INDEX_FINGER) to GestureCode.G04,
             GestureEvent.Swipe(true, GestureEvent.MotionSource.PALM) to GestureCode.G05,
             GestureEvent.Swipe(false, GestureEvent.MotionSource.PALM) to GestureCode.G06,
             GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM) to GestureCode.G07,
-            GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.PALM) to GestureCode.G08,
-            GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER) to GestureCode.G09,
-            GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER) to GestureCode.G10
+            GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.PALM) to GestureCode.G08
         )
 
         cases.forEach { (event, expectedCode) ->
@@ -112,13 +108,23 @@ class GestureArchitectureTest {
             assertEquals(expectedCode, mapped.mapping.code)
             assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.mapping.cooldownPolicy)
         }
+        assertNull(mappings.resolve(GestureEvent.Swipe(true, GestureEvent.MotionSource.INDEX_FINGER)))
+        assertNull(mappings.resolve(GestureEvent.Swipe(false, GestureEvent.MotionSource.INDEX_FINGER)))
+        assertNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER)))
+        assertNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER)))
     }
 
     @Test fun directionFeatureGatesAreIndependentPerHomeCard() {
         val scroll = requireNotNull(mappings.resolve(GestureEvent.Swipe(true, GestureEvent.MotionSource.PALM))).mapping
         val palmLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
-        val indexLeftScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
-        val indexRightScroll = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val remapped = GestureMappingManager(
+            mapOf(
+                GestureCode.G09 to GestureAction.SCROLL_LEFT,
+                GestureCode.G10 to GestureAction.SCROLL_RIGHT
+            )
+        )
+        val indexLeftScroll = requireNotNull(remapped.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexRightScroll = requireNotNull(remapped.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
         assertFalse(gate.allows(scroll, GestureFeatureConfig(palmVerticalScroll = false)))
         assertTrue(gate.allows(scroll, GestureFeatureConfig(palmVerticalScroll = true)))
@@ -129,11 +135,17 @@ class GestureArchitectureTest {
         assertTrue(gate.allows(indexLeftScroll, GestureFeatureConfig(indexLeftScroll = true, indexRightScroll = false)))
     }
 
-    @Test fun allHorizontalWavesScrollLeftAndRight() {
+    @Test fun palmHorizontalWavesScrollAndReservedIndexWavesKeepDynamicTypeWhenRemapped() {
         val left = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.PALM))).mapping
         val right = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.PALM))).mapping
-        val indexLeft = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
-        val indexRight = requireNotNull(mappings.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val remapped = GestureMappingManager(
+            mapOf(
+                GestureCode.G09 to GestureAction.SCROLL_LEFT,
+                GestureCode.G10 to GestureAction.SCROLL_RIGHT
+            )
+        )
+        val indexLeft = requireNotNull(remapped.resolve(GestureEvent.HorizontalSwipe(true, GestureEvent.MotionSource.INDEX_FINGER))).mapping
+        val indexRight = requireNotNull(remapped.resolve(GestureEvent.HorizontalSwipe(false, GestureEvent.MotionSource.INDEX_FINGER))).mapping
 
         assertEquals(GestureCode.G07, left.code)
         assertEquals(GestureAction.SCROLL_LEFT, left.action)
@@ -141,8 +153,14 @@ class GestureArchitectureTest {
         assertEquals(GestureAction.SCROLL_RIGHT, right.action)
         assertEquals(GestureCode.G09, indexLeft.code)
         assertEquals(GestureAction.SCROLL_LEFT, indexLeft.action)
+        assertEquals(GestureType.DYNAMIC, indexLeft.type)
         assertEquals(GestureCode.G10, indexRight.code)
         assertEquals(GestureAction.SCROLL_RIGHT, indexRight.action)
+        assertEquals(GestureType.DYNAMIC, indexRight.type)
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G03))
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G04))
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G09))
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G10))
     }
 
     /** G34 "666" ships unbound on purpose: the pipeline runs, the action is chosen by the user. */

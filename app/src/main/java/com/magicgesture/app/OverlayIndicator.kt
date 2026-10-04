@@ -33,7 +33,7 @@ class OverlayIndicator(
 
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
-    private val feedbackEnabled = GesturePreferences.feedbackEnabled(context)
+    @Volatile private var feedbackEnabled = GesturePreferences.feedbackEnabled(context)
     private val visualSize = dp(32)
     private val touchSize = dp(44)
     private val margin = dp(8)
@@ -112,9 +112,19 @@ class OverlayIndicator(
         view?.post { view?.startProtection(durationMs) }
     }
 
+    /** Applies the preference live; disabling also removes feedback already visible on screen. */
+    fun updateFeedbackEnabled(enabled: Boolean) {
+        feedbackEnabled = enabled
+        if (!enabled) main.post {
+            main.removeCallbacks(hideFeedback)
+            hideFeedback.run()
+        }
+    }
+
     fun showFeedback(message: String, progress: Int? = null) {
-        if (!feedbackEnabled || !Settings.canDrawOverlays(context)) return
+        if (!Settings.canDrawOverlays(context)) return
         main.post {
+            if (!feedbackEnabled) return@post
             main.removeCallbacks(hideFeedback)
             val pill = feedbackView ?: TextView(context).apply {
                 setTextColor(Color.WHITE)

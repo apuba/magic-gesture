@@ -20,7 +20,7 @@ object GestureUnlockPlan {
 
     /** 正式用户初始拥有的 7 个编号。 */
     val BASE_CODES: List<GestureCode> = listOf(
-        GestureCode.G01, GestureCode.G02, GestureCode.G03, GestureCode.G04,
+        GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06,
         GestureCode.G24, GestureCode.G11, GestureCode.G13
     )
 
@@ -34,10 +34,13 @@ object GestureUnlockPlan {
         listOf(GestureCode.G16, GestureCode.G17),
         listOf(GestureCode.G18, GestureCode.G19),
         listOf(GestureCode.G14, GestureCode.G15),
-        listOf(GestureCode.G05, GestureCode.G06),
-        listOf(GestureCode.G07, GestureCode.G08, GestureCode.G09, GestureCode.G10),
+        listOf(GestureCode.G07, GestureCode.G08),
         listOf(GestureCode.G25, GestureCode.G27, GestureCode.G28),
-        listOf(GestureCode.G12, GestureCode.G20, GestureCode.G26, GestureCode.G34, GestureCode.G35)
+        listOf(GestureCode.G12, GestureCode.G20),
+        listOf(
+            GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10,
+            GestureCode.G26, GestureCode.G34, GestureCode.G35
+        )
     )
 
     /** 功能包在首页与签到卡片上的中文说明，顺序与 [PACKAGES] 一致。 */
@@ -50,10 +53,10 @@ object GestureUnlockPlan {
         "张掌收指打开常用 App",
         "张掌收指打开更多 App",
         "莲花指与兰花指",
-        "并掌上下滚动",
-        "横向滚动手势",
+        "并掌左右滚动",
         "通知栏与系统导航",
-        "点赞手势与高级手势"
+        "点赞手势",
+        "轨迹预留与高级手势"
     )
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size

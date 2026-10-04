@@ -15,14 +15,14 @@ enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G01 to "指尖移动",
     GestureCode.G02 to "指尖轻点",
-    GestureCode.G03 to "指尖上挑",
-    GestureCode.G04 to "指尖下挑",
+    GestureCode.G03 to "轨迹预留一",
+    GestureCode.G04 to "轨迹预留二",
     GestureCode.G05 to "并掌上挥",
     GestureCode.G06 to "并掌下挥",
     GestureCode.G07 to "并掌左挥",
     GestureCode.G08 to "并掌右挥",
-    GestureCode.G09 to "单指左挑",
-    GestureCode.G10 to "单指右挑",
+    GestureCode.G09 to "轨迹预留三",
+    GestureCode.G10 to "轨迹预留四",
     GestureCode.G11 to "V 手势",
     GestureCode.G12 to "指尖比心",
     GestureCode.G13 to "开合掌",
@@ -201,6 +201,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         val mapping = when {
             overridden == GestureAction.NONE -> return null
             base != null && overridden != null && overridden != base.action -> base.copy(action = overridden)
+            base?.action == GestureAction.NONE -> return null
             base != null -> base
             // A deliberately unbound gesture (e.g. G26) can still carry a user override; all
             // unbound pipelines are hold/trajectory gestures, so HOLD fits them.
@@ -225,7 +226,8 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
         /** Codes that only exist in the enum as placeholders; no detector, no event. */
         private val NO_PIPELINE_CODES = emptySet<GestureCode>()
 
-        fun defaultActionOf(code: GestureCode): GestureAction? = defaultMappings[code]?.action
+        fun defaultActionOf(code: GestureCode): GestureAction? =
+            defaultMappings[code]?.action?.takeUnless { it == GestureAction.NONE }
 
         private fun dynamicMapping(code: GestureCode, action: GestureAction) = GestureMapping(
             code,
@@ -247,16 +249,19 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.CLICK,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
-        GestureCode.G03 to dynamicMapping(GestureCode.G03, GestureAction.SCROLL_UP),
-        GestureCode.G04 to dynamicMapping(GestureCode.G04, GestureAction.SCROLL_DOWN),
+        // G03/G04/G09/G10 keep their existing detector metadata for compatibility and optional
+        // remapping, but ship disabled and unbound. Their codes are reserved for phase-two
+        // trajectory gestures; this release does not reinterpret the old swipes as trajectories.
+        GestureCode.G03 to dynamicMapping(GestureCode.G03, GestureAction.NONE),
+        GestureCode.G04 to dynamicMapping(GestureCode.G04, GestureAction.NONE),
         GestureCode.G05 to dynamicMapping(GestureCode.G05, GestureAction.SCROLL_UP),
         GestureCode.G06 to dynamicMapping(GestureCode.G06, GestureAction.SCROLL_DOWN),
-        // The four-finger wave family G05-G08 and the index waves G09/G10 own all four
-        // scroll directions; back/home stay with G24/G14.
+        // The four-finger wave family G05-G08 owns all four scroll directions in this release;
+        // back/home stay with G24/G14.
         GestureCode.G07 to dynamicMapping(GestureCode.G07, GestureAction.SCROLL_LEFT),
         GestureCode.G08 to dynamicMapping(GestureCode.G08, GestureAction.SCROLL_RIGHT),
-        GestureCode.G09 to dynamicMapping(GestureCode.G09, GestureAction.SCROLL_LEFT),
-        GestureCode.G10 to dynamicMapping(GestureCode.G10, GestureAction.SCROLL_RIGHT),
+        GestureCode.G09 to dynamicMapping(GestureCode.G09, GestureAction.NONE),
+        GestureCode.G10 to dynamicMapping(GestureCode.G10, GestureAction.NONE),
         GestureCode.G11 to GestureMapping(
             GestureCode.G11,
             GestureType.HOLD,

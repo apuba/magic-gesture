@@ -12,25 +12,23 @@ import android.content.Context
 private const val CLAW_DRAG_DEFAULT = false
 
 /**
- * G09/G10 (single-finger left/right waves) ship off (2026-10-04). They read the same hand movement
- * as steering the cursor with G01, and the trigger is a displacement threshold with no speed term,
- * so aiming the cursor accumulated more travel than a real flick — measured on device: -0.255 while
- * slowly moving the cursor versus 0.05..0.084 for genuine waves. The palm waves G07/G08 cover
- * left/right scrolling with a shape the cursor mode never produces. Users can re-enable either.
+ * G03/G04/G09/G10 ship off (2026-10-04). A single index finger is reserved for cursor and click;
+ * four-finger waves G05-G08 cover directional scrolling. The four codes remain available for
+ * explicit remapping and are reserved for phase-two trajectory gestures.
  */
-private const val INDEX_HORIZONTAL_SCROLL_DEFAULT = false
+private const val INDEX_DIRECTIONAL_DEFAULT = false
 
 data class GestureFeatureConfig(
     val cursor: Boolean = true,
     val click: Boolean = true,
     /** Legacy aggregate value; retained so existing callers/settings migrate safely. */
     val scroll: Boolean = true,
-    val indexVerticalScroll: Boolean = scroll,
+    val indexVerticalScroll: Boolean = INDEX_DIRECTIONAL_DEFAULT,
     val palmVerticalScroll: Boolean = scroll,
     val palmLeftScroll: Boolean = scroll,
-    val indexLeftScroll: Boolean = INDEX_HORIZONTAL_SCROLL_DEFAULT,
+    val indexLeftScroll: Boolean = INDEX_DIRECTIONAL_DEFAULT,
     val palmRightScroll: Boolean = scroll,
-    val indexRightScroll: Boolean = INDEX_HORIZONTAL_SCROLL_DEFAULT,
+    val indexRightScroll: Boolean = INDEX_DIRECTIONAL_DEFAULT,
     val screenshot: Boolean = true,
     val selfie: Boolean = true,
     val like: Boolean = true,
@@ -71,8 +69,9 @@ object GesturePreferences {
     const val FILE = "gesture_settings"
     const val SENSITIVITY = "sensitivity"
     private const val REVERSE_HORIZONTAL = "reverse_horizontal"
-    private const val FEEDBACK = "feedback_enabled"
+    const val FEEDBACK = "feedback_enabled"
     const val COOLDOWN_MS = "cooldown_ms"
+    private const val INDEX_DIRECTIONAL_RETIREMENT_MIGRATED = "migration_index_directional_retirement_v1"
 
     /** Post-action lock duration, user-tunable 0.6s..4s via the calibration page slider. */
     const val MIN_COOLDOWN_MS = 600L
@@ -81,7 +80,10 @@ object GesturePreferences {
     fun sensitivity(context: Context): String = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getString(SENSITIVITY, "normal") ?: "normal"
 
-    fun movementScale(context: Context): Float = when (sensitivity(context)) {
+    fun movementScale(context: Context): Float = movementScaleFor(sensitivity(context))
+
+    /** Pure mapping kept explicit so all three UI options have a stable, testable meaning. */
+    internal fun movementScaleFor(sensitivity: String): Float = when (sensitivity) {
         "high" -> 0.78f
         "stable" -> 1.28f
         else -> 1f
@@ -99,6 +101,13 @@ object GesturePreferences {
 
     fun feedbackEnabled(context: Context): Boolean = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getBoolean(FEEDBACK, true)
+
+    /** Saved on toggle so a running overlay can apply the feedback preference immediately. */
+    fun saveFeedbackEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(FEEDBACK, enabled)
+            .apply()
+    }
 
     fun cooldownMs(context: Context): Long = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getLong(COOLDOWN_MS, GlobalCooldownManager.DEFAULT_DURATION_MS)
@@ -216,17 +225,25 @@ object GesturePreferences {
 
     fun features(context: Context): GestureFeatureConfig {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(INDEX_DIRECTIONAL_RETIREMENT_MIGRATED, false)) {
+            prefs.edit()
+                .putBoolean("feature_index_vertical_scroll", false)
+                .putBoolean("feature_index_left_scroll", false)
+                .putBoolean("feature_index_right_scroll", false)
+                .putBoolean(INDEX_DIRECTIONAL_RETIREMENT_MIGRATED, true)
+                .apply()
+        }
         val legacyScroll = prefs.getBoolean("feature_scroll", true)
         return GestureFeatureConfig(
             cursor = prefs.getBoolean("feature_cursor", true),
             click = prefs.getBoolean("feature_click", true),
             scroll = legacyScroll,
-            indexVerticalScroll = prefs.getBoolean("feature_index_vertical_scroll", legacyScroll),
+            indexVerticalScroll = prefs.getBoolean("feature_index_vertical_scroll", INDEX_DIRECTIONAL_DEFAULT),
             palmVerticalScroll = prefs.getBoolean("feature_palm_vertical_scroll", legacyScroll),
             palmLeftScroll = prefs.getBoolean("feature_palm_left_scroll", legacyScroll),
-            indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", INDEX_HORIZONTAL_SCROLL_DEFAULT),
+            indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", INDEX_DIRECTIONAL_DEFAULT),
             palmRightScroll = prefs.getBoolean("feature_palm_right_scroll", legacyScroll),
-            indexRightScroll = prefs.getBoolean("feature_index_right_scroll", INDEX_HORIZONTAL_SCROLL_DEFAULT),
+            indexRightScroll = prefs.getBoolean("feature_index_right_scroll", INDEX_DIRECTIONAL_DEFAULT),
             screenshot = prefs.getBoolean("feature_screenshot", true),
             selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
             like = prefs.getBoolean("feature_like", true),

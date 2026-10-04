@@ -146,12 +146,12 @@ class MainActivity : Activity() {
 
         content.addView(gestureCard(R.drawable.gesture_point, "指尖移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "指尖轻点", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "指尖上挑 / 指尖下挑", actionLabelOf(GestureCode.G03, GestureCode.G04), "伸出食指保持接近水平，上挑或下挑指尖。", "↕", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "G03 / G04 轨迹预留", actionLabelOf(GestureCode.G03, GestureCode.G04), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌上挥 / 并掌下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌左挥", actionLabelOf(GestureCode.G07), "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "单指左挑", actionLabelOf(GestureCode.G09), "只竖起食指并接近水平，整只手向左轻挑即可。", "←", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "G09 轨迹预留", actionLabelOf(GestureCode.G09), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌右挥", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "单指右挑", actionLabelOf(GestureCode.G10), "只竖起食指并接近水平，整只手向右轻挑即可。", "→", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_point, "G10 轨迹预留", actionLabelOf(GestureCode.G10), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 手势", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "指尖比心", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "拇指赞", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -520,7 +520,7 @@ class MainActivity : Activity() {
     private fun featureName(feature: String) = when (feature) {
         "cursor" -> "食指光标"
         "click" -> "食指弯曲点击"
-        "index_vertical_scroll" -> "指尖上挑 / 指尖下挑"
+        "index_vertical_scroll" -> "G03 / G04 轨迹预留"
         "palm_vertical_scroll" -> "四指上下挥"
         "palm_left_scroll" -> "四指左挥"
         "index_left_scroll" -> "食指左挑"

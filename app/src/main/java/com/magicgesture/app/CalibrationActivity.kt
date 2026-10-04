@@ -120,7 +120,7 @@ class CalibrationActivity : Activity() {
                 setTextColor(Color.rgb(30, 41, 59))
                 typeface = Typeface.DEFAULT_BOLD
             })
-            addView(body("选择适合你的识别灵敏度。设置会保存，并在下次启动手势控制时生效。").apply {
+            addView(body("选择适合你的识别灵敏度。灵敏度和识别反馈点击后即时生效，无需重启手势控制。").apply {
                 setPadding(0, dp(6), 0, dp(18))
             })
 
@@ -144,9 +144,13 @@ class CalibrationActivity : Activity() {
 
             feedbackSwitch = settingSwitch(
                 "显示识别反馈",
-                "在屏幕顶部显示动作名称，以及 V 字保持进度。",
+                "在屏幕顶部显示动作名称，以及 V 字保持进度；开关即时生效。",
                 GesturePreferences.feedbackEnabled(this@CalibrationActivity)
-            )
+            ).apply {
+                setOnCheckedChangeListener { _, enabled ->
+                    GesturePreferences.saveFeedbackEnabled(this@CalibrationActivity, enabled)
+                }
+            }
             addView(feedbackSwitch, blockMargins(12))
 
             addView(cooldownCard(), blockMargins(22))
@@ -169,12 +173,12 @@ class CalibrationActivity : Activity() {
             })
             cursorSwitch = featureSwitch("指尖移动", "显示并移动青色光标。", savedFeatures.cursor)
             clickSwitch = featureSwitch("指尖轻点", "只伸出食指稳定约 0.2 秒，弯曲后在 1 秒内重新伸直执行点击。", savedFeatures.click)
-            indexVerticalScrollSwitch = featureSwitch("指尖上挑 / 指尖下挑", "伸出食指保持接近水平，上挑或下挑指尖。", savedFeatures.indexVerticalScroll)
+            indexVerticalScrollSwitch = featureSwitch("G03 / G04 轨迹预留", "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", savedFeatures.indexVerticalScroll)
             palmVerticalScrollSwitch = featureSwitch("并掌上挥 / 并掌下挥", "四指并拢后整只手向上或向下挥动。", savedFeatures.palmVerticalScroll)
             palmLeftScrollSwitch = featureSwitch("并掌左挥", "四指并拢后整只手向左挥动。", savedFeatures.palmLeftScroll)
-            indexLeftScrollSwitch = featureSwitch("单指左挑", "只竖起食指，整只手向左轻挑。", savedFeatures.indexLeftScroll)
+            indexLeftScrollSwitch = featureSwitch("G09 轨迹预留", "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", savedFeatures.indexLeftScroll)
             palmRightScrollSwitch = featureSwitch("并掌右挥", "四指并拢后整只手向右挥动。", savedFeatures.palmRightScroll)
-            indexRightScrollSwitch = featureSwitch("单指右挑", "只竖起食指，整只手向右轻挑。", savedFeatures.indexRightScroll)
+            indexRightScrollSwitch = featureSwitch("G10 轨迹预留", "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", savedFeatures.indexRightScroll)
             screenshotSwitch = featureSwitch("开合掌", "五指明显分开并保持，按提示握拳，再次张开五指完成截图。", savedFeatures.screenshot)
             selfieSwitch = featureSwitch("V 手势", "V 字保持 2 秒确认，倒计时后保存前置摄像头画面；倒计时期间暂停全部手势识别。", savedFeatures.selfie)
             likeSwitch = featureSwitch("指尖比心", "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，保持约 0.6 秒后双击视频。", savedFeatures.like)

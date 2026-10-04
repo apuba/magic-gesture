@@ -19,7 +19,7 @@ class GestureUnlockTest {
         assertTrue(
             unlocked.containsAll(
                 listOf(
-                    GestureCode.G01, GestureCode.G02, GestureCode.G03, GestureCode.G04,
+                    GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06,
                     GestureCode.G24, GestureCode.G11, GestureCode.G13
                 )
             )
@@ -47,6 +47,8 @@ class GestureUnlockTest {
         assertNull("基础编号不需要签到", GestureUnlockPlan.checkInRequiredFor(GestureCode.G01))
         assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G22))
         assertEquals(2, GestureUnlockPlan.checkInRequiredFor(GestureCode.G31))
+        assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G03))
+        assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G10))
         assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G34))
     }
 
