@@ -25,6 +25,10 @@ class GestureEngineReplayTest {
     private val thumbOut = ThumbSpec(Point(.44f, .74f), Point(.35f, .70f), Point(.31f, .65f), Point(.29f, .59f))
     private val thumbUp = ThumbSpec(Point(.46f, .72f), Point(.46f, .66f), Point(.46f, .60f), Point(.46f, .52f))
     private val thumbSide = ThumbSpec(Point(.44f, .72f), Point(.41f, .68f), Point(.40f, .64f), Point(.41f, .70f))
+    // A "666" hand really does stick the thumb out; the generic thumbOut above only clears the
+    // folded-thumb test by 7%, and after the pinky pose was allowed a resting thumb the two shapes
+    // became the same frame. This one keeps G34 distinguishable from G23 the way a hand is.
+    private val thumbStretchedOut = ThumbSpec(Point(.44f, .74f), Point(.36f, .70f), Point(.31f, .64f), Point(.26f, .54f))
 
     /** Hand pointing up, wrist at (0.5, 0.8); fingers fan outward when spread. */
     private fun baseHand(
@@ -61,6 +65,13 @@ class GestureEngineReplayTest {
 
     /** Replaces a landmark by index, returning a new frame. */
     private fun List<Point>.withLandmark(index: Int, point: Point): List<Point> = toMutableList().also { it[index] = point }
+
+    /** `steps` frames walking every landmark from one pose to the other, endpoints included. */
+    private fun morph(from: List<Point>, to: List<Point>, steps: Int): List<List<Point>> =
+        (0 until steps).map { i ->
+            val k = i / (steps - 1f)
+            from.indices.map { j -> Point(from[j].x + (to[j].x - from[j].x) * k, from[j].y + (to[j].y - from[j].y) * k) }
+        }
 
     // ---------------------------------------------------------------- poses
 
@@ -216,7 +227,8 @@ class GestureEngineReplayTest {
 
     /** G34 "666": thumb and pinky out, index/middle/ring curled. */
     private fun six666Pose(): List<Point> = baseHand(
-        index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED
+        index = FingerPose.FOLDED, middle = FingerPose.FOLDED, ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED,
+        thumb = thumbStretchedOut
     )
 
     /** G23: pinky alone; folded thumb keeps it distinct from G34 "666". */
@@ -311,6 +323,27 @@ class GestureEngineReplayTest {
 
     private inline fun <reified T : GestureEvent> List<GestureEvent>.countOf(): Int = count { it is T }
 
+    @Test fun fingerHeartFiresLikeWhileIndexScrollsAreEnabled() {
+        val r = Replay()
+        r.feed(20, ::fingerHeartPose)
+        assertEquals(1, r.events.countOf<GestureEvent.Like>())
+        assertEquals(0, r.events.count { it is GestureEvent.Feedback && it.message.startsWith("竖直食指") })
+    }
+
+    @Test fun verticalIndexStillStartsHorizontalSwipeWhenThumbIsClear() {
+        val r = Replay(GestureFeatureConfig(indexLeftScroll = true, indexRightScroll = true))
+        r.feed(4, ::pointingIndex)
+        assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("竖直食指") })
+    }
+
+    // G09/G10 share one hand movement with cursor steering (G01), so they ship off; see the notes
+    // on INDEX_HORIZONTAL_SCROLL_DEFAULT. A vertical index must stay silent until they are switched on.
+    @Test fun verticalIndexStaysSilentWhileIndexWavesAreOff() {
+        val r = Replay()
+        r.feed(4, ::pointingIndex)
+        assertTrue(r.events.none { it is GestureEvent.Feedback && it.message.startsWith("竖直食指") })
+    }
+
     // ---------------------------------------------------------------- tests
 
     @Test fun vSignHoldsForTwoSecondsThenFiresSelfieOnceUntilReleased() {
@@ -351,7 +384,8 @@ class GestureEngineReplayTest {
         r.feed(20, ::thumbsUpPose)                // still holding: no repeat
         assertEquals(1, r.events.countOf<GestureEvent.ThumbsUp>())
         r.feed(8, ::restPose)                     // release
-        r.feed(14, ::thumbsUpPose)                // re-enter: fires again
+        // The shape changed once when re-entering, so the hold starts one settle window later.
+        r.feed(17, ::thumbsUpPose)                // re-enter: fires again
         assertEquals(2, r.events.countOf<GestureEvent.ThumbsUp>())
     }
 
@@ -365,7 +399,7 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         // The fist has to stay gone for the whole 800ms grace before the hold arms again.
         r.feed(17, ::restPose)
-        r.feed(22, ::fistPose)                   // re-enter: fires again
+        r.feed(25, ::fistPose)                   // re-enter: one settle window, then fires again
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 
@@ -385,7 +419,7 @@ class GestureEngineReplayTest {
         r.feed(60, ::fistPose)                   // and through a second cooldown too
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(17, ::restPose)                   // 850ms gone: a real release
-        r.feed(22, ::fistPose)
+        r.feed(25, ::fistPose)
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 
@@ -398,7 +432,7 @@ class GestureEngineReplayTest {
         r.feed(60, ::pinkyOnlyPose)
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         r.feed(17, ::restPose)
-        r.feed(22, ::pinkyOnlyPose)
+        r.feed(25, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
@@ -444,7 +478,7 @@ class GestureEngineReplayTest {
         r.feed(40, ::fistPose)                   // still holding: must stay silent
         assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(17, ::restPose)                   // 850ms gone: a real release
-        r.feed(22, ::fistPose)
+        r.feed(25, ::fistPose)
         assertEquals(2, r.events.countOf<GestureEvent.PlayPause>())
     }
 
@@ -486,8 +520,11 @@ class GestureEngineReplayTest {
         r.feed(14, ::lotusPose)
         assertEquals(1, r.events.countOf<GestureEvent.LotusRecents>())
         assertEquals(0, r.events.countOf<GestureEvent.OrchidBack>())
+        // Put the hand down between the two poses, as anyone switching gestures really does, so the
+        // next pose starts from a clean engine instead of inheriting a sequence still in flight.
         r.feed(8, ::restPose)
-        r.feed(14, ::orchidPose)
+        r.loseHand(16)
+        r.feed(22, ::orchidPose)
         assertEquals(1, r.events.countOf<GestureEvent.OrchidBack>())
         assertEquals(1, r.events.countOf<GestureEvent.LotusRecents>())
     }
@@ -633,7 +670,7 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         // The hand has to stay out of the pose for the whole 800ms grace before the hold arms again.
         r.feed(17, ::restPose)
-        r.feed(22, ::pinkyOnlyPose)
+        r.feed(25, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
@@ -649,8 +686,34 @@ class GestureEngineReplayTest {
         r.feed(22, ::pinkyOnlyPose)                   // pose returns and is held past 1s again
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
         r.feed(17, ::restPose)                        // 850ms gone: a real release
-        r.feed(22, ::pinkyOnlyPose)
+        r.feed(25, ::pinkyOnlyPose)
         assertEquals(2, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * Acceptance issue 6 (2026-10-04): a hand that merely strikes another gesture's shape on its way
+     * somewhere else used to fire that gesture. Sweeping the hand back and forth keeps it inside the
+     * pinky pose for a frame at a time, which must never arm the hold — only a shape that comes to
+     * rest is a shape the user is holding.
+     */
+    @Test fun aHandThatKeepsReshapingNeverFiresThePoseItPassesThrough() {
+        val r = Replay()
+        val sweep = morph(restPose(), pinkyOnlyPose(), 4)      // ~4 frames per fold: real pace at 20fps
+        repeat(6) { r.feedPoses(sweep) }                        // 24 frames of continuous reshaping
+        assertEquals(0, r.events.countOf<GestureEvent.PinkyMute>())
+        r.feed(25, ::pinkyOnlyPose)                             // once it rests, the same pose fires
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
+    }
+
+    /**
+     * The gate reads the shape relative to the wrist, so carrying the same pose across the frame —
+     * what every real hand does while being tracked — must not cost a settle window.
+     */
+    @Test fun carryingAPoseAcrossTheFrameStillFiresIt() {
+        val r = Replay()
+        val drifting = (0 until 25).map { i -> pinkyOnlyPose().map { p -> Point(p.x + i * .012f, p.y) } }
+        r.feedPoses(drifting)
+        assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
     }
 
     @Test fun screenshotSequenceOpenFistOpenFiresScreenshotOnce() {
@@ -747,6 +810,20 @@ class GestureEngineReplayTest {
         assertEquals(1, swipes.size)
         assertEquals(true, swipes[0].up)
         assertEquals(GestureEvent.MotionSource.INDEX_FINGER, swipes[0].source)
+    }
+
+    /** The same fingertip travel, split into small per-frame steps instead of one flick. */
+    private fun horizontalIndexTipStep(step: Int, total: Int): List<Point> = horizontalIndex()
+        .withLandmark(8, Point(.63f + .02f * step / total, .58f - .13f * step / total))
+
+    // G03/G04 must read angular *speed*, not total travel time: steering the cursor (G01) drifts the
+    // index angle slowly, and that drift must never turn into a scroll. Measured on device (2026-10-04):
+    // a real flick jumps 22.9deg..40.9deg inside 100-180ms, cursor steering stays under 4deg.
+    @Test fun slowlyDriftingIndexAngleNeverScrolls() {
+        val r = Replay()
+        r.feed(4, ::horizontalIndex)
+        r.feedPoses((1..12).map { horizontalIndexTipStep(it, 12) })
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.Swipe>().size)
     }
 
     @Test fun everyFrameEmitsExactlyOneCursorEvent() {
@@ -963,13 +1040,14 @@ class GestureEngineReplayTest {
     }
 
     @Test fun clawAndCShapeFireTheirOwnEventsOnTolerantThreeFingerGeometry() {
-        val r = Replay(GestureFeatureConfig(scroll = false))
+        // The claw is off by default and has to be switched on explicitly.
+        val r = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
         r.feed(14, ::clawPose)
         assertTrue(r.events.any { it is GestureEvent.Feedback && it.message.startsWith("拖动已开始") })
         assertEquals(0, r.events.countOf<GestureEvent.CShape>())
 
         r.feed(8, ::spreadPalm)
-        r.feed(14, ::cShapePose)
+        r.feed(17, ::cShapePose)
         assertEquals(1, r.events.countOf<GestureEvent.CShape>())
     }
 
@@ -978,7 +1056,8 @@ class GestureEngineReplayTest {
      * Curling must no longer cost the claw, and it must not arm the fist hold either.
      */
     @Test fun deeplyCurledClawStillStartsTheDragAndNeverBecomesAFist() {
-        val r = Replay(GestureFeatureConfig(scroll = false))
+        // The claw ships switched off, so this one opts in explicitly.
+        val r = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
         r.feed(25, ::deepClawPose)                // 1.25s: past the 600ms confirm and the 1s fist hold
         assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
         assertEquals(0, r.events.countOf<GestureEvent.CShape>())
@@ -991,7 +1070,8 @@ class GestureEngineReplayTest {
      * 20 second drag is legal — and lifts only when the hand opens again.
      */
     @Test fun clawDragStaysPressedWhileHeldAndLiftsOnlyOnRelease() {
-        val r = Replay(GestureFeatureConfig(scroll = false))
+        // The claw ships switched off, so this one opts in explicitly.
+        val r = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
         r.feed(14, ::clawPose)                     // 0.7s: past the 600ms confirm
         assertEquals(
             listOf(GestureEvent.DragPhase.START),
@@ -1020,7 +1100,8 @@ class GestureEngineReplayTest {
      * being a claw still ends it through the pose grace, so nothing can stay armed forever.
      */
     @Test fun runningDragIsNotStolenByAnotherPose() {
-        val r = Replay(GestureFeatureConfig(scroll = false))
+        // The claw ships switched off, so this one turns it on before exercising a running drag.
+        val r = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
         r.feed(14, ::clawPose)                      // 0.7s: past the 600ms confirm
         assertEquals(
             1,
@@ -1043,7 +1124,8 @@ class GestureEngineReplayTest {
     }
 
     @Test fun clawRequiresFrontFacingPalmAndSeparatedFingers() {
-        val side = Replay(GestureFeatureConfig(scroll = false))
+        // What follows only makes sense with the claw switched on; it ships off.
+        val side = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
         side.feed(14, ::sideOnClawPose)
         assertEquals(0, side.events.countOf<GestureEvent.ClawDrag>())
         assertEquals(0, side.events.countOf<GestureEvent.CShape>())

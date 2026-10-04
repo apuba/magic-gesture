@@ -76,6 +76,8 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         engine.resume()
     }
     @Synchronized fun pause() { engine.stop() }
+    /** Routes per-frame engine diagnostics to a sink (logcat) so thresholds can be tuned on device. */
+    fun setDiag(sink: ((String) -> Unit)?) { engine.diag = sink }
     @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)

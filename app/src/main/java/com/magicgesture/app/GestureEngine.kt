@@ -166,9 +166,25 @@ class GestureEngine(
     // 上下拉仍要求垂直分量明显占优，两条判定互斥，放宽左右不会抢走音量手势。
     private val horizontalAxisDominance = 1.0f
     private val verticalAxisDominance = 1.25f
+    // G03/G04 的判据是食指角度而非位移，但"多久到达 24°"不能当门槛用：识别到水平食指后用户
+    // 常先停一下再挑，实测（2026-10-04）真实上挑全部在 el=1.0~1.4s 才完成，而慢慢移动光标时
+    // 角度在 0.7~1.3s 里只漂移不到 4°。两者真正的差别在最后一瞬的角速度：真挑在 100~180ms
+    // 内跳变 22.9°..40.9°，光标漂移同样时长里不超过 4°，相差六到十倍。所以门槛取最近一段
+    // 短窗口内的角度变化量，慢漂移永远跨不过，真挑仍有约 20% 余量。
+    private val indexFlickSlewWindowMs = 150L
+    private val indexFlickSlewDeg get() = 18f * movementScale
+    /** Recent (time, index angle) samples behind that slew test. */
+    private val indexAngleTrail = ArrayDeque<Pair<Long, Float>>()
+
     // G33 双击每一段"弯下 / 伸直"的最短时间。真实双击很快，120ms 会把快速双击当成抖动
     // 而整段作废；80ms 约等于 2 帧，仍能挡住单帧抖动。
     private val twoFingerTapSegmentMs = 80L
+    // G33 一段姿势（伸直或弯下）结束后，等待姿势翻回的最长时间。实测（2026-10-04）自然双击
+    // 的第二下往往要隔 1.5~2.3 秒才落下，500ms 会让手指还弯着的状态机就被判失效整段作废。
+    private val twoFingerTapReturnMs = 900L
+    // 两次弯下必须在窗口内完成才算一次双击。实测第一次弯到第二次弯常隔 1.5 秒以上，
+    // 1200ms 的窗口把用户自认为完整的一次双击切成了两次失败。
+    private val twoFingerTapCycleMs = 2200L
     // 轨迹型手势（挥动、滚动、切歌、音量）的单个动作窗口。超过窗口不再判"失效、必须松手
     // 重来"，而是把位移/角度基准刷新到当前位置重新计时：摆好姿势后想一下再动也能触发，
     // 同时基准始终新鲜，不会因为很久以前的位置突然算出一段位移而误触发。
@@ -181,9 +197,40 @@ class GestureEngine(
     private var appHoldSlot = 0
     private var appHoldAt = 0L
     private var appCooldownUntil = 0L
+    /** Diagnostics sink; the service wires it to logcat so thresholds can be tuned on device. */
+    @Volatile var diag: ((String) -> Unit)? = null
     private var lastSeenAt = 0L
     private var smoothed: Point? = null
     private var paused = false
+    // ---- Transitional poses (acceptance issue 6) -------------------------------------------------
+    // Thumb tip and the four fingertips carry the whole shape. All of them are read relative to
+    // the wrist and in palm widths, so walking across the frame, waving a swipe or dragging the
+    // claw moves every landmark together and cancels out — only fingers really folding, spreading
+    // or curling show up here.
+    private val shapeKeypoints = listOf(4, 8, 12, 16, 20)
+    /**
+     * Reshaping faster than this (palm widths per second) means the hand is still being struck or
+     * released, and its mid-flight shape is nobody's intention. See updateShapeStability.
+     */
+    private val shapeChangeSpeed = 3.0f
+    /**
+     * Once reshaping stops, the shape must rest this long before a still pose starts counting. Long
+     * enough to swallow the frames right after the last finger settles — one pipeline frame on a
+     * slow device — and short enough that the queue never shows up as latency to the user.
+     */
+    private val shapeSettleMs = 60L
+    private var lastShape: List<Point>? = null
+    private var lastShapeAt = 0L
+    private var lastShapeChangeAt = 0L
+    private var lastShapeDiagAt = 0L
+    /** Latest reshaping speed, palm widths per second. Diagnostics only. */
+    private var shapeSpeed = 0f
+    /**
+     * False while the hand is demonstrably reshaping itself. A shape nobody saw being struck counts
+     * as settled — otherwise the first frames of a session would cost an extra settle window and
+     * every gesture would fire that much later.
+     */
+    private var shapeSteady = true
 
     @Synchronized fun resume() { paused = false; resetTransient() }
     @Synchronized fun stop() { paused = true; resetTransient(); smoothed = null }
@@ -237,11 +284,18 @@ class GestureEngine(
         val cursor = if (old == null) target else Point(old.x + .35f * (target.x - old.x), old.y + .35f * (target.y - old.y))
         smoothed = cursor
         val handScale = dist(points[5], points[17]).coerceAtLeast(.001f)
+        updateShapeStability(points, handScale, now)
         val ratio = dist(points[4], points[8]) / handScale
         val fourFingersOpen = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).all { (tipIndex, pipIndex) ->
             dist(points[tipIndex], points[0]) > dist(points[pipIndex], points[0]) * 1.10f
         }
         val thumbOpen = dist(points[4], points[5]) > dist(points[3], points[5]) * 1.05f
+        // The G16-G19 slots ask for a folded thumb, but the 1.05 test above flips to true as soon
+        // as the thumb drifts a little — and holding three or four fingers out makes it drift.
+        // Measured on device (2026-10-04): the sequence reached HOLDING with slot 3 recognised,
+        // then a single frame of thumbOpen=true pushed the slot back to 0 and cancelled before the
+        // 600ms hold finished. Only a clearly stretched thumb should veto a slot.
+        val thumbWideOpen = dist(points[4], points[5]) > dist(points[3], points[5]) * 1.25f
         val fourFingerGapAngles = listOf(
             vectorAngleDegrees(points[5], points[8], points[9], points[12]),
             vectorAngleDegrees(points[9], points[12], points[13], points[16]),
@@ -334,7 +388,12 @@ class GestureEngine(
         // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
         val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
         // G23: only the little finger is extended; thumb and the other three fingers stay folded.
-        val pinkyOnlyPose = pinkyOpen && indexFolded && middleFolded && ringFolded && !thumbOpen
+        // The thumb test is the loose one on purpose. Measured on device (2026-10-04): raising the
+        // pinky makes the thumb drift open on its own, and with the strict 1.05 test the pose fell
+        // through to Six666 — which needs the same pinky — so a relaxed hand toggled the wrong
+        // gesture (or nothing). Only a thumb that is clearly stretched should disqualify this pose;
+        // Six666 still claims that case because it is checked after this one.
+        val pinkyOnlyPose = pinkyOpen && indexFolded && middleFolded && ringFolded && !thumbWideOpen
         // G34 "666": thumb and pinky out, index/middle/ring curled. The pinky is what separates
         // it from the thumbs-up (which needs the pinky folded) and the curled index separates
         // it from the love pose (which needs the index extended).
@@ -513,6 +572,14 @@ class GestureEngine(
         // screenshotPalmOpen is the open hand and closedFist the fist: both mean "let go" mid-drag.
         if (advanceClawDrag(clawPose, screenshotPalmOpen, closedFist, palm, cursor, now, output)) return output
         advanceTwoFingerTap(twoFingerTogetherPose, now, output)
+        // Bending the two fingers down brings the index tip onto the thumb, which is exactly what
+        // the finger heart reads, so G33 used to get claimed by G12 right after the first bend
+        // (measured 2026-10-04). Once a tap is underway the pinch may not arm.
+        if (twoFingerTapState != TwoFingerTapState.IDLE && twoFingerTapState != TwoFingerTapState.HELD) {
+            pinch = Pinch.READY
+            candidateAt = 0L
+            releaseAt = 0L
+        }
         advanceTwoFingerSwipe(twoFingerTogetherPose, palm, points[0], now, output)
         if (twoFingerState == TwoFingerSwipeState.VOLUME_UP || twoFingerState == TwoFingerSwipeState.VOLUME_DOWN) return output
         if (features.click) {
@@ -633,7 +700,7 @@ class GestureEngine(
             dist(points[4], points[6]) / handScale > .50f &&
             dist(points[4], points[5]) / handScale > .50f
         if (features.like) when (pinch) {
-            Pinch.READY -> if (fingerHeartPose) {
+            Pinch.READY -> if (fingerHeartPose && shapeSteady) {
                 pinch = Pinch.CANDIDATE
                 candidateAt = now
                 releaseAt = 0L
@@ -652,6 +719,7 @@ class GestureEngine(
                         releaseAt = 0L
                     }
                 }
+                !shapeSteady -> candidateAt = now
                 features.like && now - candidateAt >= 600 -> {
                     pinch = Pinch.FIRED
                     output += GestureEvent.Like
@@ -686,7 +754,7 @@ class GestureEngine(
         releaseGraceMs: Long = 0L
     ): Boolean {
         when (state()) {
-            StaticHold.READY -> if (pose) {
+            StaticHold.READY -> if (pose && shapeSteady) {
                 setState(StaticHold.CANDIDATE)
                 setStartedAt(now)
                 return true
@@ -695,6 +763,11 @@ class GestureEngine(
                 if (!pose) {
                     setState(StaticHold.READY)
                     setStartedAt(0L)
+                } else if (!shapeSteady) {
+                    // The shape is still mid-flight, so this is a pose passing through rather than
+                    // one being held: keep waiting instead of banking time towards a confirmation
+                    // the user never asked for (acceptance issue 6).
+                    setStartedAt(now)
                 } else {
                     // Long holds show a countdown so the user knows to keep the pose.
                     if (label != null && holdMs >= 1000L && now - lastFeedbackAt >= 250) {
@@ -934,7 +1007,8 @@ class GestureEngine(
                     // 双击（G33）后半程：手指弯下再伸直会带着掌心上下移动，这段位移不能被
                     // 判成上下拉音量，否则双击会变成调音量。左右挥不受影响——松手后重新
                     // 挥手与双击第二下形态相同，屏蔽它会让正常的切歌失灵。
-                    val doubleTapFinishing = twoFingerTapState == TwoFingerTapState.POSED_SECOND ||
+                    val doubleTapFinishing = twoFingerTapState == TwoFingerTapState.BENT_ONCE ||
+                        twoFingerTapState == TwoFingerTapState.POSED_SECOND ||
                         twoFingerTapState == TwoFingerTapState.BENT_TWICE ||
                         twoFingerTapState == TwoFingerTapState.FIRED_WAIT
                     val fired = when {
@@ -1025,27 +1099,27 @@ class GestureEngine(
                 }
             }
             TwoFingerTapState.BENT_ONCE -> when {
-                pose && now - twoFingerTapBentAt <= 500 -> {
+                pose && now - twoFingerTapBentAt <= twoFingerTapReturnMs -> {
                     twoFingerTapState = TwoFingerTapState.POSED_SECOND
                     twoFingerTapPoseAt = now
                     twoFingerTapFirstCycleAt = now
                 }
-                now - twoFingerTapBentAt > 500 -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapBentAt > twoFingerTapReturnMs -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.POSED_SECOND -> when {
-                !pose && now - twoFingerTapPoseAt >= twoFingerTapSegmentMs && now - twoFingerTapFirstCycleAt <= 1200 -> {
+                !pose && now - twoFingerTapPoseAt >= twoFingerTapSegmentMs && now - twoFingerTapFirstCycleAt <= twoFingerTapCycleMs -> {
                     twoFingerTapState = TwoFingerTapState.BENT_TWICE
                     twoFingerTapBentAt = now
                 }
                 !pose -> twoFingerTapState = TwoFingerTapState.IDLE
-                now - twoFingerTapFirstCycleAt > 1500 -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapFirstCycleAt > twoFingerTapCycleMs -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.BENT_TWICE -> when {
-                pose && now - twoFingerTapBentAt <= 500 -> {
+                pose && now - twoFingerTapBentAt <= twoFingerTapReturnMs -> {
                     output += GestureEvent.TwoFingerDoubleTap
                     twoFingerTapState = TwoFingerTapState.FIRED_WAIT
                 }
-                now - twoFingerTapBentAt > 500 -> twoFingerTapState = TwoFingerTapState.IDLE
+                now - twoFingerTapBentAt > twoFingerTapReturnMs -> twoFingerTapState = TwoFingerTapState.IDLE
             }
             TwoFingerTapState.FIRED_WAIT -> if (!pose) twoFingerTapState = TwoFingerTapState.IDLE
         }
@@ -1127,7 +1201,11 @@ class GestureEngine(
                     }
                 }
                 if (slotPose == appHoldSlot) {
-                    if (now - appHoldAt >= 600) {
+                    if (!shapeSteady) {
+                        // Same hand as above: fingers still folding through this slot on their way
+                        // somewhere else are not a slot the user is holding.
+                        appHoldAt = now
+                    } else if (now - appHoldAt >= 600) {
                         output += GestureEvent.OpenApp(appHoldSlot)
                         appSequence = AppSequence.WAIT_RELEASE
                         appHoldAt = now
@@ -1160,6 +1238,7 @@ class GestureEngine(
         indexOnly: Boolean,
         indexAngleDegrees: Float,
         fist: Boolean,
+        heartContact: Boolean,
         palm: Point,
         wrist: Point,
         now: Long,
@@ -1169,16 +1248,18 @@ class GestureEngine(
             features.palmLeftScroll || features.indexLeftScroll ||
             features.palmRightScroll || features.indexRightScroll
         if (!anyDirectional && !features.screenshot) return false
+
         when (screenshotSequence) {
             ScreenshotSequence.IDLE -> {
                 if (features.indexVerticalScroll && indexOnly && kotlin.math.abs(indexAngleDegrees) <= 35f) {
                     screenshotSequence = ScreenshotSequence.INDEX_FINGER_SCROLL
                     screenshotStageAt = now
                     indexScrollStartAngle = indexAngleDegrees
+                    indexAngleTrail.clear()
                     output += GestureEvent.Feedback("水平食指已识别：请上挑或下挑")
                     return true
                 }
-                if (indexOnly && kotlin.math.abs(indexAngleDegrees) >= 65f &&
+                if (indexOnly && kotlin.math.abs(indexAngleDegrees) >= 65f && !heartContact &&
                     (features.indexLeftScroll || features.indexRightScroll)) {
                     screenshotSequence = ScreenshotSequence.INDEX_HORIZONTAL_SWIPE
                     screenshotStageAt = now
@@ -1320,20 +1401,28 @@ class GestureEngine(
                 val elapsed = now - screenshotStageAt
                 val triggerAngle = 24f * movementScale
                 val angleChange = indexAngleDegrees - indexScrollStartAngle
-                if (angleChange <= -triggerAngle && elapsed <= 5000) {
+                indexAngleTrail.addLast(now to indexAngleDegrees)
+                while (indexAngleTrail.size > 1 && now - indexAngleTrail.first().first > indexFlickSlewWindowMs) {
+                    indexAngleTrail.removeFirst()
+                }
+                val angleSlew = indexAngleTrail.last().second - indexAngleTrail.first().second
+                if (angleChange <= -triggerAngle && angleSlew <= -indexFlickSlewDeg && elapsed <= 5000) {
                     output += GestureEvent.Swipe(up = true, source = GestureEvent.MotionSource.INDEX_FINGER)
                     screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                    indexAngleTrail.clear()
                     return true
                 }
-                if (angleChange >= triggerAngle && elapsed <= 5000) {
+                if (angleChange >= triggerAngle && angleSlew >= indexFlickSlewDeg && elapsed <= 5000) {
                     output += GestureEvent.Swipe(up = false, source = GestureEvent.MotionSource.INDEX_FINGER)
                     screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                    indexAngleTrail.clear()
                     return true
                 }
                 if (elapsed > stageTimeoutMs) {
                     // 超时不失效：把角度基准刷新到当前角度重新计时。
-                    indexScrollStartAngle = indexAngleDegrees
                     screenshotStageAt = now
+                    indexScrollStartAngle = indexAngleDegrees
+                    indexAngleTrail.clear()
                 }
                 return true
             }
@@ -1404,6 +1493,11 @@ class GestureEngine(
         return false
     }
     private fun resetTransient(handGone: Boolean = false) {
+        indexAngleTrail.clear()
+        lastShape = null
+        lastShapeAt = 0L
+        lastShapeChangeAt = 0L
+        shapeSteady = true
         pinch = Pinch.READY
         indexClick = IndexClick.READY
         indexClickAt = 0
@@ -1476,6 +1570,39 @@ class GestureEngine(
         twoFingerTapFirstCycleAt = 0L
 
         lastFeedbackAt = 0
+    }
+    /**
+     * Keeps track of how fast the hand is reshaping itself, which is what separates an intentional
+     * pose from the shapes a hand strikes on its way between two others. Every static pass through
+     * a pose (G12, G14-G17, G20-G23, G24-G25, G27-G28, G34-G35 and the G16-G19 slots) used to start
+     * counting on the first frame it matched, so a hand merely folding or opening on its way to
+     * something else could spend its confirmation time crossing a pose and fire it. Measured on
+     * device 2026-10-04 and written up as acceptance issue 6.
+     *
+     * The measurement ignores global motion: landmarks are stored relative to the wrist and divided
+     * by palm width, so translating, waving or dragging the hand produces no reshaping at all.
+     */
+    private fun updateShapeStability(points: List<Point>, handScale: Float, now: Long) {
+        val wrist = points[0]
+        val current = shapeKeypoints.map {
+            Point((points[it].x - wrist.x) / handScale, (points[it].y - wrist.y) / handScale)
+        }
+        val previous = lastShape
+        val previousAt = lastShapeAt
+        lastShape = current
+        lastShapeAt = now
+        if (previous == null || previousAt == 0L) return
+        val dt = (now - previousAt).coerceAtLeast(1L)
+        val moved = current.indices.maxOf { dist(current[it], previous[it]) }
+        shapeSpeed = moved * 1000f / dt
+        if (shapeSpeed > shapeChangeSpeed) {
+            lastShapeChangeAt = now
+            shapeSteady = false
+        } else if (!shapeSteady && now - lastShapeChangeAt >= shapeSettleMs) shapeSteady = true
+        if (diag != null && now - lastShapeDiagAt > 200L) {
+            lastShapeDiagAt = now
+            diag?.invoke("shape speed=" + (Math.round(shapeSpeed * 100f) / 100f) + " steady=" + shapeSteady)
+        }
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)
     private fun vectorAngleDegrees(aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): Float {

@@ -307,9 +307,10 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LShape)).mapping, GestureFeatureConfig(lShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.CShape)).mapping, GestureFeatureConfig(cShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LoveLock)).mapping, GestureFeatureConfig(loveLock = false)))
-        // G26 keeps its own switch and now ships with the drag action by default.
+        // G26 keeps its own switch. The switch ships off so the claw cannot claim every half-curled
+        // hand, but the gesture is still bound to the drag action for whoever turns it on.
         val claw = GestureMapping(GestureCode.G26, GestureType.HOLD, GestureAction.DRAG, CooldownPolicy.NONE)
-        assertTrue(gate.allows(claw, GestureFeatureConfig()))
+        assertTrue(gate.allows(claw, GestureFeatureConfig(clawDrag = true)))
         assertFalse(gate.allows(claw, GestureFeatureConfig(clawDrag = false)))
         // The claw is bound out of the box. A drag carries no cooldown, otherwise the first MOVE
         // would freeze the pipeline mid-drag; the cooldown starts when the drag ends instead.

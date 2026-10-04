@@ -268,6 +268,7 @@ class CameraProbeService : Service() {
                             }
                 }
                 createdPipeline = newPipeline
+                newPipeline.setDiag { Log.d("CameraProbe", "diag: $it") }
                 val accepted = synchronized(modelInitLock) {
                     if (!stopped && generation == modelInitGeneration && pipeline == null) {
                         pipeline = newPipeline

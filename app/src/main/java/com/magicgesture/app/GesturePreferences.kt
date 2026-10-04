@@ -2,6 +2,24 @@ package com.magicgesture.app
 
 import android.content.Context
 
+/**
+ * The claw ships off (2026-10-04): it reads any half-curled hand — a vertical or horizontal index
+ * with the other fingers folded, a heart, the start of a swipe — and it sits early enough in the
+ * pipeline to swallow those frames. On device it fired 16 drags during one round while the index
+ * scrolls and the single-finger waves never got a turn, matching the product intent of leaving G26
+ * unbound until something needs it. Users can still switch it on from the calibration page.
+ */
+private const val CLAW_DRAG_DEFAULT = false
+
+/**
+ * G09/G10 (single-finger left/right waves) ship off (2026-10-04). They read the same hand movement
+ * as steering the cursor with G01, and the trigger is a displacement threshold with no speed term,
+ * so aiming the cursor accumulated more travel than a real flick — measured on device: -0.255 while
+ * slowly moving the cursor versus 0.05..0.084 for genuine waves. The palm waves G07/G08 cover
+ * left/right scrolling with a shape the cursor mode never produces. Users can re-enable either.
+ */
+private const val INDEX_HORIZONTAL_SCROLL_DEFAULT = false
+
 data class GestureFeatureConfig(
     val cursor: Boolean = true,
     val click: Boolean = true,
@@ -10,9 +28,9 @@ data class GestureFeatureConfig(
     val indexVerticalScroll: Boolean = scroll,
     val palmVerticalScroll: Boolean = scroll,
     val palmLeftScroll: Boolean = scroll,
-    val indexLeftScroll: Boolean = scroll,
+    val indexLeftScroll: Boolean = INDEX_HORIZONTAL_SCROLL_DEFAULT,
     val palmRightScroll: Boolean = scroll,
-    val indexRightScroll: Boolean = scroll,
+    val indexRightScroll: Boolean = INDEX_HORIZONTAL_SCROLL_DEFAULT,
     val screenshot: Boolean = true,
     val selfie: Boolean = true,
     val like: Boolean = true,
@@ -24,7 +42,7 @@ data class GestureFeatureConfig(
     val orchidBack: Boolean = true,
     val leftL: Boolean = true,
     val lShape: Boolean = true,
-    val clawDrag: Boolean = true,
+    val clawDrag: Boolean = CLAW_DRAG_DEFAULT,
     val cShape: Boolean = true,
     val loveLock: Boolean = true,
     // G34 "666": thumb and pinky out, other fingers curled. Unbound by default.
@@ -206,9 +224,9 @@ object GesturePreferences {
             indexVerticalScroll = prefs.getBoolean("feature_index_vertical_scroll", legacyScroll),
             palmVerticalScroll = prefs.getBoolean("feature_palm_vertical_scroll", legacyScroll),
             palmLeftScroll = prefs.getBoolean("feature_palm_left_scroll", legacyScroll),
-            indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", legacyScroll),
+            indexLeftScroll = prefs.getBoolean("feature_index_left_scroll", INDEX_HORIZONTAL_SCROLL_DEFAULT),
             palmRightScroll = prefs.getBoolean("feature_palm_right_scroll", legacyScroll),
-            indexRightScroll = prefs.getBoolean("feature_index_right_scroll", legacyScroll),
+            indexRightScroll = prefs.getBoolean("feature_index_right_scroll", INDEX_HORIZONTAL_SCROLL_DEFAULT),
             screenshot = prefs.getBoolean("feature_screenshot", true),
             selfie = prefs.getBoolean("feature_selfie", prefs.getBoolean("feature_recents", true)),
             like = prefs.getBoolean("feature_like", true),
@@ -220,7 +238,7 @@ object GesturePreferences {
             orchidBack = prefs.getBoolean("feature_orchid_back", true),
             leftL = prefs.getBoolean("feature_left_l", true),
             lShape = prefs.getBoolean("feature_l_shape", true),
-            clawDrag = prefs.getBoolean("feature_claw_drag", true),
+            clawDrag = prefs.getBoolean("feature_claw_drag", CLAW_DRAG_DEFAULT),
             cShape = prefs.getBoolean("feature_c_shape", true),
             loveLock = prefs.getBoolean("feature_love_lock", true),
             six666 = prefs.getBoolean("feature_six666", true),
