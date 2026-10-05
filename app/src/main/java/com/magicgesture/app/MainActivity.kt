@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -146,12 +147,10 @@ class MainActivity : Activity() {
 
         content.addView(gestureCard(R.drawable.gesture_point, "指尖移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_point, "指尖轻点", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "G03 / G04 轨迹预留", actionLabelOf(GestureCode.G03, GestureCode.G04), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_vertical_scroll", features.indexVerticalScroll), margins(bottom = 12))
+        // G03/G04/G09/G10 are reserved trajectory slots: hidden from this guide, still listed in the practice screen.
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌上挥 / 并掌下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌左挥", actionLabelOf(GestureCode.G07), "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "G09 轨迹预留", actionLabelOf(GestureCode.G09), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_left_scroll", features.indexLeftScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌右挥", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "G10 轨迹预留", actionLabelOf(GestureCode.G10), "当前版本默认关闭且未绑定动作；编号保留给二期轨迹手势。", "轨", "index_right_scroll", features.indexRightScroll), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_v, "V 手势", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_finger_heart, "指尖比心", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_thumbs_up, "拇指赞", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
@@ -181,6 +180,15 @@ class MainActivity : Activity() {
                 setPadding(0, dp(7), 0, 0)
                 setLineSpacing(0f, 1.2f)
             })
+        })
+
+        content.addView(label("隐私政策与权限说明", 13f, Color.rgb(83, 80, 214), false).apply {
+            gravity = Gravity.CENTER
+            paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
+            setPadding(dp(12), dp(20), dp(12), dp(4))
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, PrivacyPolicyActivity::class.java))
+            }
         })
 
         return ScrollView(this).apply {
