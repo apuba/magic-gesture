@@ -29,6 +29,14 @@ android {
             if (signingPropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
         }
     }
+    // MediaPipe tasks-vision 0.10.21 only ships native libraries for arm64-v8a / armeabi-v7a / x86.
+    // Google Play requires a 64-bit counterpart for every 32-bit ABI we ship, and no x86_64 build
+    // exists in this dependency, so the 32-bit x86 slice is dropped instead of being paired.
+    packaging {
+        jniLibs {
+            excludes += setOf("**/x86/**")
+        }
+    }
 }
 
 dependencies {
