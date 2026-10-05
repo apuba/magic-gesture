@@ -44,6 +44,8 @@ class MainActivity : Activity() {
     private var waitingForAccessibilityPermission = false
     private val featureSwitches = mutableMapOf<String, MutableList<Switch>>()
     private val actionLabelViews = mutableListOf<Pair<TextView, () -> String>>()
+    /** Latest home ScrollView, used to keep the scroll position when the page is rebuilt. */
+    private var contentScroll: ScrollView? = null
     private var updatingFeatureSwitches = false
     /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
     private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
@@ -195,6 +197,27 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(246, 245, 255))
             isFillViewport = true
             addView(content)
+            contentScroll = this
+        }
+    }
+
+    /**
+     * Rebuilds the whole page while keeping the current scroll position.
+     * Needed after a successful check-in: locked cards, action labels and feature switches are
+     * decided when each view is created, so simply refreshing the text is not enough to show the
+     * newly unlocked gestures. `recreate()` would jump the page back to the top and hide the
+     * check-in card, so the content is rebuilt in place instead.
+     */
+    private fun rebuildContent(preserveScroll: Boolean) {
+        val previousScrollY = contentScroll?.scrollY ?: 0
+        actionLabelViews.clear()
+        featureSwitches.clear()
+        setContentView(buildContent())
+        // Rebuilt views start from their default state, so re-apply the live control state.
+        refreshControlButton()
+        refreshCheckInCard()
+        if (preserveScroll) {
+            contentScroll?.post { contentScroll?.scrollTo(0, previousScrollY) }
         }
     }
 
@@ -343,8 +366,8 @@ class MainActivity : Activity() {
                     "。其中部分手势默认未绑定动作，可在手势练习与校准页为其指定用途。"
                 } else ""
                 Toast.makeText(this, "签到成功，已解锁：$names$unboundHint", Toast.LENGTH_LONG).show()
-                // 重建页面，让锁定卡片、动作标签与功能开关立即反映新的权益。
-                recreate()
+                // 原地重建页面并保留滚动位置，让锁定卡片、动作标签与功能开关立即反映新的权益。
+                rebuildContent(preserveScroll = true)
             }
             CheckInResult.AlreadyCheckedIn -> Toast.makeText(this, "今天已经签到过了，明天再来", Toast.LENGTH_SHORT).show()
             CheckInResult.Completed -> Toast.makeText(this, "全部手势已解锁", Toast.LENGTH_SHORT).show()
@@ -670,7 +693,14 @@ class MainActivity : Activity() {
             waitingForAccessibilityPermission = false
             waitForAccessibilityAuthorization()
         }
+        val previousUnlocked = unlockedCodes
         unlockedCodes = GestureUnlockStore(this).entitlement().codes
+        // Locked cards, switches and labels are decided when their views are created, so a change
+        // in entitlements (a check-in done elsewhere, or a fresh install) needs a rebuild.
+        if (unlockedCodes != previousUnlocked) {
+            rebuildContent(preserveScroll = true)
+            return
+        }
         refreshCheckInCard()
         refreshFeatureSwitches()
         refreshActionLabels()
