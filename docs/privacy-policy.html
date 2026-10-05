@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="魔法手势隐私政策">
+  <title>魔法手势隐私政策</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f6f5ff;
+      --surface: #ffffff;
+      --text: #242238;
+      --muted: #66627a;
+      --primary: #5651d8;
+      --border: #e4e1f3;
+      --notice: #f0efff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.8;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: 40px clamp(22px, 5vw, 56px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 12px 36px rgba(52, 47, 112, 0.08);
+    }
+    h1, h2, h3 { line-height: 1.35; }
+    h1 { margin: 0 0 12px; font-size: clamp(28px, 5vw, 40px); }
+    h2 {
+      margin: 38px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 22px;
+    }
+    h3 { margin: 24px 0 8px; font-size: 18px; }
+    p { margin: 10px 0; }
+    ul { padding-left: 1.4em; }
+    li + li { margin-top: 6px; }
+    a { color: var(--primary); }
+    .meta, .muted { color: var(--muted); }
+    .summary {
+      margin: 24px 0 30px;
+      padding: 18px 20px;
+      background: var(--notice);
+      border-left: 4px solid var(--primary);
+      border-radius: 10px;
+    }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+      margin: 14px 0;
+    }
+    th, td {
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f7f6fc; }
+    footer {
+      margin-top: 42px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+    }
+    @media (max-width: 600px) {
+      main { width: 100%; margin: 0; border: 0; border-radius: 0; padding: 28px 20px; }
+      body { background: var(--surface); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>魔法手势隐私政策</h1>
+      <p class="meta">运营主体：魔法手势开发者（个人开发者）</p>
+      <p class="meta">更新日期：2026年10月4日　生效日期：2026年10月4日</p>
+    </header>
+
+    <div class="summary">
+      魔法手势使用前置摄像头在设备本机识别用户主动做出的手势，并通过 Android
+      无障碍服务执行用户明确配置的操作。当前版本没有账号、广告、在线统计或云同步，
+      最终安装包不申请网络权限。
+    </div>
+
+    <p>
+      欢迎使用魔法手势。魔法手势（以下简称“本应用”）由魔法手势开发者（个人开发者）提供。
+      我们重视用户隐私，并通过本政策说明本应用在提供隔空手势控制功能时如何访问、
+      使用、保存和保护相关数据，以及用户可以如何管理这些数据和权限。
+    </p>
+
+    <h2>一、适用范围</h2>
+    <p>
+      本政策适用于 Android 应用“魔法手势”，应用包名为
+      <code>com.magicgesture.app</code>。本政策不适用于用户通过本应用打开或操作的第三方应用，
+      第三方应用的数据处理规则由其各自的隐私政策说明。
+    </p>
+
+    <h2>二、我们如何处理数据</h2>
+
+    <h3>1. 摄像头画面与手部关键点</h3>
+    <p>
+      当用户主动启动手势控制后，本应用使用前置摄像头取得实时画面，并在设备本机通过随应用打包的
+      MediaPipe 手部模型提取手部关键点，用于识别光标、点击、滑动、系统操作、媒体控制和自拍等手势。
+      日常识别画面和手部关键点不会作为照片或视频保存，也不会由本应用上传到开发者服务器。
+    </p>
+    <p>
+      用户点击“停止所有控制”、关闭前台服务或撤销摄像头权限后，本应用停止手势识别。
+      Android 系统仍可能按照系统规则显示摄像头或前台服务提示。
+    </p>
+
+    <h3>2. 用户主动保存的图片</h3>
+    <p>
+      只有用户主动触发自拍、普通截图或滚动长截图动作时，本应用才会把对应图片保存到系统相册的
+      <code>Pictures/MagicGesture/</code> 目录。自拍来自本应用前置摄像头；截图来自用户主动触发的系统能力。
+      图片由用户在设备相册中管理，卸载本应用不会自动删除已经保存到系统相册的图片。
+    </p>
+
+    <h3>3. 本机设置与签到解锁记录</h3>
+    <p>
+      本应用会在应用私有存储中保存手势开关、识别灵敏度、冷却时间、识别反馈设置、动作映射、
+      每日签到次数和最近签到日期，用于恢复用户设置和离线解锁进度。这些记录不上传，清除应用数据或卸载应用后可能丢失。
+    </p>
+
+    <h3>4. 指定应用和收藏按钮配置</h3>
+    <p>
+      当用户为“打开应用”动作选择目标应用，或为第三方应用标定收藏按钮位置时，本应用会在本机保存目标应用的包名、
+      显示名称、屏幕方向和归一化坐标。无障碍服务运行时会接收窗口变化事件中的前台应用包名，以确定用户手势所对应的目标应用。
+    </p>
+    <p>
+      本应用的无障碍服务配置为 <code>canRetrieveWindowContent=false</code>，不读取第三方页面文字、密码、聊天内容或控件树，
+      也不根据页面文字自主点击。无障碍服务只执行用户主动手势所对应的确定性操作。
+    </p>
+
+    <h3>5. 当前版本不提供的功能</h3>
+    <p>
+      当前版本没有账号、登录、支付、广告、在线统计、云同步或服务端权益功能。
+      经最终安装包核验，当前版本不声明 <code>INTERNET</code> 或
+      <code>ACCESS_NETWORK_STATE</code> 权限。未来版本如改变数据处理方式，我们将更新本政策，
+      并在法律法规要求时重新进行显著告知和取得同意。
+    </p>
+
+    <h2>三、权限与敏感能力说明</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>权限或能力</th><th>使用目的</th><th>拒绝或关闭后的影响</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>摄像头</td>
+            <td>使用前置摄像头在本机识别手势；用户主动触发时拍摄自拍。</td>
+            <td>无法启动手势识别和自拍。</td>
+          </tr>
+          <tr>
+            <td>相机类型前台服务</td>
+            <td>在用户离开本应用页面后维持已经主动启动的手势识别，并通过持续通知提示运行状态。</td>
+            <td>无法在其他应用界面持续使用隔空控制。</td>
+          </tr>
+          <tr>
+            <td>无障碍服务</td>
+            <td>把用户主动手势转换为点击、滑动、返回、桌面、最近任务、截图和媒体操作。</td>
+            <td>无法执行跨应用控制动作。</td>
+          </tr>
+          <tr>
+            <td>显示在其他应用上层</td>
+            <td>显示光标、状态点、识别反馈、拍照倒计时和收藏位置标定面板。</td>
+            <td>无法显示全局控制反馈，部分功能不可用。</td>
+          </tr>
+          <tr>
+            <td>通知</td>
+            <td>在 Android 13 及以上显示前台服务状态和停止入口。</td>
+            <td>通知可见性可能受系统限制。</td>
+          </tr>
+          <tr>
+            <td>应用可见性查询</td>
+            <td>解析可启动应用和默认音乐应用，供用户配置“打开应用”动作及媒体播放回退。</td>
+            <td>无法正确列出或打开部分目标应用。</td>
+          </tr>
+          <tr>
+            <td>系统相册写入</td>
+            <td>保存用户主动触发的自拍、截图和滚动长截图。</td>
+            <td>无法保存对应图片。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      用户可以在 Android 系统设置中关闭摄像头、通知、悬浮窗或无障碍服务，也可以随时在本应用内点击“停止所有控制”。
+    </p>
+
+    <h2>四、第三方组件</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>组件</th><th>提供方</th><th>用途与数据处理</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>MediaPipe Tasks Vision 0.10.21</td>
+            <td>Google LLC</td>
+            <td>使用随应用打包的模型在设备本机提取手部关键点，用于手势识别。当前应用清单已移除其传递依赖合并的网络与网络状态权限。</td>
+          </tr>
+          <tr>
+            <td>AndroidX ExifInterface 1.3.7</td>
+            <td>Google LLC / Android Open Source Project</td>
+            <td>读取用户主动拍摄的 JPEG 图片方向信息，使自拍以正确方向保存；不用于上传图片。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>五、数据保存、保护与删除</h2>
+    <ul>
+      <li>手势设置、动作映射、指定应用、收藏坐标和签到进度保存在 Android 应用私有存储中。</li>
+      <li>用户可通过系统“清除数据”或卸载应用删除上述本机记录。</li>
+      <li>已保存到系统相册的图片须由用户在相册中删除；卸载应用不会自动删除这些图片。</li>
+      <li>当前版本没有账号或云端备份，换机后不会自动恢复本机配置或签到进度。</li>
+      <li>我们采用最小权限、本机处理和关闭窗口内容读取等措施减少数据暴露，但任何设备环境都不存在绝对安全保证。</li>
+    </ul>
+
+    <h2>六、用户的权利</h2>
+    <p>用户可以根据适用法律法规行使查询、复制、更正、删除、撤回同意或投诉等权利。对于仅保存在用户设备本机、开发者无法远程访问的数据，用户可以通过以下方式直接管理：</p>
+    <ul>
+      <li>在应用内停止手势控制；</li>
+      <li>在系统设置中撤销相关权限；</li>
+      <li>清除应用数据或卸载应用；</li>
+      <li>在系统相册中删除已保存的图片。</li>
+    </ul>
+    <p>如需进一步协助，可通过本政策“联系我们”所列邮箱提出请求。</p>
+
+    <h2>七、未成年人保护</h2>
+    <p>
+      本应用不是专门面向儿童设计的产品。未成年人应在监护人指导下使用本应用并决定是否授予相关权限。
+      如果监护人认为未成年人不当使用了本应用，可以通过本政策所列联系方式与我们联系。
+    </p>
+
+    <h2>八、政策更新</h2>
+    <p>
+      功能、权限、第三方组件或法律法规要求发生变化时，我们可能更新本政策，并在页面顶部更新日期。
+      涉及数据处理目的、类型或共享方式的重大变化时，我们将依法通过应用内提示或其他显著方式告知用户，
+      并在需要时重新取得同意。
+    </p>
+
+    <h2>九、联系我们</h2>
+    <p>运营主体：魔法手势开发者（个人开发者）</p>
+    <p>隐私联系邮箱：<a href="mailto:3603317@qq.com">3603317@qq.com</a></p>
+    <p>我们会在合理期限内处理与本政策或个人信息保护有关的咨询和请求。</p>
+
+    <footer>
+      <p>应用名称：魔法手势</p>
+      <p>应用包名：<code>com.magicgesture.app</code></p>
+      <p>政策版本：1.0</p>
+    </footer>
+  </main>
+</body>
+</html>
