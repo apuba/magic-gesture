@@ -74,20 +74,21 @@
 
 ### 0.6 产物
 
-> 2026-10-05 移除 32 位 `x86` 原生库后已重新生成，下列哈希与体积为最新产物。
+> 下列为 2026-10-05 加入“签到后原地重建首页”改动后重新生成的最新产物，含 ABI 收敛结果。
 
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，72,794,706 字节，SHA-256 `CBC2AF7ECF465BD6EC898B40A379F76F1A2A1259CFB322E8CE1ED8A984275838`；2026-10-05 ABI 专项后重新生成并已覆盖安装到荣耀 ALP-AN00，**尚未做本机冒烟**。
-- Release APK：`app/build/outputs/apk/release/app-release.apk`，49,313,418 字节，SHA-256 `26A1393F98DFE58FA12567D392B7738E5D2A0A93109B726CEE8E2176A73B99BF`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过。
-- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，37,327,422 字节，SHA-256 `9B85B2026DEF7976E79D704A1709E872C1E9DE235959E9DA19F325F15E7A3883`，正式 Release 签名。
-- 三个产物均于 2026-10-05 ABI 专项后重新生成，原生库仅含 `arm64-v8a` 与 `armeabi-v7a`；Release 与 AAB 尚未安装到真机，本轮未提交应用市场。
-- 旧产物（含 x86）已失效，不要再引用：Debug `668ADC6D…`（72,794,792 字节）、Release `A39BA70F…`（70,607,192 字节）、AAB `D2443784…`（45,882,341 字节）。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`；**设备离线，尚未安装与冒烟**。
+- Release APK：`app/build/outputs/apk/release/app-release.apk`，49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过。
+- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`，正式 Release 签名。
+- 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；Release 与 AAB 尚未安装到真机，本轮未提交应用市场。
+- 已失效的旧产物，不要再引用：Debug `668ADC6D…`（72,794,792 字节，含 x86）、Debug `CBC2AF7E…`（72,794,706 字节）、Release `A39BA70F…`（70,607,192 字节，含 x86）、Release `26A1393F…`（49,313,418 字节，签到改造前）、AAB `D2443784…`（45,882,341 字节，含 x86）、AAB `9B85B202…`（37,327,422 字节，签到改造前）。
+- 注意：Debug APK 体积从 72,794,706 字节降到 51,271,022 字节，与 Release 减少幅度一致，说明此前那次 Debug 打包并未真正应用 `x86` 排除规则；以当前产物为准。
 
 ### 0.7 尚未完成与风险
 
 - ~~隐私政策入口与页面的 8 项真机目视验收~~ **已于 2026-10-05 由产品负责人真机确认通过**。
 - ~~无网络权限新包回归启动控制、MediaPipe 识别、自拍、截图、前台服务和相机恢复~~ **已于 2026-10-05 由产品负责人真机确认通过**。
 - ~~ABI 专项后真机冒烟~~ **已于 2026-10-05 通过**：卸载重装最新 Debug APK 后，MediaPipe 原生库在 arm64 加载成功、相机以 ACTIVE 状态被占用、悬浮圆点显示、无崩溃与 ANR；光标跟随、G02、G22、G23 等手势功能也已确认正常。详见 §0.5。
-- **待评估（未决定是否修改）**：Debug 构建权益全开时，签到成功只有 Toast 提示，手势卡片不会从“未解锁”变成“已解锁”，产品负责人初见会以为没有生效；同时 `performCheckIn()` 成功后调用 `recreate()` 会把首页滚动位置重置到顶部，签到卡片位于页面中段，次数由 0 变 1 的变化容易被错过。是否改为局部刷新并保留滚动位置，需产品负责人确认后再动。
+- **签到反馈改造（代码已完成，待真机验收）**：此前 Debug 权益全开时签到成功只有 Toast，且 `performCheckIn()` 的 `recreate()` 会把首页滚动位置重置到顶部，签到卡片位于页面中段导致计数变化被错过。现改为 `rebuildContent(preserveScroll = true)` 原地重建并恢复滚动位置，`onResume` 检测到权益变化时同样原地重建。**尚未装机验证**：需确认滚动位置真的保留、签到计数与开关状态立即更新、控制按钮状态不回退。
 - **正式 Release 包上的签到体验仍待单独确认**：本轮重装的是 Debug 包；正式包只有 7 个基础编号且无全开权益，虽然 2026-10-04 已在 Release 包完成 12 次签到验收（见 `RELEASE_CHANGES.md`），但当前 ABI 产物对应的 Release 包尚未装机复验。
 - **Release APK/AAB 尚未安装**：两个正式产物都没有装机；正式 Release 包只有 7 个基础编号，替换安装会改变当前测试环境，装机前先确认是否接受卸载重装。
 - 公开主体没有显示个人法定姓名。Google Play 方向可使用公开开发者名称和隐私联系渠道；国内市场若要求公开个人信息处理者实名，须按目标市场审核反馈处理。
@@ -97,7 +98,7 @@
 
 ### 0.8 建议接手顺序
 
-1. 决定是否调整签到反馈：Debug 全开时签到成功只有 Toast、卡片不会从“未解锁”变为“已解锁”，且 `recreate()` 会把首页滚动位置重置到顶部，是否改为局部刷新并保留滚动位置需产品负责人确认。
+1. 重新连接真机后安装最新 Debug APK，验收签到反馈改造：滚动位置保留、计数与开关状态立即更新、控制按钮状态不回退；随后安装 Release APK 复验正式包的 7 个基础编号与签到解锁。
 2. 准备各市场权限声明、截图、适龄分级和审核演示视频，并确认 Google Play、华为、小米、OPPO、vivo 的准入要求。
 3. 全部材料确认后，再决定是否安装 Release APK/AAB 做最终装机回归（正式包只有 7 个基础编号，替换需卸载重装），并提交应用市场。
 4. 之后回到剩余高风险真机项：多人多手、G29–G33 媒体控制、G21 收藏标定、G35 图片与算法姿势差异。
@@ -512,7 +513,9 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次发布产物（2026-10-05 ABI 专项后重新生成）：`app\build\outputs\apk\release\app-release.apk`（49,313,418 字节，SHA-256 `26A1393F98DFE58FA12567D392B7738E5D2A0A93109B726CEE8E2176A73B99BF`）与 `app\build\outputs\bundle\release\app-release.aab`（37,327,422 字节，SHA-256 `9B85B2026DEF7976E79D704A1709E872C1E9DE235959E9DA19F325F15E7A3883`）。原生库已由 `arm64-v8a`/`armeabi-v7a`/`x86` 收敛为 `arm64-v8a`/`armeabi-v7a`，不再包含 32 位 `x86`（详见 §0.5.1）。本轮执行 `assembleRelease bundleRelease assembleDebug installDebug testDebugUnitTest` 成功，124/124 JVM 测试通过；Release APK 正式签名有效且 16KB 对齐通过，权限仍只有相机、前台服务、通知和悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；“查看在线版本”仅通过系统浏览器打开正式 HTTPS 地址。
+最近一次发布产物（2026-10-05 签到反馈改造后重新生成）：`app\build\outputs\apk\release\app-release.apk`（49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`）与 `app\build\outputs\bundle\release\app-release.aab`（37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不再包含 32 位 `x86`（详见 §0.5.1）。本轮执行 `testDebugUnitTest assembleDebug assembleRelease bundleRelease --rerun-tasks` 成功，124/124 JVM 测试通过；Release APK 正式签名有效且 16KB 对齐通过，权限仍只有相机、前台服务、通知和悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；“查看在线版本”仅通过系统浏览器打开正式 HTTPS 地址。
+
+最新 Debug APK（51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`）已构建但**设备离线，尚未安装**；设备恢复连接后需要重新装机验证签到反馈，并另行安装 Release APK 做正式包复验。
 
 上一轮隐私政策构建时还执行过 `lintRelease` 并通过；本轮只改打包配置，未重跑 lint。
 
