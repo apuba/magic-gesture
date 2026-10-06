@@ -273,7 +273,7 @@ class GestureEngine(
         lastVolumeTickAt = 0L
         twoFingerReleaseRequired = waitForRelease
     }
-    @Synchronized fun consume(points: List<Point>, now: Long): List<GestureEvent> {
+    @Synchronized fun consume(points: List<Point>, now: Long, handedness: String? = null): List<GestureEvent> {
         if (paused || points.size != 21 || (lastSeenAt != 0L && now <= lastSeenAt)) return emptyList()
         if (lastSeenAt != 0L && now - lastSeenAt > 300) resetTransient()
         lastSeenAt = now
@@ -481,7 +481,9 @@ class GestureEngine(
         // barrel and the thumb sticks out as the grip, so the two must clearly diverge (same test as
         // G24) and the barrel must point up, not forward at the camera.
         val twoFingerUpPose = twoFingerTogetherPose && thumbSideways && !directionPalm &&
-            thumbIndexAngle >= 45f && kotlin.math.abs(indexAngleDegrees) >= 50f &&
+            thumbIndexAngle in 45f..90f && thumbClearOfIndexJoints &&
+            thumbMatchesHandedness(points, handedness, handScale) &&
+            kotlin.math.abs(indexAngleDegrees) >= 50f &&
             points[8].y < points[5].y - handScale * .25f &&
             points[12].y < points[9].y - handScale * .25f
         // A close, parallel middle finger may look folded relative to the wrist when hidden
@@ -1644,6 +1646,15 @@ class GestureEngine(
         }
     }
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)
+    private fun thumbMatchesHandedness(points: List<Point>, handedness: String?, handScale: Float): Boolean {
+        val horizontalOffset = points[4].x - points[5].x
+        val minimumOffset = handScale * .15f
+        return when (handedness?.lowercase()) {
+            "right" -> horizontalOffset >= minimumOffset
+            "left" -> horizontalOffset <= -minimumOffset
+            else -> false
+        }
+    }
     private fun vectorAngleDegrees(aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): Float {
         val ax = aEnd.x - aStart.x
         val ay = aEnd.y - aStart.y

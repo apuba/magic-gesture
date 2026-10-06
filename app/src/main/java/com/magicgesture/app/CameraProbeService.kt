@@ -209,6 +209,12 @@ class CameraProbeService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
+        // 兜底：用户尚未同意隐私政策时不开启摄像头，也不进入前台服务状态。
+        if (!PrivacyConsent.isAccepted(this)) {
+            Log.d("CameraProbe", "startup: blocked, privacy policy not accepted yet")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         isControlRunning = false
         controlMode = intent?.getBooleanExtra("control", false) == true
         val notification = notification("启动摄像头中")

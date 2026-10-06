@@ -1,12 +1,10 @@
 package com.magicgesture.app
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -43,17 +41,11 @@ class PrivacyPolicyActivity : Activity() {
             setPadding(dp(2), dp(12), 0, dp(4))
         })
         content.addView(TextView(this).apply {
-            text = "更新日期：2026年10月4日  ·  生效日期：2026年10月4日"
+            text = "更新日期：2026年10月6日  ·  生效日期：2026年10月6日"
             textSize = 12f
             setTextColor(Color.rgb(104, 102, 126))
             setPadding(dp(2), 0, 0, dp(16))
         })
-        content.addView(actionButton("查看在线版本") {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
-        }, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(46)
-        ).apply { bottomMargin = dp(14) })
         content.addView(TextView(this).apply {
             text = resources.openRawResource(R.raw.privacy_policy).bufferedReader().use { it.readText() }
             textSize = 14f
@@ -99,8 +91,4 @@ class PrivacyPolicyActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private companion object {
-        const val PRIVACY_POLICY_URL = "https://magicgesture.mt4000.com/privacy-policy.html"
-    }
 }

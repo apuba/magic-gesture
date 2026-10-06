@@ -20,14 +20,20 @@
 - 重写 README，使其只描述当前正式产品，不再保留早期技术验证和分阶段接入表述。
 - 生成与当前 V0.9 行为一致的公开隐私政策 HTML，公开主体统一写为“魔法手势开发者（个人开发者）”，隐私联系邮箱为 `3603317@qq.com`，公开文件不出现法定实名。
 - 正式隐私政策地址：`https://magicgesture.mt4000.com/privacy-policy.html`。用户已提供浏览器截图，确认 HTTPS 页面可正常访问；此前命令行环境无法访问属于执行环境网络路径限制，不能据此判定公网不可用。
-- App 首页全部内容最下方增加“隐私政策与权限说明”文字链接，不在“手势练习与校准”区域显示为按钮；正文随 APK 打包，无网络也能查看。“查看在线版本”只调用系统浏览器，不给 App 新增网络权限。
+- App 首页全部内容最下方提供“隐私政策与权限说明”文字链接，不在“手势练习与校准”区域显示为按钮；正文随 APK 打包，无网络也能查看。2026-10-06 已移除应用内重复的“查看在线版本”按钮，公开 HTTPS 页面只供应用商店后台和未安装 App 的用户访问。
 - 当前仍严格限定 G01–G35；G03/G04/G09/G10 继续默认关闭且未绑定，只为真实上线后二期轨迹规划保留。本轮没有新增手势、账号、支付、分享、埋点或联网业务。
 - 本轮追加 ABI 专项：为满足 Google Play 64 位配对要求移除 32 位 `x86` 原生库，只调整打包规则，没有改 Manifest、依赖、手势与功能（详见 §0.5.1）。
+- 2026-10-06 根据真机误判反馈收紧 G35：普通竖起并拢双指不得触发；拇指必须明显侧伸、与食指保持 45°–90°夹角、远离食指 MCP/PIP，并满足右手向右、左手向左的方向要求。手别从 `HandPipeline` 经 `ActiveHandSelector` 传入 `GestureEngine`，方向相反或手别缺失时失败关闭。编号、保持 1 秒、默认动作和签到包均不变。
+- 2026-10-06 修复签到后“首次使用设置”重新出现：签到触发首页原地重建后现在会立即刷新悬浮窗与无障碍授权状态，已完成两项授权时设置区域保持隐藏。
+- 2026-10-06 新增首次启动隐私政策同意门：首次打开 App 先弹隐私政策弹窗（政策要点摘要 + “查看完整《隐私政策》”入口），未同意前不构建首页、不申请通知权限、不开启摄像头；同意记录带版本号写入本机，只需同意一次，政策重大变更提升版本号后重新征求同意；`CameraProbeService` 入口增加兜底，未同意不得开启相机。本轮没有新增手势、账号、支付、分享、埋点或联网业务。
 
 ### 0.3 本轮代码和文档入口
 
 - `MainActivity.kt`：首页全部内容最下方的“隐私政策与权限说明”文字链接入口。
-- `PrivacyPolicyActivity.kt`：原生离线政策页面、返回按钮及系统浏览器在线版本跳转。
+- `PrivacyConsent.kt`：隐私政策同意状态与政策版本号的本机读写（同意一次即长期有效，版本号变更后重新征求）。
+- `MainActivity.kt`：首页构建前的隐私政策同意弹窗；未同意时不构建首页、不申请通知权限，点击“不同意，退出应用”时 `finishAffinity()`。
+- `CameraProbeService.kt`：`onStartCommand` 入口同意校验兜底，未同意直接 `stopSelf()`。
+- `PrivacyPolicyActivity.kt`：原生离线政策页面与返回按钮，不提供在线版本跳转。
 - `res/raw/privacy_policy.txt`：随 APK 打包的离线政策正文。
 - `AndroidManifest.xml`：注册未导出的 `PrivacyPolicyActivity`；继续通过 Manifest 合并规则移除第三方依赖带入的 `INTERNET` 与 `ACCESS_NETWORK_STATE`。
 - `docs/privacy-policy.html`：可部署的公开 HTTPS 网页源文件。
@@ -55,12 +61,17 @@
 - Release APK：v2 签名验证通过；16KB 页面兼容对齐检查通过。
 - `git diff --check`：通过，仅有 Windows LF→CRLF 提示。
 - 已核对 Debug/Release Manifest 包含未导出的 `PrivacyPolicyActivity`，两种构建均包含 `privacy_policy` 原始资源。
-- **产品负责人真机验收通过（2026-10-05）**：隐私政策入口与页面全部目视项（首页全部内容最下方“隐私政策与权限说明”文字链接位置与显示、进入政策页面、正文完整滚动、返回、断网查看、“查看在线版本”系统浏览器跳转）。
+- **产品负责人真机验收通过（2026-10-05）**：隐私政策入口与页面目视项（首页全部内容最下方文字链接位置与显示、进入政策页面、正文完整滚动、返回和断网查看）。当时验收过的在线跳转已于 2026-10-06 按产品要求移除。
 - **产品负责人真机验收通过（2026-10-05）**：无网络权限状态下的 MediaPipe 识别、自拍、截图、前台服务与相机恢复回归，未见因移除 `INTERNET`/`ACCESS_NETWORK_STATE` 产生的机型问题。
 - ABI 专项（2026-10-05）：`testDebugUnitTest assembleRelease bundleRelease` 均成功，124/124 JVM 测试通过；移除 x86 后 Release APK/AAB 与 Debug APK 的原生库仅剩 `arm64-v8a` 与 `armeabi-v7a`。Release APK 正式签名有效（`CN=Magic Gesture`），`zipalign -c -P 16 4` 16KB 对齐检查通过。
 - **卸载重装后的 ABI 冒烟已通过（2026-10-05，荣耀 ALP-AN00 / Android 14）**：产品负责人卸载旧包后，由本轮重新安装最新 Debug APK 并恢复相机、悬浮窗、通知与无障碍授权；`CameraProbeService` 前台服务运行中，`dumpsys media.camera` 显示 device 1 由本应用以 `ACTIVE` 状态占用（说明 `libmediapipe_tasks_vision_jni.so` 在 arm64 上加载成功、模型初始化成功），悬浮圆点窗口已显示，logcat 无 `FATAL` / `ANR` / `UnsatisfiedLinkError`。至此可以确认移除 32 位 `x86` 不影响 arm64 真机运行。
 - **重装后手势功能真机验收通过（2026-10-05，产品负责人确认）**：启动手势控制、识别管线、光标跟随指尖、G02 指尖轻点、G22 握拳保持 1 秒播放/暂停、G23 小指静音/恢复均正常。
 - 签到链路已在重装后的 Debug 包上验证：点击“今日签到”会弹出 Toast“签到成功，已解锁：XXX”（产品负责人已确认看到提示），`adb shell run-as com.magicgesture.app cat shared_prefs/gesture_settings.xml` 显示 `unlock_checkin_count=1`、`unlock_last_day=20731`。界面上手势卡片仍全部显示已解锁，是 Debug 构建全开权益的预期表现，不是签到失败。
+- G35 角度与左右手方向修复后执行针对性 `GestureEngineReplayTest`、`ActiveHandSelectorTest` 及完整 `testDebugUnitTest assembleDebug`：成功，126/126 JVM 测试通过；新增贴掌拇指、大于 90°、左右手方向相反及手别缺失不得触发 G35 的回放覆盖。
+- **G35 真机验收通过（2026-10-06，产品负责人确认）**：荣耀 ALP-AN00 最新 Debug 包中，右手拇指向右、左手拇指向左可以正常触发；方向相反以及普通竖起双指不再误判为 G35。
+- 签到后授权引导回显修复执行完整 `testDebugUnitTest assembleDebug`：成功，126/126 JVM 测试通过；最新 Debug APK 已覆盖安装。由于设备当天已签到，尚待下一次可签到时确认两项授权均完成后设置区域保持隐藏。
+- 移除应用内“查看在线版本”按钮后再次执行 `testDebugUnitTest assembleDebug`：成功，126/126 JVM 测试通过；按钮、系统浏览器跳转代码及离线正文中的在线地址均已移除，公开 HTML 和 HTTPS 地址继续保留供商店后台使用。
+- 首次启动隐私政策同意门（2026-10-06）执行 `testDebugUnitTest assembleDebug`：成功，126/126 JVM 测试通过；`git diff --check` 通过。真机验收已于 2026-10-06 在荣耀 ALP-AN00（Android 14）完成。
 
 ### 0.5.1 ABI 架构决策（2026-10-05）
 
@@ -74,9 +85,9 @@
 
 ### 0.6 产物
 
-> 下列为 2026-10-05 加入“签到后原地重建首页”改动后重新生成的最新产物，含 ABI 收敛结果。
+> Debug 为 2026-10-06 G35 角度修复后的最新产物；Release APK/AAB 仍是 2026-10-05 的上架候选产物，不包含本次 G35 修复，后续发布前必须重建。
 
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`；**设备离线，尚未安装与冒烟**。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，51,501,461 字节，SHA-256 `C5B3D40E8BEE86FD60D7C7BDA4924D4D198024589233E87DF2A1D270D68028DE`；2026-10-06 已覆盖安装到荣耀 ALP-AN00，包含 G35 真机通过版本、签到页面修复及隐私页面在线按钮移除。
 - Release APK：`app/build/outputs/apk/release/app-release.apk`，49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过。
 - Release AAB：`app/build/outputs/bundle/release/app-release.aab`，37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`，正式 Release 签名。
 - 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；Release 与 AAB 尚未安装到真机，本轮未提交应用市场。
@@ -85,11 +96,14 @@
 
 ### 0.7 尚未完成与风险
 
+- ~~**首次启动隐私政策同意门待真机验收（2026-10-06 新增）**~~ **已于 2026-10-06 通过**：荣耀 ALP-AN00（Android 14）冷启动弹窗宽度/圆角/文字正常；点击“查看完整《隐私政策》”进入离线正文、返回后弹窗仍在；点击“同意并继续”进入首页并随后才弹出系统通知权限请求；点击“不同意，退出应用”显示 Toast 后直接退出、未开启摄像头；同意一次后 force-stop 再冷启动不再弹窗；覆盖安装升级后同意记录仍有效。
 - ~~隐私政策入口与页面的 8 项真机目视验收~~ **已于 2026-10-05 由产品负责人真机确认通过**。
 - ~~无网络权限新包回归启动控制、MediaPipe 识别、自拍、截图、前台服务和相机恢复~~ **已于 2026-10-05 由产品负责人真机确认通过**。
 - ~~ABI 专项后真机冒烟~~ **已于 2026-10-05 通过**：卸载重装最新 Debug APK 后，MediaPipe 原生库在 arm64 加载成功、相机以 ACTIVE 状态被占用、悬浮圆点显示、无崩溃与 ANR；光标跟随、G02、G22、G23 等手势功能也已确认正常。详见 §0.5。
 - **签到反馈改造（代码已完成，待真机验收）**：此前 Debug 权益全开时签到成功只有 Toast，且 `performCheckIn()` 的 `recreate()` 会把首页滚动位置重置到顶部，签到卡片位于页面中段导致计数变化被错过。现改为 `rebuildContent(preserveScroll = true)` 原地重建并恢复滚动位置，`onResume` 检测到权益变化时同样原地重建。**尚未装机验证**：需确认滚动位置真的保留、签到计数与开关状态立即更新、控制按钮状态不回退。
+- **签到后授权引导回显修复待真机确认**：原地重建后已补 `refreshSetupGuide()`；需在悬浮窗和无障碍均已授权的状态下完成下一次签到，确认“首次使用设置”的两个选项不再出现。
 - **正式 Release 包上的签到体验仍待单独确认**：本轮重装的是 Debug 包；正式包只有 7 个基础编号且无全开权益，虽然 2026-10-04 已在 Release 包完成 12 次签到验收（见 `RELEASE_CHANGES.md`），但当前 ABI 产物对应的 Release 包尚未装机复验。
+- ~~G35 左右手方向与普通双指误触复验~~ **已于 2026-10-06 通过**：右手向右、左手向左可触发，反向与普通双指不触发。不同距离、弱光和大角度侧转仍属于后续兼容性抽验项。
 - **Release APK/AAB 尚未安装**：两个正式产物都没有装机；正式 Release 包只有 7 个基础编号，替换安装会改变当前测试环境，装机前先确认是否接受卸载重装。
 - 公开主体没有显示个人法定姓名。Google Play 方向可使用公开开发者名称和隐私联系渠道；国内市场若要求公开个人信息处理者实名，须按目标市场审核反馈处理。
 - 继续逐家确认 Google Play、华为、小米、OPPO、vivo 对无障碍、后台前置摄像头和悬浮窗的准入与材料要求。
@@ -513,7 +527,7 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次发布产物（2026-10-05 签到反馈改造后重新生成）：`app\build\outputs\apk\release\app-release.apk`（49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`）与 `app\build\outputs\bundle\release\app-release.aab`（37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不再包含 32 位 `x86`（详见 §0.5.1）。本轮执行 `testDebugUnitTest assembleDebug assembleRelease bundleRelease --rerun-tasks` 成功，124/124 JVM 测试通过；Release APK 正式签名有效且 16KB 对齐通过，权限仍只有相机、前台服务、通知和悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；“查看在线版本”仅通过系统浏览器打开正式 HTTPS 地址。
+最近一次发布产物（2026-10-05 签到反馈改造后重新生成）：`app\build\outputs\apk\release\app-release.apk`（49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`）与 `app\build\outputs\bundle\release\app-release.aab`（37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不再包含 32 位 `x86`（详见 §0.5.1）。这两个旧 Release 产物早于 2026-10-06 的 G35、签到页面和隐私页面修改，不能作为最新发布包，后续必须重建。
 
 最新 Debug APK（51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`）已构建但**设备离线，尚未安装**；设备恢复连接后需要重新装机验证签到反馈，并另行安装 Release APK 做正式包复验。
 
@@ -521,7 +535,7 @@ D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app
 
 Debug APK 已于 2026-10-05 ABI 专项后覆盖安装到荣耀 ALP-AN00，尚未做本机冒烟；Release APK/AAB **尚未安装到真机，也未提交应用市场**。
 
-上架文案材料（2026-10-05）：根目录 `README.md` 已按当前版本重写；新增 `docs/PRIVACY_POLICY.md`、`docs/privacy-policy.html` 与 `docs/APP_STORE_REVIEW_GUIDE.md`。公开隐私政策使用“魔法手势开发者（个人开发者）”和联系邮箱 `3603317@qq.com`，不公开法定实名，正式地址为 `https://magicgesture.mt4000.com/privacy-policy.html`。App 首页提供离线“隐私政策与权限说明”入口，由 `PrivacyPolicyActivity` 读取随包 `res/raw/privacy_policy.txt`，不使用 WebView 或网络；“查看在线版本”通过系统浏览器打开。App 内页面和跳转尚未真机目视验收，完成前不能标记为可正式提交。
+上架文案材料：根目录 `README.md` 已按当前版本重写；新增 `docs/PRIVACY_POLICY.md`、`docs/privacy-policy.html` 与 `docs/APP_STORE_REVIEW_GUIDE.md`。公开隐私政策使用“魔法手势开发者（个人开发者）”和联系邮箱 `3603317@qq.com`，不公开法定实名，正式地址为 `https://magicgesture.mt4000.com/privacy-policy.html`。App 首页提供离线“隐私政策与权限说明”入口，由 `PrivacyPolicyActivity` 读取随包 `res/raw/privacy_policy.txt`，不使用 WebView 或网络；2026-10-06 已移除应用内在线版本按钮，公开网页仅供商店后台使用。
 
 手机测试路径：开相机权限 → 启用无障碍 → 启动控制 → 播放音乐。先验证 G23 小指静音/恢复、保持不重触发、释放后可再触发以及不误判比心；再测试两指左右切歌、上下拉住持续音量和双击播放暂停；最后验证握拳保持 1 秒。G18/G19 画圈识别已经移除，不再测试旧画圈音量流程。
 
@@ -545,7 +559,7 @@ Debug APK 已于 2026-10-05 ABI 专项后覆盖安装到荣耀 ALP-AN00，尚未
 | `FavoriteButtonController.kt` | 收藏标定与坐标点击：首次标定浮层、准星、`saveFavoriteProfile` 读取；**失败分支共用兜底文案**（当前待定位） |
 | `GesturePreferences.kt` | 开关（`feature_*`）与映射覆盖（`mapping_Gxx`）持久化 |
 | `MainActivity.kt` / `CalibrationActivity.kt` / `KeepAuthorizationActivity.kt` | 首页卡片 / 校准+开关+映射配置 / 品牌授权引导 |
-| `PrivacyPolicyActivity.kt` / `res/raw/privacy_policy.txt` | App 内离线隐私政策页面 / 随包政策正文 / 系统浏览器在线版本跳转 |
+| `PrivacyPolicyActivity.kt` / `res/raw/privacy_policy.txt` | App 内离线隐私政策页面 / 随包政策正文；公开网页不在 App 内重复跳转 |
 | `GlobalCooldownManager.kt` / `HandPipeline.kt` / `OverlayIndicator.kt` | 冷却 / MediaPipe 封装 / 悬浮反馈与缩略图 |
 | `app/build.gradle.kts` | 构建配置：BuildConfig 隔离全解锁、**移除 32 位 `x86` 原生库以满足 Google Play 64 位配对要求** |
 | `GestureUnlock.kt` | 签到解锁：解锁计划、签到状态机、本机存储、权益判定与开关收敛 |
@@ -556,5 +570,5 @@ Debug APK 已于 2026-10-05 ABI 专项后覆盖安装到荣耀 ALP-AN00，尚未
 1. 用已覆盖安装到荣耀 ALP-AN00 的新 Debug APK 做 ABI 冒烟：启动手势控制确认 `libmediapipe_tasks_vision_jni.so` 正常加载，并抽验识别、自拍、截图、前台服务与相机恢复。
 2. 审查 §0.4 的完整差异（隐私政策链路 + ABI 打包）；确认产品文案和公开主体策略后再本地提交，**未获明确推送授权不要同步远程**。
 3. ABI 已通过 §0.5.1 的结论处理完毕，不需要再动；除非产品负责人重新决定只保留 `arm64-v8a`。
-4. 准备各市场权限声明、适龄分级和审核演示视频，并确认 Google Play、华为、小米、OPPO、vivo 的准入要求；商店截图与图标已于 2026-10-06 产出（见审核指南 §7.1 清单），剩余工作是逐张隐私复核与国内渠道横幅导出。
+4. 准备各市场权限声明、适龄分级和审核演示视频，并确认 Google Play、华为、小米、OPPO、vivo 的准入要求；商店截图与图标已于 2026-10-06 产出（见 §7.1 清单），剩余工作是逐张隐私复核与国内渠道横幅导出。
 5. 最后才回到剩余高风险真机项：G35 图形/算法姿势差异、多人多手、G29–G33、G21 收藏标定。

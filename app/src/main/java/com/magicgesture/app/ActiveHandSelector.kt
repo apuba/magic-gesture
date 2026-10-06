@@ -12,6 +12,7 @@ data class HandCandidate(
 
 data class ActiveHandSelection(
     val points: List<Point>,
+    val handedness: String? = null,
     /** True when recognition must discard every transient state before consuming this hand. */
     val ownershipChanged: Boolean
 )
@@ -59,7 +60,7 @@ class ActiveHandSelector(
             active = nearest
             missingSince = 0L
             acquisition = null
-            return ActiveHandSelection(nearest.candidate.points, ownershipChanged = true)
+            return ActiveHandSelection(nearest.candidate.points, nearest.candidate.handedness, ownershipChanged = true)
         }
 
         missingSince = 0L
@@ -76,7 +77,7 @@ class ActiveHandSelector(
                     active = nearestChallenger
                     challenger = null
                     challengerAt = 0L
-                    return ActiveHandSelection(nearestChallenger.candidate.points, ownershipChanged = true)
+                    return ActiveHandSelection(nearestChallenger.candidate.points, nearestChallenger.candidate.handedness, ownershipChanged = true)
                 }
             }
         } else {
@@ -85,7 +86,7 @@ class ActiveHandSelector(
         }
 
         active = matchedOwner
-        return ActiveHandSelection(matchedOwner.candidate.points, ownershipChanged = false)
+        return ActiveHandSelection(matchedOwner.candidate.points, matchedOwner.candidate.handedness, ownershipChanged = false)
     }
 
     @Synchronized
@@ -115,7 +116,7 @@ class ActiveHandSelector(
         active = nearest
         acquisition = null
         acquisitionAt = 0L
-        return ActiveHandSelection(nearest.candidate.points, ownershipChanged = false)
+        return ActiveHandSelection(nearest.candidate.points, nearest.candidate.handedness, ownershipChanged = false)
     }
 
     private fun snapshot(candidate: HandCandidate): Snapshot? {

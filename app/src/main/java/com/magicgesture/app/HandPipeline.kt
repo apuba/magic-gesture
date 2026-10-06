@@ -37,9 +37,13 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
                 if (now - lastResultAt > 300) engine.lost(now).forEach(onEvent)
                 lastResultAt = now
                 val candidates = result.landmarks().mapIndexed { index, hand ->
+                    val detectedHandedness = result.handedness().getOrNull(index)?.firstOrNull()?.categoryName()
                     HandCandidate(
                         points = hand.map { Point(if (reverseHorizontal) 1f - it.x() else it.x(), it.y()) },
-                        handedness = result.handedness().getOrNull(index)?.firstOrNull()?.categoryName()
+                        // Keep MediaPipe's handedness label consistent with the coordinates after
+                        // the optional horizontal flip. This lets anatomical left/right checks use
+                        // one rule regardless of the user's cursor-direction preference.
+                        handedness = if (reverseHorizontal) oppositeHandedness(detectedHandedness) else detectedHandedness
                     )
                 }
                 val selected = activeHandSelector.select(candidates, now)
@@ -54,12 +58,18 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
                         engine.stop()
                         engine.resume()
                     }
-                    engine.consume(selected.points, now).forEach(onEvent)
+                    engine.consume(selected.points, now, selected.handedness).forEach(onEvent)
                 }
             }
             .setErrorListener { error -> Log.e("HandPipeline", "inference failed", error) }
             .build()
         landmarker = HandLandmarker.createFromOptions(context, options)
+    }
+
+    private fun oppositeHandedness(handedness: String?): String? = when (handedness?.lowercase()) {
+        "left" -> "Right"
+        "right" -> "Left"
+        else -> handedness
     }
     /**
      * Resuming after a freeze must not look like the hand disappeared. No frame reaches the

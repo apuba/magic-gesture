@@ -7,9 +7,11 @@ import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.Dialog
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
@@ -19,6 +21,7 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -49,15 +52,107 @@ class MainActivity : Activity() {
     private var updatingFeatureSwitches = false
     /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
     private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
+    /** 首页内容是否已构建；未同意隐私政策时为 false，此时 onResume 不能刷新首页控件。 */
+    private var homeContentReady = false
+    /** 首启隐私政策弹窗；Activity 销毁时必须关闭，避免窗口泄漏。 */
+    private var consentDialog: Dialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(72, 69, 198)
         window.navigationBarColor = Color.rgb(246, 245, 255)
+        // 隐私政策必须先于任何权限申请和相机/无障碍能力生效：未同意时不构建首页。
+        if (!PrivacyConsent.isAccepted(this)) {
+            // 未构建首页时给窗口一个纯色背景，避免透明 Activity 透出桌面壁纸。
+            window.setBackgroundDrawable(ColorDrawable(Color.rgb(246, 245, 255)))
+            showPrivacyConsentDialog()
+            return
+        }
+        enterHome()
+    }
+
+    /** Builds the home page. Only reached after the privacy policy has been accepted. */
+    private fun enterHome() {
         setContentView(buildContent())
+        homeContentReady = true
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
         }
+    }
+
+    /**
+     * First-launch privacy gate. It is shown before the home page exists so nothing else on the
+     * screen can request permissions or start the camera while consent is still undecided.
+     */
+    private fun showPrivacyConsentDialog() {
+        val dialog = Dialog(this)
+        dialog.setCancelable(false)
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setContentView(buildConsentView(
+            onAgree = {
+                PrivacyConsent.accept(this@MainActivity)
+                consentDialog = null
+                dialog.dismiss()
+                enterHome()
+            },
+            onDisagree = {
+                Toast.makeText(this@MainActivity, "需要同意隐私政策后才能使用魔法手势", Toast.LENGTH_LONG).show()
+                consentDialog = null
+                dialog.dismiss()
+                finishAffinity()
+            }
+        ))
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        consentDialog = dialog
+        dialog.show()
+        // 固定为屏宽的 92%，避免不同机型上文字撑满整屏导致圆角贴边。
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun buildConsentView(onAgree: () -> Unit, onDisagree: () -> Unit): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(22), dp(22), dp(18))
+            background = rounded(Color.WHITE, 24)
+        }
+        root.addView(label("欢迎使用魔法手势", 22f, Color.rgb(31, 31, 55), true))
+        root.addView(label("首次使用请先阅读并同意《隐私政策》。同意后不会再重复弹出。", 14f, Color.rgb(104, 102, 126), false).apply {
+            setPadding(0, dp(8), 0, dp(14))
+        })
+
+        val points = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = rounded(Color.rgb(239, 240, 255), 16)
+        }
+        for (line in listOf(
+            "• 摄像头画面只在手机本机处理，用于识别你的手势，不保存、不上传",
+            "• 无障碍服务只执行你主动做出的手势动作，不读取聊天记录、密码和页面文字",
+            "• 悬浮窗只用于显示光标、状态点和识别反馈",
+            "• 只有你主动触发自拍或截图时，才会把图片保存到本机相册",
+            "• 当前版本没有账号、广告、在线统计和云同步"
+        )) {
+            points.addView(label(line, 13f, Color.rgb(78, 77, 111), false).apply {
+                setLineSpacing(0f, 1.25f)
+                setPadding(0, dp(4), 0, dp(4))
+            })
+        }
+        root.addView(points, margins(bottom = 12))
+
+        root.addView(label("查看完整《隐私政策》", 14f, Color.rgb(83, 80, 214), true).apply {
+            gravity = Gravity.CENTER
+            paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { startActivity(Intent(this@MainActivity, PrivacyPolicyActivity::class.java)) }
+        }, margins(bottom = 4))
+        root.addView(label("不同意将无法使用本应用，也不会开启摄像头。", 12f, Color.rgb(157, 92, 20), false).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(6), dp(10), dp(14))
+        })
+
+        root.addView(actionButton("同意并继续", Color.rgb(83, 80, 214), Color.WHITE, Color.rgb(55, 52, 178), null, onAgree), margins(bottom = 8, height = 50))
+        root.addView(actionButton("不同意，退出应用", Color.WHITE, Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 216, 157), onDisagree), margins(height = 46))
+        return ScrollView(this).apply { addView(root) }
     }
 
     private fun buildContent(): View {
@@ -170,7 +265,7 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指左挥 / 双指右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指上拉 / 双指下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指双点", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_finger_gun, "双指枪·竖向", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指向侧面伸出，无名指和小指收拢，稳定保持 1 秒；主要用于刷短视频时翻到下一个视频。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
+        content.addView(gestureCard(R.drawable.gesture_two_finger_gun, "双指枪·竖向", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指明显向外侧伸出并与食指保持 45°–90°夹角：右手拇指向右，左手拇指向左；无名指和小指收拢，稳定保持 1 秒。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
         content.addView(palmSeriesCard(features), margins(bottom = 18))
 
         content.addView(LinearLayout(this).apply {
@@ -213,8 +308,11 @@ class MainActivity : Activity() {
         actionLabelViews.clear()
         featureSwitches.clear()
         setContentView(buildContent())
-        // Rebuilt views start from their default state, so re-apply the live control state.
+        // Rebuilt views start from their default state, so re-apply live control and permission
+        // state. Without the permission refresh, a successful check-in temporarily brought the
+        // already-completed two-step setup guide back onto the page.
         refreshControlButton()
+        refreshSetupGuide()
         refreshCheckInCard()
         if (preserveScroll) {
             contentScroll?.post { contentScroll?.scrollTo(0, previousScrollY) }
@@ -684,6 +782,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // 未同意隐私政策时首页尚未构建，此时不能刷新首页控件。
+        if (!homeContentReady) return
         if (waitingForOverlayPermission) {
             waitingForOverlayPermission = false
             if (Settings.canDrawOverlays(this)) startProbe()
@@ -706,6 +806,12 @@ class MainActivity : Activity() {
         refreshActionLabels()
         refreshControlButton()
         refreshSetupGuide()
+    }
+
+    override fun onDestroy() {
+        consentDialog?.dismiss()
+        consentDialog = null
+        super.onDestroy()
     }
 
     /** Home cards show the live mapping (defaults + user overrides), so refresh after remapping. */

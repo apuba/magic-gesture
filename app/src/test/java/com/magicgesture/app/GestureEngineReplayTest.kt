@@ -24,7 +24,9 @@ class GestureEngineReplayTest {
 
     private val thumbOut = ThumbSpec(Point(.44f, .74f), Point(.35f, .70f), Point(.31f, .65f), Point(.29f, .59f))
     private val thumbUp = ThumbSpec(Point(.46f, .72f), Point(.46f, .66f), Point(.46f, .60f), Point(.46f, .52f))
-    private val thumbSide = ThumbSpec(Point(.44f, .72f), Point(.41f, .68f), Point(.40f, .64f), Point(.41f, .70f))
+    private val thumbSide = ThumbSpec(Point(.44f, .72f), Point(.41f, .68f), Point(.34f, .67f), Point(.27f, .66f))
+    private val thumbRestingAtSide = ThumbSpec(Point(.44f, .72f), Point(.41f, .68f), Point(.40f, .64f), Point(.41f, .70f))
+    private val thumbTooObtuse = ThumbSpec(Point(.44f, .72f), Point(.41f, .68f), Point(.34f, .70f), Point(.27f, .72f))
     // A "666" hand really does stick the thumb out; the generic thumbOut above only clears the
     // folded-thumb test by 7%, and after the pinky pose was allowed a resting thumb the two shapes
     // became the same frame. This one keeps G34 distinguishable from G23 the way a hand is.
@@ -65,6 +67,7 @@ class GestureEngineReplayTest {
 
     /** Replaces a landmark by index, returning a new frame. */
     private fun List<Point>.withLandmark(index: Int, point: Point): List<Point> = toMutableList().also { it[index] = point }
+    private fun List<Point>.mirrorHorizontally(): List<Point> = map { Point(1f - it.x, it.y) }
 
     /** `steps` frames walking every landmark from one pose to the other, endpoints included. */
     private fun morph(from: List<Point>, to: List<Point>, steps: Int): List<List<Point>> =
@@ -293,17 +296,20 @@ class GestureEngineReplayTest {
 
     // ---------------------------------------------------------------- replay driver
 
-    private class Replay(features: GestureFeatureConfig = GestureFeatureConfig()) {
+    private class Replay(
+        features: GestureFeatureConfig = GestureFeatureConfig(),
+        private val handedness: String? = "Left"
+    ) {
         private val engine = GestureEngine(movementScale = 1f, features = features)
         private var t = 0L
         val events = mutableListOf<GestureEvent>()
 
         fun feed(frames: Int, pose: () -> List<Point>) {
-            repeat(frames) { events += engine.consume(pose(), ++t * 50L) }
+            repeat(frames) { events += engine.consume(pose(), ++t * 50L, handedness) }
         }
 
         fun feedPoses(poses: Iterable<List<Point>>) {
-            poses.forEach { events += engine.consume(it, ++t * 50L) }
+            poses.forEach { events += engine.consume(it, ++t * 50L, handedness) }
         }
 
         /** The hand leaves the frame: what HandPipeline does when no hand is detected anymore. */
@@ -672,6 +678,16 @@ class GestureEngineReplayTest {
         ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbSide
     )
 
+    private fun twoFingerWithRestingThumb(): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbRestingAtSide
+    )
+
+    private fun twoFingerWithObtuseThumb(): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.EXTENDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.FOLDED, thumb = thumbTooObtuse
+    )
+
     @Test fun twoFingerUpHoldFiresOnceAfter1000msAndRequiresRelease() {
         val r = Replay()
         r.feed(19, ::twoFingerUpPose)             // 0.95s elapsed: below the 1s hold
@@ -697,6 +713,34 @@ class GestureEngineReplayTest {
         val r = Replay()
         r.feed(40, ::restPose)
         assertEquals(0, r.events.countOf<GestureEvent.TwoFingerUp>())
+    }
+
+    @Test fun twoFingerUpRequiresThumbClearlyExtendedAtG24Angle() {
+        val resting = Replay()
+        resting.feed(40, ::twoFingerWithRestingThumb)
+        assertEquals(0, resting.events.countOf<GestureEvent.TwoFingerUp>())
+
+        val tooObtuse = Replay()
+        tooObtuse.feed(40, ::twoFingerWithObtuseThumb)
+        assertEquals(0, tooObtuse.events.countOf<GestureEvent.TwoFingerUp>())
+    }
+
+    @Test fun twoFingerUpThumbDirectionMustMatchDetectedHand() {
+        val left = Replay(handedness = "Left")
+        left.feed(24, ::twoFingerUpPose)
+        assertEquals(1, left.events.countOf<GestureEvent.TwoFingerUp>())
+
+        val leftWrongDirection = Replay(handedness = "Right")
+        leftWrongDirection.feed(24, ::twoFingerUpPose)
+        assertEquals(0, leftWrongDirection.events.countOf<GestureEvent.TwoFingerUp>())
+
+        val right = Replay(handedness = "Right")
+        right.feed(24) { twoFingerUpPose().mirrorHorizontally() }
+        assertEquals(1, right.events.countOf<GestureEvent.TwoFingerUp>())
+
+        val missingHandedness = Replay(handedness = null)
+        missingHandedness.feed(24, ::twoFingerUpPose)
+        assertEquals(0, missingHandedness.events.countOf<GestureEvent.TwoFingerUp>())
     }
 
     @Test fun twoFingerUpFeatureDisabledSuppressesThePipeline() {

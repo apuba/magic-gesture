@@ -54,7 +54,7 @@ G03、G04、G09、G10 当前默认关闭且未绑定动作，编号保留给应�
 - 当前版本没有账号、广告、在线统计、云同步或服务端权益功能。
 - 当前最终 Debug/Release APK 均不包含 `INTERNET` 和 `ACCESS_NETWORK_STATE` 权限。
 
-[隐私政策](docs/PRIVACY_POLICY.md) 已补充公开主体名和隐私联系邮箱，正式在线地址为 [https://magicgesture.mt4000.com/privacy-policy.html](https://magicgesture.mt4000.com/privacy-policy.html)。App 首页提供离线“隐私政策与权限说明”入口，完整正文随 APK 打包，不依赖网络；用户也可从政策页面调用系统浏览器查看在线版本。
+[隐私政策](docs/PRIVACY_POLICY.md) 已补充公开主体名和隐私联系邮箱，正式在线地址为 [https://magicgesture.mt4000.com/privacy-policy.html](https://magicgesture.mt4000.com/privacy-policy.html)，供应用商店后台和未安装 App 的用户访问。App 首页提供离线“隐私政策与权限说明”入口，完整正文随 APK 打包，不依赖网络，应用内不再提供重复的在线版本按钮。
 
 ## 正式版解锁规则
 
