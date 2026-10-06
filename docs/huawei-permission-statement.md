@@ -98,3 +98,19 @@
 - 华为后台表单字段可能随政策调整，**以当页提示为准**；本文件未覆盖的新问题，按「核心功能、用户主动触发、本机处理、不收集不上传」的同一口径回答。
 - 应用分级问卷中必须如实申报摄像头与无障碍能力，不能因「本机处理」而省略。
 - 若华为要求提交"特殊权限申请"或补充说明材料，直接以 §1、§2 全文作为说明提交，并附上演示录屏。
+
+## 7. 提交包体自查（2026-10-06 实测）
+
+填写说明时若被要求提供包体信息，使用下列事实，不要重新猜测：
+
+| 项目 | 值 |
+|---|---|
+| 上传文件 | `app/build/outputs/apk/release/app-release.apk`，49,313,594 字节 |
+| 文件 SHA-256 | `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339` |
+| 签名证书 | `CN=Magic Gesture, OU=Mobile, O=Magic Gesture, L=Shanghai, ST=Shanghai, C=CN` |
+| 证书 SHA-256 | `98efd9dbe4586388fb81a4e6187a37e7d1dda5db01c219f5f0163f76cb61348e` |
+| 签名方案 | v2 通过；v1 为 false（minSdk 26 不需要） |
+| ABI | `arm64-v8a`、`armeabi-v7a`，无 32 位 `x86` |
+| 16KB 对齐 | 通过 |
+
+华为渠道的完整执行步骤、素材清单、硬门槛（实名、APP 备案、软著）与驳回应对见 `docs/huawei-appgallery-submission-checklist.md`。
