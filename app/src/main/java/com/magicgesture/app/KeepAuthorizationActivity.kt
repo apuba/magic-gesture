@@ -21,6 +21,9 @@ import java.util.Locale
 /** Per-brand guidance for keeping the accessibility authorization alive across background cleanup. */
 class KeepAuthorizationActivity : Activity() {
 
+    /** Debug-only brand preview switcher. Null means "auto detect from Build". */
+    private var previewBrand: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(72, 69, 198)
@@ -38,9 +41,23 @@ class KeepAuthorizationActivity : Activity() {
             finish()
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(44)).apply { bottomMargin = dp(4) })
 
-        content.addView(label("保持授权不丢失", 24f, Color.rgb(31, 31, 55), true).apply {
+        val titleView = label("保持授权不丢失", 24f, Color.rgb(31, 31, 55), true).apply {
             setPadding(dp(2), dp(14), 0, dp(4))
-        })
+        }
+        content.addView(titleView)
+        if (BuildConfig.DEBUG) {
+            var taps = 0
+            titleView.setOnClickListener {
+                taps++
+                if (taps >= 5) {
+                    taps = 0
+                    cyclePreviewBrand()
+                }
+            }
+            content.addView(label(debugPreviewHint(), 11.5f, Color.rgb(150, 148, 170), false).apply {
+                setPadding(dp(2), 0, dp(2), dp(6))
+            }, 2)
+        }
         content.addView(label("无障碍授权由 Android 系统保存，但部分品牌会在清理后台时一并撤销它，导致手势控制失效。根据你的机型完成下面的设置，可以避免日常使用中授权丢失。", 13f, Color.rgb(104, 102, 126), false).apply {
             setPadding(dp(2), dp(4), dp(2), dp(14))
             setLineSpacing(0f, 1.15f)
@@ -106,38 +123,63 @@ class KeepAuthorizationActivity : Activity() {
 
     private data class BrandScheme(val title: String, val intro: String, val steps: List<String>)
 
-    /** Add XIAOMI / OPPO / VIVO schemes here once they are confirmed on real devices. */
+    /** Debug-only: cycles auto → XIAOMI → GENERIC so every wording can be checked on any device. */
+    private fun cyclePreviewBrand() {
+        previewBrand = when (previewBrand) {
+            null -> "XIAOMI"
+            "XIAOMI" -> "GENERIC"
+            else -> null
+        }
+        setContentView(buildContent())
+    }
+
+    private fun debugPreviewHint(): String {
+        val current = when (previewBrand) {
+            "XIAOMI" -> "小米方案"
+            "GENERIC" -> "通用建议（无品牌匹配）"
+            else -> "自动识别（${Build.MANUFACTURER ?: "未知品牌"}）"
+        }
+        return "[Debug] 当前预览：$current　连点标题 5 次切换"
+    }
+
+    /** Add OPPO / VIVO schemes here once they are confirmed on real devices. */
     private fun detectScheme(): BrandScheme? {
+        if (previewBrand == "XIAOMI") return xiaomiScheme()
+        if (previewBrand == "GENERIC") return null
         val manufacturer = (Build.MANUFACTURER ?: "").uppercase(Locale.ROOT)
         val brand = (Build.BRAND ?: "").uppercase(Locale.ROOT)
         val isHonorOrHuawei = listOf(manufacturer, brand).any {
             it.contains("HONOR") || it.contains("HUAWEI")
         }
-        if (isHonorOrHuawei) return BrandScheme(
-            title = "荣耀 / 华为机型设置方案",
-            intro = "荣耀 MagicOS / 华为 HarmonyOS 会在“上划清理后台”或“强行停止”时撤销无障碍授权（2026-10 已实测确认），需要通过启动管理白名单避免。",
-            steps = listOf(
-                "打开 设置 → 应用 → 魔法手势 → 电池（或 设置 → 电池 → 应用启动管理，找到魔法手势）",
-                "关闭“自动管理”，改为“手动管理”",
-                "开启“允许自启动”“允许关联启动”“允许后台活动”"
-            )
-        )
+        if (isHonorOrHuawei) return honorScheme()
         val isXiaomi = listOf(manufacturer, brand).any {
             it.contains("XIAOMI") || it.contains("REDMI")
         }
-        if (isXiaomi) return BrandScheme(
-            title = "小米 / Redmi 机型设置方案",
-            intro = "MIUI / 澎湃OS 会在一键清理、省电策略或内存回收时撤销无障碍与悬浮窗授权，需要自启动、省电策略与后台锁定同时设置。本方案依据公开设置路径整理，尚未在小米真机上实测，菜单名称可能随系统版本略有差异。",
-            steps = listOf(
-                "打开 设置 → 应用设置 → 应用管理 → 魔法手势 → 权限管理，开启“悬浮窗”与“后台弹出界面”",
-                "同一页面找到“省电策略 / 电池与性能”，改为“无限制”，避免系统自动清理后台",
-                "返回 设置 → 应用设置 → 自启动管理，开启魔法手势的自启动",
-                "确认无障碍已开启：设置 → 更多设置 → 无障碍 → 已下载的服务 → 魔法手势",
-                "在最近任务界面长按魔法手势卡片并锁定，避免一键清理时授权被回收"
-            )
-        )
+        if (isXiaomi) return xiaomiScheme()
         return null
     }
+
+    private fun honorScheme() = BrandScheme(
+        title = "荣耀 / 华为机型设置方案",
+        intro = "荣耀 MagicOS / 华为 HarmonyOS 会在“上划清理后台”或“强行停止”时撤销无障碍授权（2026-10 已实测确认），需要通过启动管理白名单避免。",
+        steps = listOf(
+            "打开 设置 → 应用 → 魔法手势 → 电池（或 设置 → 电池 → 应用启动管理，找到魔法手势）",
+            "关闭“自动管理”，改为“手动管理”",
+            "开启“允许自启动”“允许关联启动”“允许后台活动”"
+        )
+    )
+
+    private fun xiaomiScheme() = BrandScheme(
+        title = "小米 / Redmi 机型设置方案",
+        intro = "MIUI / 澎湃OS 会在一键清理、省电策略或内存回收时撤销无障碍与悬浮窗授权，需要自启动、省电策略与后台锁定同时设置。本方案依据公开设置路径整理，尚未在小米真机上实测，菜单名称可能随系统版本略有差异。",
+        steps = listOf(
+            "打开 设置 → 应用设置 → 应用管理 → 魔法手势 → 权限管理，开启“悬浮窗”与“后台弹出界面”",
+            "同一页面找到“省电策略 / 电池与性能”，改为“无限制”，避免系统自动清理后台",
+            "返回 设置 → 应用设置 → 自启动管理，开启魔法手势的自启动",
+            "确认无障碍已开启：设置 → 更多设置 → 无障碍 → 已下载的服务 → 魔法手势",
+            "在最近任务界面长按魔法手势卡片并锁定，避免一键清理时授权被回收"
+        )
+    )
 
     private fun openAppDetails() {
         try {
