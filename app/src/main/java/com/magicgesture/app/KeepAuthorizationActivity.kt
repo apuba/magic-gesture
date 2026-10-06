@@ -55,7 +55,7 @@ class KeepAuthorizationActivity : Activity() {
             addView(label("补充说明", 14f, Color.rgb(157, 92, 20), true))
             addView(label(
                 "• 主动“强行停止”、清除应用数据或重新安装后，系统仍会要求重新授权，这是 Android 安全机制，任何应用都无法绕过。\n" +
-                    "• 更多品牌（小米、OPPO、vivo 等）的专项设置方案会陆续补充。", 12.5f, Color.rgb(122, 90, 40), false
+                    "• 已支持荣耀 / 华为（真机实测）与小米 / Redmi（依据公开设置路径整理，未实测）。OPPO、vivo 等品牌的专项方案会陆续补充。", 12.5f, Color.rgb(122, 90, 40), false
             ).apply {
                 setPadding(0, dp(8), 0, 0)
                 setLineSpacing(0f, 1.2f)
@@ -106,7 +106,7 @@ class KeepAuthorizationActivity : Activity() {
 
     private data class BrandScheme(val title: String, val intro: String, val steps: List<String>)
 
-    /** Extend here with XIAOMI / OPPO / VIVO schemes when they are verified on real devices. */
+    /** Add XIAOMI / OPPO / VIVO schemes here once they are confirmed on real devices. */
     private fun detectScheme(): BrandScheme? {
         val manufacturer = (Build.MANUFACTURER ?: "").uppercase(Locale.ROOT)
         val brand = (Build.BRAND ?: "").uppercase(Locale.ROOT)
@@ -120,6 +120,20 @@ class KeepAuthorizationActivity : Activity() {
                 "打开 设置 → 应用 → 魔法手势 → 电池（或 设置 → 电池 → 应用启动管理，找到魔法手势）",
                 "关闭“自动管理”，改为“手动管理”",
                 "开启“允许自启动”“允许关联启动”“允许后台活动”"
+            )
+        )
+        val isXiaomi = listOf(manufacturer, brand).any {
+            it.contains("XIAOMI") || it.contains("REDMI")
+        }
+        if (isXiaomi) return BrandScheme(
+            title = "小米 / Redmi 机型设置方案",
+            intro = "MIUI / 澎湃OS 会在一键清理、省电策略或内存回收时撤销无障碍与悬浮窗授权，需要自启动、省电策略与后台锁定同时设置。本方案依据公开设置路径整理，尚未在小米真机上实测，菜单名称可能随系统版本略有差异。",
+            steps = listOf(
+                "打开 设置 → 应用设置 → 应用管理 → 魔法手势 → 权限管理，开启“悬浮窗”与“后台弹出界面”",
+                "同一页面找到“省电策略 / 电池与性能”，改为“无限制”，避免系统自动清理后台",
+                "返回 设置 → 应用设置 → 自启动管理，开启魔法手势的自启动",
+                "确认无障碍已开启：设置 → 更多设置 → 无障碍 → 已下载的服务 → 魔法手势",
+                "在最近任务界面长按魔法手势卡片并锁定，避免一键清理时授权被回收"
             )
         )
         return null
