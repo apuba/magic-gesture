@@ -85,13 +85,13 @@
 
 ### 0.6 产物
 
-> Debug 为 2026-10-06 G35 角度修复后的最新产物；Release APK/AAB 仍是 2026-10-05 的上架候选产物，不包含本次 G35 修复，后续发布前必须重建。
+> Release 产物已于 2026-10-06 重建，包含首启隐私政策同意门与 G35 拇指判定收紧；Debug 仍为 G35 修复后的产物。下列为当前最新产物。
 
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，51,501,461 字节，SHA-256 `C5B3D40E8BEE86FD60D7C7BDA4924D4D198024589233E87DF2A1D270D68028DE`；2026-10-06 已覆盖安装到荣耀 ALP-AN00，包含 G35 真机通过版本、签到页面修复及隐私页面在线按钮移除。
-- Release APK：`app/build/outputs/apk/release/app-release.apk`，49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过。
-- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`，正式 Release 签名。
-- 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；Release 与 AAB 尚未安装到真机，本轮未提交应用市场。
-- 已失效的旧产物，不要再引用：Debug `668ADC6D…`（72,794,792 字节，含 x86）、Debug `CBC2AF7E…`（72,794,706 字节）、Release `A39BA70F…`（70,607,192 字节，含 x86）、Release `26A1393F…`（49,313,418 字节，签到改造前）、AAB `D2443784…`（45,882,341 字节，含 x86）、AAB `9B85B202…`（37,327,422 字节，签到改造前）。
+- Release APK：`app/build/outputs/apk/release/app-release.apk`，**49,313,594 字节**，SHA-256 `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过，权限仅 `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`。
+- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，**37,329,746 字节**，SHA-256 `1AD1E2C4811F52B87F6B713122541218CA09BB52723DEAEAF0AF908B8643E8E5`，正式 Release 签名。
+- 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；Release APK/AAB 于 2026-10-06 重建，**尚未安装到真机，未提交应用市场**。
+- 已失效的旧产物，不要再引用：Debug `668ADC6D…`（72,794,792 字节，含 x86）、Debug `CBC2AF7E…`（72,794,706 字节）、Release `A39BA70F…`（70,607,192 字节，含 x86）、Release `26A1393F…`（49,313,418 字节，签到改造前）、AAB `D2443784…`（45,882,341 字节，含 x86）、AAB `9B85B202…`（37,327,422 字节，签到改造前）、Release `BDAFB9C1…`（49,313,418 字节）、AAB `8E23A279…`（37,327,720 字节，均不含首启隐私政策同意门与 G35 修复）。
 - 注意：Debug APK 体积从 72,794,706 字节降到 51,271,022 字节，与 Release 减少幅度一致，说明此前那次 Debug 打包并未真正应用 `x86` 排除规则；以当前产物为准。
 
 ### 0.7 尚未完成与风险
@@ -104,7 +104,7 @@
 - **签到后授权引导回显修复待真机确认**：原地重建后已补 `refreshSetupGuide()`；需在悬浮窗和无障碍均已授权的状态下完成下一次签到，确认“首次使用设置”的两个选项不再出现。
 - **正式 Release 包上的签到体验仍待单独确认**：本轮重装的是 Debug 包；正式包只有 7 个基础编号且无全开权益，虽然 2026-10-04 已在 Release 包完成 12 次签到验收（见 `RELEASE_CHANGES.md`），但当前 ABI 产物对应的 Release 包尚未装机复验。
 - ~~G35 左右手方向与普通双指误触复验~~ **已于 2026-10-06 通过**：右手向右、左手向左可触发，反向与普通双指不触发。不同距离、弱光和大角度侧转仍属于后续兼容性抽验项。
-- **Release APK/AAB 尚未安装**：两个正式产物都没有装机；正式 Release 包只有 7 个基础编号，替换安装会改变当前测试环境，装机前先确认是否接受卸载重装。
+- **Release APK/AAB 尚未安装**：2026-10-06 已重建为包含首启隐私政策同意门与 G35 修复的版本，静态校验（权限、ABI、签名、16KB 对齐）全部通过；但两个正式产物仍未装机。正式 Release 包只有 7 个基础编号，替换安装需卸载现有 Debug 包，装机前先确认是否接受。
 - 公开主体没有显示个人法定姓名。Google Play 方向可使用公开开发者名称和隐私联系渠道；国内市场若要求公开个人信息处理者实名，须按目标市场审核反馈处理。
 - 继续逐家确认 Google Play、华为、小米、OPPO、vivo 对无障碍、后台前置摄像头和悬浮窗的准入与材料要求。
 - ~~ABI 与 Google Play 64 位配对要求~~ **已处理**：`x86` 已移除，产物仅含 `arm64-v8a` 与 `armeabi-v7a`；详见 §0.5.1。保留 `armeabi-v7a` 是决策取舍而非疏漏，若以后决定只上 64 位 ARM 另需产品确认。
@@ -527,13 +527,13 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次发布产物（2026-10-05 签到反馈改造后重新生成）：`app\build\outputs\apk\release\app-release.apk`（49,313,418 字节，SHA-256 `BDAFB9C1876BDB730F09BC4061D29EBF991D434D8AC2F0F2EAF22E1C5433915E`）与 `app\build\outputs\bundle\release\app-release.aab`（37,327,720 字节，SHA-256 `8E23A279964C694F78606E4A38647FE170A247069F65E22FB048B65DE9E3CCF8`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不再包含 32 位 `x86`（详见 §0.5.1）。这两个旧 Release 产物早于 2026-10-06 的 G35、签到页面和隐私页面修改，不能作为最新发布包，后续必须重建。
+最近一次发布产物（2026-10-06 重建，含首启隐私政策同意门与 G35 拇指判定收紧）：`app\build\outputs\apk\release\app-release.apk`（49,313,594 字节，SHA-256 `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339`）与 `app\build\outputs\bundle\release\app-release.aab`（37,329,746 字节，SHA-256 `1AD1E2C4811F52B87F6B713122541218CA09BB52723DEAEAF0AF908B8643E8E5`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不含 32 位 `x86`（详见 §0.5.1）；权限仅相机、前台服务、通知与悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；正式 Release 签名有效（`CN=Magic Gesture`），`zipalign -c -P 16 4` 16KB 对齐通过。两个产物均**尚未安装到真机**，也未提交应用市场。
 
 最新 Debug APK（51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`）已构建但**设备离线，尚未安装**；设备恢复连接后需要重新装机验证签到反馈，并另行安装 Release APK 做正式包复验。
 
 上一轮隐私政策构建时还执行过 `lintRelease` 并通过；本轮只改打包配置，未重跑 lint。
 
-Debug APK 已于 2026-10-05 ABI 专项后覆盖安装到荣耀 ALP-AN00，尚未做本机冒烟；Release APK/AAB **尚未安装到真机，也未提交应用市场**。
+Debug APK 已于 2026-10-06 覆盖安装到荣耀 ALP-AN00 并通过验收；Release APK/AAB 于 2026-10-06 重建，**尚未安装到真机，也未提交应用市场**。
 
 上架文案材料：根目录 `README.md` 已按当前版本重写；新增 `docs/PRIVACY_POLICY.md`、`docs/privacy-policy.html` 与 `docs/APP_STORE_REVIEW_GUIDE.md`。公开隐私政策使用“魔法手势开发者（个人开发者）”和联系邮箱 `3603317@qq.com`，不公开法定实名，正式地址为 `https://magicgesture.mt4000.com/privacy-policy.html`。App 首页提供离线“隐私政策与权限说明”入口，由 `PrivacyPolicyActivity` 读取随包 `res/raw/privacy_policy.txt`，不使用 WebView 或网络；2026-10-06 已移除应用内在线版本按钮，公开网页仅供商店后台使用。
 
