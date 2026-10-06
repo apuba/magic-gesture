@@ -123,12 +123,15 @@ AAB 说明：华为支持 AAB，但通常需要启用华为应用签名服务，
 
 ## 5. 提交顺序（建议）
 
-**当前进度（2026-10-06）**：已进入 AGC「应用信息 → 应用签名」，选择**方式二（使用本地已有签名密钥）**：
+**当前进度（2026-10-06）**：已进入 AGC「应用信息 → 应用签名」，选择**方式二（使用本地已有签名密钥）**并**已完成**：
 
 - 证书指纹：`98EFD9DBE4586388FB81A4E6187A37E7D1DDA5DB01C219F5F0163F76CB61348E`（即 `CN=Magic Gesture` 证书 SHA-256，与 Release APK 实测一致，已用 keytool 从 keystore 复核）。
-- CSR 已生成：`E:\2026\MagicGesture-store-screens\huawei-signing\magicgesture-release.csr`，用于左侧「证书申请」页申请**发布证书**（.cer）。
+- CSR 已生成：`E:\2026\MagicGesture-store-screens\huawei-signing\magicgesture-release.csr`（本次流程实际未用到，AGC 直接校验了 pepk zip）。
+- pepk 流程已完成：官方 `pepk.jar`（9,136,653 字节，存放于同目录）+ 本地 keystore 生成 `magicgesture-sign.zip` 并上传成功；AGC 显示「此应用已加入应用签名计划」，登记指纹与本地 keystore 一致。pepk 必须在真实交互式 CMD 中运行（非交互环境 `System.console()` 为 null 会 NPE），口令手工输入。
+- 页面上的「SHA256 证书扫描服务」配置提示：仅针对集成华为安全检测 SDK 的应用，本应用未集成，无需处理。
 - **不要按页面示例用 jarsigner 重签 APK**：jarsigner 只产生 v1（JAR）签名，Android 11+ 对 targetSdk≥30 的应用强制要求 v2+ 签名，重签后无法安装。直接上传现有的 `app-release.apk`（v2 已验证），指纹一致即可通过校验。
 - 「传统密钥」为可选项，跳过（不上传时默认使用签名密钥）。
+- 下一步：左侧「版本升级」上传 `app-release.apk`，随后补齐素材与问卷。
 
 1. 完成 §1.2 的账号实名与 APP 备案，取得备案号后再进后台建应用。
 2. 建应用并填写 §3.1、§3.2、§3.3。
