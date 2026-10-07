@@ -325,6 +325,12 @@ class GestureEngineReplayTest {
          * resumes it. Nothing observes the hand while frozen.
          */
         fun cooldown() { engine.stop(); engine.resume() }
+
+        /** 识别锁当前是否锁定。 */
+        fun isLocked(): Boolean = engine.isRecognitionLocked()
+
+        /** App 页面与常驻通知的手动解除入口。 */
+        fun unlockManually() = engine.setRecognitionLocked(false)
     }
 
     private inline fun <reified T : GestureEvent> List<GestureEvent>.countOf(): Int = count { it is T }
@@ -670,6 +676,74 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
         r.feed(20, ::six666Pose)
         assertEquals(1, r.events.countOf<GestureEvent.Six666>())
+    }
+
+    // ---------------------------------------------------------------- 识别锁（Love 手势 / G28）
+
+    /** G28: thumb, index and pinky extended; middle and ring folded. */
+    private fun lovePose(): List<Point> = baseHand(
+        index = FingerPose.EXTENDED, middle = FingerPose.FOLDED,
+        ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED, thumb = thumbOut
+    )
+
+    /** 不足 1 秒的 Love 姿势不得切换锁定状态。 */
+    @Test fun lovePoseShorterThanOneSecondDoesNotLockRecognition() {
+        val r = Replay()
+        r.feed(19, ::lovePose)                       // 0.95s: 还差一点
+        assertEquals(0, r.events.countOf<GestureEvent.RecognitionLock>())
+        r.feed(2, ::lovePose)                        // 1.05s: 已满 1 秒，锁定
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(r.isLocked())
+    }
+
+    /** 持续保持同一个姿势不能反向切换：锁上以后继续举着不会马上又解锁。 */
+    @Test fun lockedRecognitionDoesNotFlipBackWhileThePoseIsHeld() {
+        val r = Replay()
+        r.feed(21, ::lovePose)
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        r.feed(60, ::lovePose)                       // 继续举 3 秒
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(r.isLocked())
+        // 释放不足 800ms 也不允许重新切换。
+        r.feed(10, ::restPose)                       // 0.5s
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        r.feed(21, ::lovePose)
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(r.isLocked())
+        // 释放满 800ms 后，第二次完整的 Love 手势才解锁。
+        r.feed(17, ::restPose)                       // 0.85s
+        r.feed(25, ::lovePose)
+        assertEquals(2, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(!r.isLocked())
+    }
+
+    /** 锁定期间除 Love 手势外一切为零：没有光标，也没有任何动作手势。 */
+    @Test fun lockedRecognitionEmitsNoCursorAndNoOtherGesture() {
+        val r = Replay()
+        r.feed(21, ::lovePose)
+        r.feed(17, ::restPose)
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+        val before = r.events.size
+        r.feed(30, ::fistPose)                       // 握拳本应触发播放/暂停
+        r.feed(20, ::six666Pose)
+        r.feed(20, ::thumbsUpPose)
+        assertEquals(0, r.events.countOf<GestureEvent.PlayPause>())
+        assertEquals(0, r.events.countOf<GestureEvent.Six666>())
+        assertEquals(0, r.events.countOf<GestureEvent.ThumbsUp>())
+        assertEquals(0, r.events.countOf<GestureEvent.Cursor>())
+        assertTrue("锁定期间不得输出任何手势事件", r.events.drop(before).none { it !is GestureEvent.Feedback })
+    }
+
+    /** App 页面与常驻通知的手动解除入口：解除后识别立即恢复正常。 */
+    @Test fun manualUnlockRestoresRecognitionImmediately() {
+        val r = Replay()
+        r.feed(21, ::lovePose)
+        r.feed(17, ::restPose)
+        assertTrue(r.isLocked())
+        r.unlockManually()
+        assertTrue(!r.isLocked())
+        r.feed(25, ::fistPose)
+        assertEquals(1, r.events.countOf<GestureEvent.PlayPause>())
     }
 
     /** G35: index and middle together reaching up, thumb stretched sideways, ring and pinky curled. */

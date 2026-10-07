@@ -23,8 +23,12 @@ import android.widget.TextView
 import android.widget.Toast
 
 class CalibrationActivity : Activity() {
-    /** Remappable gestures in UI order. The G01 cursor stays fixed and is excluded on purpose. */
-    private val gestureNames = GESTURE_DISPLAY_NAMES.filterKeys { it != GestureCode.G01 }
+    /**
+     * Remappable gestures in UI order. The G01 cursor stays fixed and is excluded on purpose;
+     * system controls such as the G28 recognition lock are controls, not actions, so they have
+     * nothing to remap.
+     */
+    private val gestureNames = GESTURE_DISPLAY_NAMES.filterKeys { it != GestureCode.G01 && it !in SYSTEM_CONTROL_CODES }
 
     /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
     private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
@@ -80,7 +84,6 @@ class CalibrationActivity : Activity() {
     private lateinit var lShapeSwitch: Switch
     private lateinit var clawDragSwitch: Switch
     private lateinit var cShapeSwitch: Switch
-    private lateinit var loveLockSwitch: Switch
     private lateinit var twoFingerMediaSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -192,7 +195,7 @@ class CalibrationActivity : Activity() {
             lShapeSwitch = featureSwitch("单指枪·竖向", "食指向上伸直、大拇指向侧面伸出，其余三指收拢并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.lShape)
             clawDragSwitch = featureSwitch("抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢；保持约 0.6 秒按下手指，移动手掌持续拖动，张开手指结束。默认动作为拖动，可在上方映射中更换。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手势", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
-            loveLockSwitch = featureSwitch("Love 手势", "大拇指、食指和小指伸展，中指与无名指收拢并保持约 0.6 秒，返回手机桌面。", savedFeatures.loveLock)
+            addView(body("Love 手势（识别锁）：大拇指、食指和小指伸展，中指与无名指收拢并稳定保持 1 秒，即可锁定或解锁全部手势识别。它对所有用户可用，不可关闭，也不能换成其他动作。").apply { setPadding(0, dp(4), 0, dp(10)) })
             twoFingerMediaSwitch = featureSwitch("双指媒体控制", "食指与中指并拢伸直、其余手指收起：整只手左右轻挥切歌（只动手指不触发）；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
             openApp1Switch = featureSwitch("张掌变一指", "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。", savedFeatures.openApp1)
             openApp2Switch = featureSwitch("张掌变二指", "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", savedFeatures.openApp2)
@@ -220,7 +223,6 @@ class CalibrationActivity : Activity() {
                 lShapeSwitch to listOf(GestureCode.G25),
                 clawDragSwitch to listOf(GestureCode.G26),
                 cShapeSwitch to listOf(GestureCode.G27),
-                loveLockSwitch to listOf(GestureCode.G28),
                 twoFingerMediaSwitch to listOf(GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33),
                 openApp1Switch to listOf(GestureCode.G16),
                 openApp2Switch to listOf(GestureCode.G17),
@@ -231,7 +233,7 @@ class CalibrationActivity : Activity() {
                 palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
                 screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, pinkyMuteSwitch,
                 lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
-                cShapeSwitch, loveLockSwitch, twoFingerMediaSwitch,
+                cShapeSwitch, twoFingerMediaSwitch,
                 openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach { switch ->
                 if (switchCodes[switch].orEmpty().any { it !in unlockedCodes }) {
                     // 未解锁的手势不能开启识别；开关值本身保留，解锁后自动可用。
@@ -289,7 +291,8 @@ class CalibrationActivity : Activity() {
                             lShape = lShapeSwitch.isChecked,
                             clawDrag = clawDragSwitch.isChecked,
                             cShape = cShapeSwitch.isChecked,
-                            loveLock = loveLockSwitch.isChecked,
+                            // 识别锁不可关闭：没有开关，保存时保留原有值，避免把配置写死成关闭。
+                            loveLock = savedFeatures.loveLock,
                             twoFingerMedia = twoFingerMediaSwitch.isChecked,
                             openApp1 = openApp1Switch.isChecked,
                             openApp2 = openApp2Switch.isChecked,

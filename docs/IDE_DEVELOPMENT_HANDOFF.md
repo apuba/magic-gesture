@@ -25,10 +25,19 @@
 - 本轮追加 ABI 专项：为满足 Google Play 64 位配对要求移除 32 位 `x86` 原生库，只调整打包规则，没有改 Manifest、依赖、手势与功能（详见 §0.5.1）。
 - 2026-10-06 根据真机误判反馈收紧 G35：普通竖起并拢双指不得触发；拇指必须明显侧伸、与食指保持 45°–90°夹角、远离食指 MCP/PIP，并满足右手向右、左手向左的方向要求。手别从 `HandPipeline` 经 `ActiveHandSelector` 传入 `GestureEngine`，方向相反或手别缺失时失败关闭。编号、保持 1 秒、默认动作和签到包均不变。
 - 2026-10-06 修复签到后“首次使用设置”重新出现：签到触发首页原地重建后现在会立即刷新悬浮窗与无障碍授权状态，已完成两项授权时设置区域保持隐藏。
+- 2026-10-07 新增识别锁：产品负责人确认把“锁定／解锁整条手势识别”绑定到 Love 手势（G28），不使用六六顺（G34）。G28 由普通动作手势改为系统级识别锁（保持 1 秒切换、释放 800ms 才可再次切换、锁定期间无光标与其他手势），不再绑定“返回桌面”、不可关闭、不可换绑，并移出第 10 天签到包改为所有用户一开始就拥有；基础动作编号仍为 7 个。首页与常驻通知保留手动解除入口。代码已完成并通过 JVM 测试与 `assembleDebug`，**尚未真机验收**（验收清单见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.5.4）。本轮未新增手势编号、账号、支付、分享、埋点或联网业务。
 - 2026-10-06 新增首次启动隐私政策同意门：首次打开 App 先弹隐私政策弹窗（政策要点摘要 + “查看完整《隐私政策》”入口），未同意前不构建首页、不申请通知权限、不开启摄像头；同意记录带版本号写入本机，只需同意一次，政策重大变更提升版本号后重新征求同意；`CameraProbeService` 入口增加兜底，未同意不得开启相机。本轮没有新增手势、账号、支付、分享、埋点或联网业务。
 
 ### 0.3 本轮代码和文档入口
 
+- `GestureEngine.kt`：`advanceRecognitionLock()` 识别锁状态机与 `GestureEvent.RecognitionLock`；`isRecognitionLocked()` / `setRecognitionLocked()` 供手动解除使用；`exclusiveEndings()` 供锁定前安全结束拖动与持续音量。
+- `GestureArchitecture.kt`：`SYSTEM_CONTROL_CODES`（当前只有 G28），识别锁不解析成动作、不可换绑。
+- `CameraProbeService.kt`：`applyRecognitionLock()`、`unlockRecognition()`、`ACTION_UNLOCK_RECOGNITION`、常驻通知“解除锁定”动作。
+- `HandPipeline.kt`：`unlockRecognition()` / `isRecognitionLocked()`。
+- `OverlayIndicator.kt`：`State.LOCKED`（橙色状态点）。
+- `MainActivity.kt`：Love 手势卡片改为识别锁说明（无开关），新增“🔓 解除识别锁定”按钮（仅锁定期间显示）。
+- `CalibrationActivity.kt`：G28 不再出现在可换绑列表，也没有功能开关，改为识别锁说明文字。
+- `GestureUnlock.kt`：`unlockedCodes()` 始终包含系统级控制编号；第 10 天功能包改为 `G25/G27`。
 - `MainActivity.kt`：首页全部内容最下方的“隐私政策与权限说明”文字链接入口。
 - `PrivacyConsent.kt`：隐私政策同意状态与政策版本号的本机读写（同意一次即长期有效，版本号变更后重新征求）。
 - `MainActivity.kt`：首页构建前的隐私政策同意弹窗；未同意时不构建首页、不申请通知权限，点击“不同意，退出应用”时 `finishAffinity()`。

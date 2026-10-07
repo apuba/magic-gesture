@@ -4,8 +4,11 @@ import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.app.Dialog
 import android.graphics.Color
@@ -56,6 +59,19 @@ class MainActivity : Activity() {
     private var homeContentReady = false
     /** 首启隐私政策弹窗；Activity 销毁时必须关闭，避免窗口泄漏。 */
     private var consentDialog: Dialog? = null
+    /**
+     * 识别锁由后台服务切换，首页停在前台时不会收到 onResume。这里监听服务的锁状态广播，
+     * 保证解除入口与状态文字在锁定/解锁的瞬间就能刷新，而不用等用户退出页面再进来。
+     */
+    private val recognitionLockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != CameraProbeService.ACTION_RECOGNITION_LOCK_CHANGED) return
+            if (!homeContentReady) return
+            runOnUiThread { refreshStatusText(force = true) }
+        }
+    }
+    /** 锁状态广播是否已在 onResume 注册；onPause 时据此安全注销。 */
+    private var recognitionLockReceiverRegistered = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -260,7 +276,8 @@ class MainActivity : Activity() {
         content.addView(gestureCard(R.drawable.gesture_l_shape, "单指枪·竖向", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_claw, "抓取手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手势", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_love, "Love 手势", actionLabelOf(GestureCode.G28), "大拇指、食指和小指伸展，中指与无名指收拢，保持约 0.6 秒。", "♥", "love_lock", features.loveLock), margins(bottom = 12))
+        // G28 是系统级识别锁：所有用户可用、不可关闭、不可换绑，因此卡片没有开关。
+        content.addView(gestureCard(R.drawable.gesture_love, "Love 手势（识别锁）", { "锁定 / 解锁全部识别" }, "大拇指、食指和小指伸展，中指与无名指收拢，稳定保持 1 秒即可锁定识别；再次保持 1 秒解锁。锁定期间只有该手势可用，姿势消失约 0.8 秒后才能再次切换。", "♥", "love_lock", features.loveLock, showSwitch = false), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_666, "六六顺手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指左挥 / 双指右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
         content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指上拉 / 双指下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
@@ -351,7 +368,7 @@ class MainActivity : Activity() {
         return if (required == null) "$name 未解锁" else "$name 未解锁 · 第 $required 次签到后开放"
     }
 
-    private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean, secondImage: Int? = null): View = LinearLayout(this).apply {
+    private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean, secondImage: Int? = null, showSwitch: Boolean = true): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12), dp(12), dp(15), dp(12))
@@ -394,7 +411,7 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(label(title, 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
+                if (showSwitch) addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
             })
             val actionView = label(actionText(), 13f, Color.rgb(91, 87, 218), true).apply { setPadding(0, dp(3), 0, 0) }
             actionLabelViews += actionView to actionText
@@ -725,6 +742,25 @@ class MainActivity : Activity() {
         } else {
             pressable(Color.WHITE, Color.rgb(232, 230, 255), 16, Color.rgb(204, 201, 239))
         }
+        refreshStatusText()
+    }
+
+    /**
+     * 把顶部状态文字拉回与真实服务状态一致。服务启动成功后不会回调首页，
+     * 不回写的话状态会一直停在“准备就绪，等待启动”。只覆盖陈旧文案，
+     * 避免冲掉签到、权限等即时提示。
+     */
+    private fun refreshStatusText(force: Boolean = false) {
+        if (!::status.isInitialized) return
+        val current = status.text?.toString().orEmpty()
+        val stale = current.contains("准备就绪") || current.contains("启动中") || current.contains("已请求停止")
+        // 锁状态变化是用户必须立刻看到的信息，此时无条件覆盖；其余场景只清理陈旧文案。
+        if (!force && !stale) return
+        status.text = when {
+            CameraProbeService.recognitionLocked -> "●  识别已锁定，仅 Love 手势可以解锁"
+            CameraProbeService.isControlRunning -> "●  手势识别与悬浮控制正在运行"
+            else -> "●  准备就绪，等待启动"
+        }
     }
 
     private fun refreshSetupGuide() {
@@ -784,6 +820,8 @@ class MainActivity : Activity() {
         super.onResume()
         // 未同意隐私政策时首页尚未构建，此时不能刷新首页控件。
         if (!homeContentReady) return
+        // 签到导致的重建会提前 return，所以注册必须放在刷新之前。
+        registerRecognitionLockReceiver()
         if (waitingForOverlayPermission) {
             waitingForOverlayPermission = false
             if (Settings.canDrawOverlays(this)) startProbe()
@@ -806,6 +844,31 @@ class MainActivity : Activity() {
         refreshActionLabels()
         refreshControlButton()
         refreshSetupGuide()
+        registerRecognitionLockReceiver()
+    }
+
+    /** 只在本应用内接收锁状态广播；Android 13+ 必须显式声明不导出。 */
+    private fun registerRecognitionLockReceiver() {
+        if (recognitionLockReceiverRegistered) return
+        val filter = IntentFilter(CameraProbeService.ACTION_RECOGNITION_LOCK_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(recognitionLockReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(recognitionLockReceiver, filter)
+        }
+        recognitionLockReceiverRegistered = true
+    }
+
+    override fun onPause() {
+        if (recognitionLockReceiverRegistered) {
+            try {
+                unregisterReceiver(recognitionLockReceiver)
+            } catch (_: IllegalArgumentException) {
+                // 已经注销过或从未注册成功，忽略即可。
+            }
+            recognitionLockReceiverRegistered = false
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {

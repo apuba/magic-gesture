@@ -13,9 +13,10 @@ import org.junit.Test
  */
 class GestureUnlockTest {
 
-    @Test fun initialStateOwnsSevenBaseCodes() {
+    @Test fun initialStateOwnsSevenBaseCodesPlusTheSystemControl() {
         val unlocked = GestureUnlockPlan.unlockedCodes(0)
-        assertEquals(7, unlocked.size)
+        // 7 个基础编号 + G28 识别锁（系统级控制，与签到无关）。
+        assertEquals(7 + SYSTEM_CONTROL_CODES.size, unlocked.size)
         assertTrue(
             unlocked.containsAll(
                 listOf(
@@ -24,6 +25,15 @@ class GestureUnlockTest {
                 )
             )
         )
+    }
+
+    /** 识别锁对所有用户可用，不随签到解锁，也不属于任何功能包。 */
+    @Test fun recognitionLockIsAlwaysOwnedAndNeverGatedByCheckIn() {
+        SYSTEM_CONTROL_CODES.forEach { code ->
+            assertTrue("识别锁必须一开始就拥有", code in GestureUnlockPlan.unlockedCodes(0))
+            assertNull("识别锁不需要签到", GestureUnlockPlan.checkInRequiredFor(code))
+            assertTrue("识别锁不得作为签到奖励", GestureUnlockPlan.PACKAGES.none { code in it })
+        }
     }
 
     @Test fun twelveCheckInsUnlockEveryGestureCode() {
@@ -40,7 +50,7 @@ class GestureUnlockTest {
             assertTrue("功能包之间不得重复编号", pkg.none { it in seen })
             seen += pkg
         }
-        assertEquals(GestureCode.entries.toSet(), (base + seen).toSet())
+        assertEquals(GestureCode.entries.toSet(), (base + seen + SYSTEM_CONTROL_CODES).toSet())
     }
 
     @Test fun checkInRequiredForReportsTheDayAGestureArrives() {

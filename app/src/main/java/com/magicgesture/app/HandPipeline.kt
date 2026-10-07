@@ -90,6 +90,10 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     fun setDiag(sink: ((String) -> Unit)?) { engine.diag = sink }
     @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) = engine.finishVolumeSession(waitForRelease)
+    /** 手动解除识别锁（App 页面与常驻通知入口）；不参与手势识别本身。 */
+    @Synchronized fun unlockRecognition() = engine.setRecognitionLocked(false)
+    /** 识别锁当前是否锁定；服务据此同步悬浮点与常驻通知。 */
+    @Synchronized fun isRecognitionLocked(): Boolean = engine.isRecognitionLocked()
     @Synchronized fun updateFeatures(features: GestureFeatureConfig) = engine.updateFeatures(features)
     /** Retunes every movement threshold for a new sensitivity without restarting the pipeline. */
     @Synchronized fun updateSensitivity(movementScale: Float) = engine.updateMovementScale(movementScale)

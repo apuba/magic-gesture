@@ -11,6 +11,15 @@ enum class GestureCode {
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
 
+/**
+ * 系统级控制编号：它们不是普通动作手势，不进入动作映射，也不参与功能开关。
+ *
+ * G28（Love 手势）自 2026-10-07 起承担“识别锁”：稳定保持 1 秒锁定整条识别管线，
+ * 再次保持 1 秒解锁。它对所有用户可用、不可关闭、不可换绑，也不作为签到奖励。
+ * 需求见 `docs/GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.5。
+ */
+val SYSTEM_CONTROL_CODES: Set<GestureCode> = setOf(GestureCode.G28)
+
 /** 手势中文名：首页签到提示与校准页配置区共用，避免两处文案不一致。 */
 val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G01 to "指尖移动",
@@ -97,7 +106,7 @@ enum class GestureAction {
         LOCK_SCREEN -> "锁屏需要 Android 9 或更高版本"
         VOICE_ASSISTANT -> "未找到可用的语音助手"
         DRAG -> "拖动距离太短或执行失败"
-        ROLLING_SCREENSHOT -> "滚动截图需要 Android 11 或更高版本"
+        ROLLING_SCREENSHOT -> "滚动截图未能完成，请保持页面静止后重试"
         OPEN_APP, OPEN_APP_1, OPEN_APP_2, OPEN_APP_3, OPEN_APP_4 -> "未选择应用，请重新设置该手势"
         FAVORITE_CURRENT -> "当前应用未定义收藏位置或点击失败"
         else -> "动作执行失败"
@@ -196,6 +205,8 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             }
             else -> return null
         }
+        // 识别锁是控制状态，不是映射动作：它不执行任何动作，也不启动全局冷却。
+        if (code in SYSTEM_CONTROL_CODES) return null
         val base = defaultMappings[code]
         val overridden = overrides[code]
         val mapping = when {
@@ -212,15 +223,15 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
     }
 
     /** The action a gesture currently performs; null for an unbound gesture without override. */
-    fun actionFor(code: GestureCode): GestureAction? = when (val override = overrides[code]) {
-        GestureAction.NONE -> null
-        null -> defaultActionOf(code)
-        else -> override
+    fun actionFor(code: GestureCode): GestureAction? = when {
+        code in SYSTEM_CONTROL_CODES -> null
+        overrides[code] == GestureAction.NONE -> null
+        else -> overrides[code] ?: defaultActionOf(code)
     }
 
     /** Only gestures with a real detection pipeline may be remapped; the cursor stays fixed. */
     fun isRemappable(code: GestureCode): Boolean =
-        code != GestureCode.G01 && code !in NO_PIPELINE_CODES
+        code != GestureCode.G01 && code !in NO_PIPELINE_CODES && code !in SYSTEM_CONTROL_CODES
 
     companion object {
         /** Codes that only exist in the enum as placeholders; no detector, no event. */
@@ -373,12 +384,8 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureAction.RECENTS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
         ),
-        GestureCode.G28 to GestureMapping(
-            GestureCode.G28,
-            GestureType.HOLD,
-            GestureAction.HOME,
-            CooldownPolicy.GLOBAL_AFTER_SUCCESS
-        ),
+        // G28 has no default mapping: since 2026-10-07 it is the system-level recognition lock,
+        // handled by the engine before any action is resolved. See SYSTEM_CONTROL_CODES.
         GestureCode.G29 to dynamicMapping(GestureCode.G29, GestureAction.MEDIA_PREVIOUS),
         GestureCode.G30 to dynamicMapping(GestureCode.G30, GestureAction.MEDIA_NEXT),
         GestureCode.G31 to dynamicMapping(GestureCode.G31, GestureAction.VOLUME_UP),
@@ -423,7 +430,7 @@ class GestureFeatureGate {
         GestureCode.G25 -> features.lShape
         GestureCode.G26 -> features.clawDrag
         GestureCode.G27 -> features.cShape
-        GestureCode.G28 -> features.loveLock
+        // G28 is the recognition lock: a control state, not a mapped action, so no switch gates it.
         GestureCode.G34 -> features.six666
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33 -> features.twoFingerMedia
         GestureCode.G35 -> features.twoFingerUp

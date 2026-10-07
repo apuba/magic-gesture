@@ -35,7 +35,9 @@ object GestureUnlockPlan {
         listOf(GestureCode.G18, GestureCode.G19),
         listOf(GestureCode.G14, GestureCode.G15),
         listOf(GestureCode.G07, GestureCode.G08),
-        listOf(GestureCode.G25, GestureCode.G27, GestureCode.G28),
+        // G28（Love 手势）自 2026-10-07 起是系统级识别锁：所有用户一开始就能用，
+        // 不可关闭、不可换绑，因此不再作为第 10 次签到的奖励内容。
+        listOf(GestureCode.G25, GestureCode.G27),
         listOf(GestureCode.G12, GestureCode.G20),
         listOf(
             GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10,
@@ -61,10 +63,14 @@ object GestureUnlockPlan {
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size
 
-    /** 给定签到次数后用户拥有的全部编号；次数会被收敛到 0..[TOTAL_CHECK_INS]。 */
+    /**
+     * 给定签到次数后用户拥有的全部编号；次数会被收敛到 0..[TOTAL_CHECK_INS]。
+     * 系统级控制编号（识别锁）始终拥有，与签到进度无关。
+     */
     fun unlockedCodes(checkInCount: Int): Set<GestureCode> {
         val count = checkInCount.coerceIn(0, TOTAL_CHECK_INS)
         return LinkedHashSet<GestureCode>(BASE_CODES).apply {
+            addAll(SYSTEM_CONTROL_CODES)
             PACKAGES.take(count).forEach { addAll(it) }
         }
     }
@@ -243,7 +249,10 @@ fun GestureFeatureConfig.restrictedTo(unlocked: Set<GestureCode>): GestureFeatur
     lShape = lShape && unlocked.hasAny(GestureCode.G25),
     clawDrag = clawDrag && unlocked.hasAny(GestureCode.G26),
     cShape = cShape && unlocked.hasAny(GestureCode.G27),
-    loveLock = loveLock && unlocked.hasAny(GestureCode.G28),
+    // Love 手势（G28）是系统级识别锁：所有用户一开始就能用，不受签到解锁权益限制，
+    // 也不可关闭。它既不在 BASE_CODES 里，也不在任何一个签到包里，若在这里做
+    // unlocked.hasAny(G28) 判断，结果恒为 false，识别锁将永远无法触发。
+    loveLock = true,
     six666 = six666 && unlocked.hasAny(GestureCode.G34),
     twoFingerMedia = twoFingerMedia && unlocked.hasAny(
         GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33

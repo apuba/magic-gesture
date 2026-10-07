@@ -29,6 +29,11 @@ sealed interface GestureEvent {
     data object CShape : GestureEvent
     data object LoveLock : GestureEvent
     /**
+     * 识别锁切换：由 Love 手势（G28）稳定保持 1 秒触发。它是控制状态而不是普通动作，
+     * 不经过 `GestureMappingManager`，也不启动全局动作冷却。
+     */
+    data class RecognitionLock(val locked: Boolean) : GestureEvent
+    /**
      * Phases of one continuous drag: START puts the finger down, MOVE keeps it down while it
      * follows the palm, END lifts it. The drag has no time limit — it lasts exactly as long as
      * the claw pose is held.
@@ -64,6 +69,18 @@ class GestureEngine(
         private const val RELEASE_GRACE_MS = 800L
         /** How long the hand must be out of frame before that counts as letting go. */
         private const val HAND_GONE_MS = 600L
+        /**
+         * 识别锁：Love 手势需要稳定保持这么久才切换锁定状态。1 秒是当前推荐初值，
+         * 必须通过真机手感复核；一次只调整这一个时序变量。
+         */
+        private const val LOCK_HOLD_MS = 1_000L
+        /**
+         * 锁定或解锁后，姿势必须连续消失这么久才允许下一次切换。持续保持同一个姿势
+         * 不能刚锁上就解锁；放手途中也不允许恢复识别，避免误发小指、拇指赞等相邻姿势。
+         */
+        private const val LOCK_RELEASE_MS = 800L
+        /** 锁定期间重复提示“仅 Love 手势可以解锁”的最小间隔。 */
+        private const val LOCK_HINT_INTERVAL_MS = 4_000L
     }
     private enum class Pinch { READY, CANDIDATE, FIRED }
     private enum class IndexClick { READY, STABILIZING, ARMED, BENT }
@@ -125,8 +142,18 @@ class GestureEngine(
     private var lShapeHoldAt = 0L
     private var cShapeHold = StaticHold.READY
     private var cShapeHoldAt = 0L
-    private var loveHold = StaticHold.READY
-    private var loveHoldAt = 0L
+    // ---- 识别锁（Love 手势 G28）--------------------------------------------------------------
+    private enum class LockState { NORMAL, LOCKED }
+    private var lockState = LockState.NORMAL
+    /** 当前这一轮 Love 手势保持的起始时间；姿势中断即清零。 */
+    private var lockHoldAt = 0L
+    /**
+     * 刚完成一次锁定或解锁。此时整条识别管线继续冻结，直到姿势连续消失 [LOCK_RELEASE_MS]，
+     * 既防止持续保持反向切换，也防止放手途中误发相邻姿势。
+     */
+    private var lockArmed = false
+    private var lockLostAt = 0L
+    private var lastLockHintAt = 0L
     private var clawDragState = ClawDragState.READY
     private var clawConfirmAt = 0L
     private var clawAnchor: Point? = null
@@ -246,25 +273,126 @@ class GestureEngine(
         twoFingerHorizontalTrigger = .07f * movementScale
         resetTransient()
     }
+    /** 识别锁是否处于锁定状态。服务据此同步悬浮点与常驻通知。 */
+    @Synchronized fun isRecognitionLocked(): Boolean = lockState == LockState.LOCKED
+
+    /**
+     * App 页面与常驻通知的手动解除入口：弱光、相机遮挡或姿势识别失败时，用户必须能够
+     * 不靠手势退出锁定。手动解除后识别立即从清空状态恢复，不受释放窗口限制。
+     */
+    @Synchronized fun setRecognitionLocked(locked: Boolean) {
+        lockState = if (locked) LockState.LOCKED else LockState.NORMAL
+        lockArmed = false
+        lockHoldAt = 0L
+        lockLostAt = 0L
+        lastLockHintAt = 0L
+        resetTransient()
+        smoothed = null
+    }
+
     @Synchronized fun lost(now: Long): List<GestureEvent> {
         if (now - lastSeenAt < 300) return emptyList()
-        val ending = when (twoFingerState) {
-            TwoFingerSwipeState.VOLUME_UP -> GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.END)
-            TwoFingerSwipeState.VOLUME_DOWN -> GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.END)
-            else -> null
-        }
-        // A drag deliberately outlives the pose, so a hand that leaves the frame is its last exit.
-        // Without this the drag would keep running with no END ever reaching the service.
-        val dragEnd = if (clawDragState == ClawDragState.DRAGGING) {
-            val origin = clawOrigin ?: clawAnchor ?: Point(.5f, .5f)
-            GestureEvent.ClawDrag(GestureEvent.DragPhase.END, origin.x, origin.y, clawLastX, clawLastY)
-        } else null
+        val endings = exclusiveEndings()
         // Tracking blinks out for a few frames whenever it restarts — right after the post-action
         // cooldown, for instance. Only a hand that stays away is a real release; a brief gap must
         // not free a fired hold, or a pose the user is still holding acts again.
         resetTransient(handGone = now - lastSeenAt >= HAND_GONE_MS)
         smoothed = null
+        return endings
+    }
+
+    /**
+     * 正在进行的独占动作（拖动、持续音量）的安全结束事件。锁定前必须先发送它们，
+     * 否则拖动会一直按着、音量会一直调，而锁定期间又没有任何帧能把它们收回。
+     */
+    private fun exclusiveEndings(): List<GestureEvent> {
+        val ending = when (twoFingerState) {
+            TwoFingerSwipeState.VOLUME_UP -> GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.END)
+            TwoFingerSwipeState.VOLUME_DOWN -> GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.END)
+            else -> null
+        }
+        // A drag deliberately outlives the pose, so it needs an explicit END to lift the finger.
+        val dragEnd = if (clawDragState == ClawDragState.DRAGGING) {
+            val origin = clawOrigin ?: clawAnchor ?: Point(.5f, .5f)
+            GestureEvent.ClawDrag(GestureEvent.DragPhase.END, origin.x, origin.y, clawLastX, clawLastY)
+        } else null
         return listOfNotNull(dragEnd, ending)
+    }
+
+    /**
+     * 识别锁（Love 手势 / G28）状态机。返回 true 表示本帧已被识别锁消费：
+     * 锁定期间光标、保持、轨迹、序列、双击、持续动作和候选状态一律不识别、不累计、不输出。
+     *
+     * 规则（需求 §6.5）：
+     * - 正常状态：Love 姿势稳定保持 [LOCK_HOLD_MS] 后锁定。
+     * - 锁定状态：同样的姿势再保持 [LOCK_HOLD_MS] 后解锁；其他姿势完全不识别。
+     * - 切换后必须完整释放：姿势连续消失 [LOCK_RELEASE_MS] 才允许下一次切换，
+     *   并且解锁后也要等释放完成才清空状态、恢复完整识别。
+     */
+    private fun advanceRecognitionLock(lovePose: Boolean, now: Long, output: MutableList<GestureEvent>): Boolean {
+        if (lockArmed) {
+            if (lovePose) lockLostAt = 0L
+            else if (lockLostAt == 0L) lockLostAt = now
+            if (lockLostAt != 0L && now - lockLostAt >= LOCK_RELEASE_MS) {
+                lockArmed = false
+                lockLostAt = 0L
+                // 释放完成后才清空，避免把持锁前后积累的半个动作补发出来。
+                resetTransient()
+                smoothed = null
+            }
+            return true
+        }
+        if (lockState == LockState.LOCKED) {
+            if (!lovePose || !shapeSteady) {
+                lockHoldAt = 0L
+                hintLocked(now, output)
+                return true
+            }
+            if (lockHoldAt == 0L) lockHoldAt = now
+            if (lockProgress(now, "Love 手势解锁", output)) {
+                lockState = LockState.NORMAL
+                lockArmed = true
+                lockLostAt = 0L
+                lockHoldAt = 0L
+                output += GestureEvent.RecognitionLock(false)
+            }
+            return true
+        }
+        if (!lovePose || !shapeSteady) {
+            lockHoldAt = 0L
+            return false
+        }
+        if (lockHoldAt == 0L) lockHoldAt = now
+        if (lockProgress(now, "Love 手势锁定", output)) {
+            lockState = LockState.LOCKED
+            lockArmed = true
+            lockLostAt = 0L
+            lockHoldAt = 0L
+            output += exclusiveEndings()
+            resetTransient()
+            smoothed = null
+            output += GestureEvent.RecognitionLock(true)
+        }
+        return true
+    }
+
+    /** 保持期间每 250ms 输出一次倒计时；返回 true 表示已满 1 秒可以切换。 */
+    private fun lockProgress(now: Long, label: String, output: MutableList<GestureEvent>): Boolean {
+        val held = now - lockHoldAt
+        if (now - lastFeedbackAt >= 250) {
+            val progress = ((held * 100L) / LOCK_HOLD_MS).toInt().coerceIn(0, 100)
+            val remaining = ((LOCK_HOLD_MS - held).coerceAtLeast(0L) + 999L) / 1000L
+            output += GestureEvent.Feedback("$label：还需 $remaining 秒", progress)
+            lastFeedbackAt = now
+        }
+        return held >= LOCK_HOLD_MS
+    }
+
+    /** 锁定期间不刷屏地重复提示解锁方式，用户不会因为忘了怎么解锁而被卡住。 */
+    private fun hintLocked(now: Long, output: MutableList<GestureEvent>) {
+        if (now - lastLockHintAt < LOCK_HINT_INTERVAL_MS) return
+        lastLockHintAt = now
+        output += GestureEvent.Feedback("识别已锁定，仅 Love 手势可以解锁")
     }
     @Synchronized fun finishVolumeSession(waitForRelease: Boolean) {
         twoFingerState = if (waitForRelease) TwoFingerSwipeState.WAIT_RELEASE else TwoFingerSwipeState.IDLE
@@ -506,6 +634,9 @@ class GestureEngine(
         if (okClaimsHand && screenshotSequence == ScreenshotSequence.WAIT_FIST) {
             screenshotSequence = ScreenshotSequence.IDLE
         }
+        // 识别锁优先于所有手势与光标：锁定期间只有 Love 手势被识别，其余姿势、光标、
+        // 反馈、保持进度、轨迹、序列、双击和持续动作一律不识别、不累计、不输出。
+        if (advanceRecognitionLock(lovePose, now, output)) return output
         if (advanceAppSequence(
                 screenshotPalmOpen && !okClaimsHand,
                 !okClaimsHand && slotExt(8, 6) && middleFolded && ringFolded && pinkyFolded && !thumbWideOpen,
@@ -561,7 +692,6 @@ class GestureEngine(
         // Nothing is shown during a hold this short (the countdown needs a second or more), so the
         // dedicated progress label went away with the longer time.
         if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output)) return output
-        if (features.loveLock && advanceStaticHold(lovePose, now, GestureEvent.LoveLock, { loveHold }, { loveHold = it }, { loveHoldAt }, { loveHoldAt = it }, output)) return output
         if (pinkyOnlyPose) {
             // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and
             // clears partial heart state so landmark wobble cannot fire Like afterward.
@@ -1588,8 +1718,6 @@ class GestureEngine(
         lShapeHoldAt = 0L
         cShapeHold = StaticHold.READY
         cShapeHoldAt = 0L
-        loveHold = StaticHold.READY
-        loveHoldAt = 0L
         six666Hold = StaticHold.READY
         six666HoldAt = 0L
         clawDragState = ClawDragState.READY

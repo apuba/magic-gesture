@@ -29,7 +29,11 @@ import kotlin.math.abs
 class OverlayIndicator(
     private val context: Context
 ) {
-    enum class State { STARTING, RUNNING, ERROR }
+    /**
+     * LOCKED：识别已锁定，仅 Love 手势可以解锁。相机与手部检测仍在运行，
+     * 但除解锁姿势外不输出任何手势、光标或动作。
+     */
+    enum class State { STARTING, RUNNING, LOCKED, ERROR }
 
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
@@ -431,6 +435,7 @@ class OverlayIndicator(
             statusPaint.color = when (indicatorState) {
                 State.STARTING -> Color.rgb(80, 205, 255)
                 State.RUNNING -> Color.rgb(52, 211, 153)
+                State.LOCKED -> Color.rgb(250, 173, 40)
                 State.ERROR -> Color.rgb(255, 82, 100)
             }
             val statusX = right - dp(3)

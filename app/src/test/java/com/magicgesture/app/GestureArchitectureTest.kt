@@ -305,15 +305,15 @@ class GestureArchitectureTest {
         // mapping, not part of the claw, so users can still rebind the gesture to anything else.
         assertEquals(GestureAction.DRAG, GestureMappingManager.defaultActionOf(GestureCode.G26))
         assertEquals(GestureAction.RECENTS, GestureMappingManager.defaultActionOf(GestureCode.G27))
-        assertEquals(GestureAction.HOME, GestureMappingManager.defaultActionOf(GestureCode.G28))
+        // G28 became the system-level recognition lock on 2026-10-07: it owns no action at all.
+        assertNull(GestureMappingManager.defaultActionOf(GestureCode.G28))
     }
 
-    @Test fun g24ThroughG28EventsResolveWithHoldTypeAndOwnFeatureGates() {
+    @Test fun g24ThroughG27EventsResolveWithHoldTypeAndOwnFeatureGates() {
         val cases = listOf(
             GestureEvent.LeftLBack to GestureCode.G24,
             GestureEvent.LShape to GestureCode.G25,
-            GestureEvent.CShape to GestureCode.G27,
-            GestureEvent.LoveLock to GestureCode.G28
+            GestureEvent.CShape to GestureCode.G27
         )
         cases.forEach { (event, code) ->
             val mapped = requireNotNull(mappings.resolve(event))
@@ -326,7 +326,6 @@ class GestureArchitectureTest {
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LeftLBack)).mapping, GestureFeatureConfig(leftL = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LShape)).mapping, GestureFeatureConfig(lShape = false)))
         assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.CShape)).mapping, GestureFeatureConfig(cShape = false)))
-        assertFalse(gate.allows(requireNotNull(mappings.resolve(GestureEvent.LoveLock)).mapping, GestureFeatureConfig(loveLock = false)))
         // G26 keeps its own switch. The switch ships off so the claw cannot claim every half-curled
         // hand, but the gesture is still bound to the drag action for whoever turns it on.
         val claw = GestureMapping(GestureCode.G26, GestureType.HOLD, GestureAction.DRAG, CooldownPolicy.NONE)
@@ -347,7 +346,24 @@ class GestureArchitectureTest {
         assertEquals(GestureAction.CLICK, mappedClaw.mapping.action)
         // The new codes are remappable like the rest.
         assertTrue(mappings.isRemappable(GestureCode.G24))
-        assertTrue(mappings.isRemappable(GestureCode.G28))
+        assertTrue(mappings.isRemappable(GestureCode.G27))
+    }
+
+    /**
+     * 识别锁是控制状态而不是动作：Love 手势（G28）不解析成任何动作，也不能被换绑，
+     * 用户自己保存过的旧映射同样不能让它执行动作。
+     */
+    @Test fun systemControlCodesNeverResolveToAnActionAndCannotBeRemapped() {
+        SYSTEM_CONTROL_CODES.forEach { code ->
+            assertNull(GestureMappingManager.defaultActionOf(code))
+            assertFalse(mappings.isRemappable(code))
+            assertNull(mappings.actionFor(code))
+        }
+        assertNull(mappings.resolve(GestureEvent.LoveLock))
+        assertNull(mappings.resolve(GestureEvent.RecognitionLock(true)))
+        val overridden = GestureMappingManager(mapOf(GestureCode.G28 to GestureAction.HOME))
+        assertNull("识别锁不得通过换绑执行动作", overridden.resolve(GestureEvent.LoveLock))
+        assertNull(overridden.actionFor(GestureCode.G28))
     }
 
     @Test fun dragEventKeepsItsCoordinatesThroughThePipeline() {
