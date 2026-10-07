@@ -39,6 +39,18 @@ class CameraProbeService : Service() {
         var isControlRunning = false
             private set
 
+        /** 识别锁（Love 手势）当前是否锁定；首页据此显示手动解除入口。 */
+        @Volatile
+        var recognitionLocked = false
+            private set
+
+        /** 手动解除识别锁：常驻通知与首页按钮的唯一出口，不属于任何手势解锁。 */
+        const val ACTION_UNLOCK_RECOGNITION = "UNLOCK_RECOGNITION"
+
+        /** 识别锁状态变化。首页停留在前台时不会触发 onResume，必须靠这条广播刷新解除入口。 */
+        const val ACTION_RECOGNITION_LOCK_CHANGED = "RECOGNITION_LOCK_CHANGED"
+        const val EXTRA_RECOGNITION_LOCKED = "recognition_locked"
+
         // Delays for the play fallback: verify audio, confirm the silence, let the music app
         // publish its MediaSession, then confirm the repeated play key really produced audio.
         private const val PLAYBACK_VERIFY_DELAY_MS = 800L
@@ -216,6 +228,8 @@ class CameraProbeService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
+        // 手动解除识别锁：只改锁状态，不能重置 controlMode，否则会把手势控制一起关掉。
+        if (intent?.action == ACTION_UNLOCK_RECOGNITION) { unlockRecognition(); return START_NOT_STICKY }
         // 兜底：用户尚未同意隐私政策时不开启摄像头，也不进入前台服务状态。
         if (!PrivacyConsent.isAccepted(this)) {
             Log.d("CameraProbe", "startup: blocked, privacy policy not accepted yet")
@@ -258,6 +272,12 @@ class CameraProbeService : Service() {
                             if (favoriteFlowActive) return@HandPipeline
                             // 自拍倒计时期间冻结全部手势：连识别提示也不显示，避免与倒计时抢占浮层。
                             if (selfieInProgress) return@HandPipeline
+                            // 识别锁是控制状态而不是动作：它不经过映射，不执行动作，也不启动冷却。
+                            // 冷却期间整条管线是冻结的，所以这里不会在冷却中提前判断 Love 手势。
+                            if (event is GestureEvent.RecognitionLock) {
+                                applyRecognitionLock(event.locked)
+                                return@HandPipeline
+                            }
                             if (event is GestureEvent.TwoFingerVolumeHold) {
                                 handleContinuousVolume(event, event.raise, event.phase)
                                 return@HandPipeline
@@ -279,6 +299,7 @@ class CameraProbeService : Service() {
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
                                 GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
                                 GestureEvent.TwoFingerUp, is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.
+                                is GestureEvent.RecognitionLock -> Unit // Handled above: a control state, never an action.
                                 is GestureEvent.ClawDrag -> overlayIndicator.showFeedback("抓取手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 GestureEvent.Six666 -> overlayIndicator.showFeedback("六六顺手势未绑定动作，可在校准页映射中指定") // Unbound by default.
                                 is GestureEvent.Feedback -> overlayIndicator.showFeedback(event.message, event.progress)
@@ -393,6 +414,10 @@ class CameraProbeService : Service() {
         if (!featureGate.allows(mapped.mapping, featureConfig)) return
         val dragPhase = (mapped.event as? GestureEvent.ClawDrag)?.phase
         val isDrag = mapped.mapping.action == GestureAction.DRAG
+        val isRollingScreenshot = mapped.mapping.action == GestureAction.ROLLING_SCREENSHOT
+        // A rolling screenshot is a multi-second exclusive action. Freeze before its first frame so
+        // cursor, holds, paths and other actions cannot alter the page while it is being stitched.
+        if (isRollingScreenshot) pipeline?.pause()
         // A drag is one action delivered as START/MOVE/END. Cooling down on any MOVE would freeze
         // the pipeline mid-drag, so the cooldown starts only when the finger is lifted; MOVE is
         // also kept out of the log so one long drag does not flood it.
@@ -400,6 +425,7 @@ class CameraProbeService : Service() {
             Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
         }
         val submitted = actionExecutor.execute(mapped) { success ->
+            if (isRollingScreenshot && !success) pipeline?.resume()
             if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS ||
                 (isDrag && dragPhase == GestureEvent.DragPhase.END)
             ) {
@@ -412,6 +438,7 @@ class CameraProbeService : Service() {
             }
         }
         if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
+            if (isRollingScreenshot) pipeline?.resume()
             finishAction(false, mapped.mapping.action.successMessage(), "无障碍服务未连接")
         }
     }
@@ -446,6 +473,41 @@ class CameraProbeService : Service() {
             }
         }
     }
+    /**
+     * 切换识别锁：锁定期间相机与手部检测继续运行，但只有 Love 手势被识别，
+     * 其余手势、光标与动作一律不输出。锁定不等于停止服务，也不会释放摄像头。
+     */
+    private fun applyRecognitionLock(locked: Boolean) {
+        recognitionLocked = locked
+        if (locked) {
+            // 持续音量是独占动作，锁定前必须先安全结束；引擎也会发送自己的 END，这里只作兜底。
+            if (volumeHoldActive) finishVolumeHold(atBoundary = true)
+            ControlAccessibilityService.active?.hideCursor()
+            overlayIndicator.setState(OverlayIndicator.State.LOCKED)
+            overlayIndicator.showFeedback("识别已锁定，仅 Love 手势可以解锁")
+            updateNotification("识别已锁定，仅 Love 手势可以解锁")
+            Log.d("CameraProbe", "recognition locked by love gesture")
+        } else {
+            overlayIndicator.setState(OverlayIndicator.State.RUNNING)
+            overlayIndicator.showFeedback("识别已解锁，请放下手后继续操作")
+            updateNotification(if (controlMode) "手势识别与悬浮控制正在运行" else "摄像头后台运行中")
+            Log.d("CameraProbe", "recognition unlocked by love gesture")
+        }
+        // 用户可能正停在首页，此时不会有 onResume；不广播的话手动解除入口就不会出现。
+        sendBroadcast(
+            Intent(ACTION_RECOGNITION_LOCK_CHANGED)
+                .putExtra(EXTRA_RECOGNITION_LOCKED, locked)
+                .setPackage(packageName)
+        )
+    }
+
+    /** 常驻通知与首页的手动解除入口：不依赖手势识别成功。 */
+    private fun unlockRecognition() {
+        if (!recognitionLocked) return
+        pipeline?.unlockRecognition()
+        applyRecognitionLock(false)
+    }
+
     private fun currentDisplayRotationDegrees(): Int {
         val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         return when (displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_0) {
@@ -1066,15 +1128,23 @@ class CameraProbeService : Service() {
     private fun notification(message: String): Notification {
         val stopIntent = Intent(this, CameraProbeService::class.java).setAction("STOP")
         val pending = PendingIntent.getService(this, 8, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, channel)
+        val builder = Notification.Builder(this, channel)
             .setSmallIcon(android.R.drawable.ic_menu_camera).setContentTitle("魔法手势")
             .setContentText(message).setOngoing(true)
             .addAction(Notification.Action.Builder(null, "停止", pending).build())
-            .build()
+        // 锁定时必须保留手动解除入口，防止弱光或识别失败时只能强制停止服务。
+        if (recognitionLocked) {
+            val unlockIntent = Intent(this, CameraProbeService::class.java).setAction(ACTION_UNLOCK_RECOGNITION)
+            val unlockPending = PendingIntent.getService(this, 9, unlockIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(Notification.Action.Builder(null, "解除锁定", unlockPending).build())
+        }
+        return builder.build()
     }
     private fun updateNotification(message: String) { getSystemService(NotificationManager::class.java).notify(7, notification(message)) }
     override fun onDestroy() {
         isControlRunning = false
+        // 停止全部控制后清除锁状态：下次主动启动控制默认从正常识别开始。
+        recognitionLocked = false
         stopped = true
         val pipelineToClose = synchronized(modelInitLock) {
             modelInitGeneration++
