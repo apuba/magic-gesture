@@ -58,7 +58,7 @@
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_CAMERA` | 是，核心 | 用户离开应用页面后维持已主动启动的手势识别，并通过常驻通知显示运行状态与「停止」入口，保证用户对摄像头占用始终可见可控。 |
 | `POST_NOTIFICATIONS` | 是，核心 | Android 13 及以上展示前台服务运行状态通知与一键停止入口。 |
 | `SYSTEM_ALERT_WINDOW` | 是，核心 | 在其他应用上方显示手势光标、状态点、识别反馈文字、自拍倒计时与收藏位置标定面板。用户可在系统设置随时关闭，关闭后不影响其他功能以外的识别能力。 |
-| `BIND_ACCESSIBILITY_SERVICE` | 是，核心 | 将用户主动做出的手势转换为点击、滑动、返回、桌面、最近任务、截图与媒体控制。不读取窗口内容、页面文字、密码与聊天内容（`canRetrieveWindowContent=false`）；不自主决策，只有用户主动做出已配置手势时才执行。 |
+| `BIND_ACCESSIBILITY_SERVICE` | 是，核心 | 将用户主动做出的手势转换为点击、滑动、返回、桌面、最近任务、截图与媒体控制；已声明无障碍截图能力（`canTakeScreenshot`），仅在用户主动触发「截图」或「滚动长截图」手势时获取屏幕画面，只用于生成待保存图片。不读取窗口内容、页面文字、密码与聊天内容（`canRetrieveWindowContent=false`）；不自主决策，只有用户主动做出已配置手势时才执行。 |
 
 ### 1.4 Accessibility API 声明
 

@@ -516,7 +516,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 ## 7. 硬约束（不可违反）
 
-1. **隐私底线**：`res/xml/accessibility_service.xml` 保持 `canRetrieveWindowContent="false"`、`typeWindowStateChanged`、`canPerformGestures="true"`——永远不做"按文字/控件查找节点点击"类功能。
+1. **隐私底线**：`res/xml/accessibility_service.xml` 保持 `canRetrieveWindowContent="false"`、`typeWindowStateChanged`、`canPerformGestures="true"`——永远不做"按文字/控件查找节点点击"类功能。2026-10-07 新增 `canTakeScreenshot="true"`（Android 14 起调用 `takeScreenshot()` 必须声明），**只在用户主动触发「截图」或「滚动长截图」手势时获取屏幕画面**，不得用于持续监视屏幕或任何非用户触发的取屏。
 2. **相机独占**：前台服务持续持有前置摄像头，任何"打开相机 App"的动作不可行，自拍走内部抓帧。
 3. **失败不伪装成功**：所有动作注入必须带成功/失败回调，只有 success 才进全局冷却。
 4. `.codebuddy/` 目录是项目数据，已在 `.gitignore`，勿提交、勿删除。
