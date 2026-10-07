@@ -69,6 +69,11 @@ class OverlayIndicator(
         feedbackView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
         feedbackView = null
     }
+    /**
+     * True while a rolling screenshot is being captured. The dot and the feedback pill both float
+     * above the screen, so an unhidden overlay ends up stitched into every saved long image.
+     */
+    @Volatile private var hiddenForCapture = false
     private var selfiePreviewView: ImageView? = null
     private var selfiePreviewBitmap: Bitmap? = null
     private var countdownView: TextView? = null
@@ -121,10 +126,28 @@ class OverlayIndicator(
         }
     }
 
-    fun showFeedback(message: String, progress: Int? = null) {
-        if (!Settings.canDrawOverlays(context)) return
+    /**
+     * Takes the whole overlay down while a rolling screenshot is captured and puts it back
+     * afterwards. Called from the accessibility service, which owns the capture.
+     */
+    fun setHiddenForCapture(hidden: Boolean) {
+        hiddenForCapture = hidden
         main.post {
-            if (!feedbackEnabled) return@post
+            if (hidden) {
+                main.removeCallbacks(hideFeedback)
+                hideFeedback.run()
+                view?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
+                view = null
+            } else {
+                show()
+            }
+        }
+    }
+
+    fun showFeedback(message: String, progress: Int? = null) {
+        if (!Settings.canDrawOverlays(context) || hiddenForCapture) return
+        main.post {
+            if (!feedbackEnabled || hiddenForCapture) return@post
             main.removeCallbacks(hideFeedback)
             val pill = feedbackView ?: TextView(context).apply {
                 setTextColor(Color.WHITE)

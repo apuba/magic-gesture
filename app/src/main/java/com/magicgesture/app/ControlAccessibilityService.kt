@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Environment
@@ -36,9 +37,34 @@ import kotlin.math.hypot
 /** Injection and cursor boundary. Called only while user-started control is active. */
 class ControlAccessibilityService : AccessibilityService() {
     companion object {
+        private const val TAG = "MagicGestureA11y"
         @Volatile var active: ControlAccessibilityService? = null; private set
         /** How long Recents may keep the foreground unknown before the wait is given up. */
         const val RECENTS_TARGET_TIMEOUT_MS = 5_000L
+        /**
+         * Rolling screenshot limits. Frames stop at the screen count, and the stitched image stops at
+         * the height multiple — whichever comes first. Four screens, the old limit, produced images
+         * about two screens tall, which is why a long page looked like it stopped almost immediately.
+         */
+        const val MAX_ROLLING_FRAMES = 24
+        const val MAX_ROLLING_SCREENS = 6f
+        /**
+         * How each screen is advanced: one slow drag whose travel is known. A quick swipe leaves the
+         * distance to the fling, which on device moved the page by only a fifth of a screen and
+         * cannot be predicted; a drag is followed one-to-one, so the overlap between two frames is
+         * known instead of guessed.
+         */
+        const val ROLLING_DRAG_MS = 800L
+        const val ROLLING_DRAG_TRAVEL = .60f
+        /** Wait after the drag so any leftover inertia settles before the next frame is captured. */
+        const val ROLLING_DRAG_SETTLE_MS = 400L
+        /**
+         * How much of the drag the page actually follows. Measured at about three quarters on the
+         * test device; the search window below is what absorbs the difference.
+         */
+        const val ROLLING_DRAG_FOLLOW = .85f
+        /** How far the overlap search may stray from the distance the drag is expected to move. */
+        const val ROLLING_OVERLAP_SLACK = 400
         /** How long after Recents a launcher event is treated as the switcher closing, not a target. */
         const val RECENTS_LAUNCHER_GRACE_MS = 3_000L
     }
@@ -375,7 +401,11 @@ class ControlAccessibilityService : AccessibilityService() {
     }
 
     @SuppressLint("NewApi") // Every API 28-30 call below is guarded by the Android 11 check.
-    fun captureRollingScreenshot(onProgress: (String) -> Unit, onComplete: (Boolean, String) -> Unit) = main.post {
+    fun captureRollingScreenshot(
+        onProgress: (String) -> Unit,
+        onComplete: (Boolean, String) -> Unit,
+        onOverlayVisible: (Boolean) -> Unit = {}
+    ) = main.post {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             onComplete(false, "滚动截图需要 Android 11 或更高版本")
             return@post
@@ -386,23 +416,30 @@ class ControlAccessibilityService : AccessibilityService() {
         }
         busy = true
         hideCursor()
-        val frames = mutableListOf<Bitmap>()
+        val metrics = resources.displayMetrics
+        val stitch = RollingStitch(metrics.widthPixels, metrics.heightPixels)
+        var screens = 0
 
         fun finishCapture() {
+            // Nothing is captured from here on, so the overlay can come back before the stitch runs.
+            onOverlayVisible(true)
             onProgress("正在拼接长图…")
             imageWorker.execute {
                 try {
-                    val stitched = stitchFrames(frames)
+                    val stitched = stitch.result()
                     val uri = saveLongScreenshot(stitched)
-                    frames.forEach { if (!it.isRecycled) it.recycle() }
-                    if (stitched !in frames && !stitched.isRecycled) stitched.recycle()
+                    stitched.recycle()
+                    stitch.release()
                     main.post {
                         busy = false
                         onComplete(uri != null, if (uri != null) "滚动截图已保存到图片/MagicGesture" else "滚动截图保存失败")
                     }
-                } catch (_: Exception) {
-                    frames.forEach { if (!it.isRecycled) it.recycle() }
-                    main.post { busy = false; onComplete(false, "滚动截图拼接失败") }
+                } catch (e: Throwable) {
+                    // OutOfMemoryError is an Error, not an Exception: catching only Exception let a
+                    // failed stitch kill the process instead of reporting an ordinary failure.
+                    Log.w(TAG, "rolling screenshot stitch failed", e)
+                    stitch.release()
+                    main.post { busy = false; onComplete(false, "滚动截图拼接失败，内容可能过长") }
                 }
             }
         }
@@ -410,46 +447,79 @@ class ControlAccessibilityService : AccessibilityService() {
         fun captureNext() {
             takeScreenBitmap { bitmap ->
                 if (bitmap == null) {
-                    frames.forEach { if (!it.isRecycled) it.recycle() }
+                    stitch.release()
                     busy = false
+                    onOverlayVisible(true)
                     onComplete(false, "无法读取屏幕画面")
                     return@takeScreenBitmap
                 }
-                if (frames.isNotEmpty() && frameDifference(frames.last(), bitmap) < 5.0) {
+                val previous = stitch.lastFrame
+                if (previous != null && frameDifference(previous, bitmap) < 5.0) {
                     bitmap.recycle()
                     finishCapture()
                     return@takeScreenBitmap
                 }
-                frames += bitmap
-                onProgress("正在采集第 ${frames.size} 屏…")
-                if (frames.size >= 4) {
+                // A false return means the image has reached its height ceiling: keep what was
+                // captured instead of failing the whole gesture.
+                val followed = (metrics.heightPixels * ROLLING_DRAG_TRAVEL * ROLLING_DRAG_FOLLOW).toInt()
+                if (!stitch.append(bitmap, followed)) {
+                    bitmap.recycle()
                     finishCapture()
                     return@takeScreenBitmap
                 }
-                val metrics = resources.displayMetrics
-                val path = Path().apply {
-                    moveTo(metrics.widthPixels * .5f, metrics.heightPixels * .78f)
-                    lineTo(metrics.widthPixels * .5f, metrics.heightPixels * .24f)
+                screens++
+                if (screens >= MAX_ROLLING_FRAMES) {
+                    finishCapture()
+                    return@takeScreenBitmap
                 }
-                dispatch(path, 430, onDone = { main.postDelayed({ captureNext() }, 650L) }, onCancelled = { finishCapture() })
+                val centreX = metrics.widthPixels * .5f
+                val travel = metrics.heightPixels * ROLLING_DRAG_TRAVEL
+                val lower = metrics.heightPixels * .80f
+                val path = Path().apply {
+                    moveTo(centreX, lower)
+                    lineTo(centreX, lower - travel)
+                }
+                dispatch(path, ROLLING_DRAG_MS, onDone = { main.postDelayed({ captureNext() }, ROLLING_DRAG_SETTLE_MS) }, onCancelled = { finishCapture() })
             }
         }
 
-        onProgress("正在准备滚动截图…")
-        main.postDelayed({ captureNext() }, 250L)
+        // The pill is shown first so the user sees the gesture was accepted, then removed with a
+        // short gap before the first frame: anything still floating would be stitched into the image.
+        onProgress("正在滚动截图，请勿触碰屏幕…")
+        main.postDelayed({
+            onOverlayVisible(false)
+            main.postDelayed({ captureNext() }, 300L)
+        }, 700L)
     }
 
     @SuppressLint("NewApi") // Called only after captureRollingScreenshot verifies API 30+.
     private fun takeScreenBitmap(callback: (Bitmap?) -> Unit) {
-        takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-            override fun onSuccess(screenshot: ScreenshotResult) {
-                val buffer = screenshot.hardwareBuffer
-                val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
-                buffer.close()
-                callback(bitmap)
-            }
-            override fun onFailure(errorCode: Int) = callback(null)
-        })
+        // Android 14 refuses the call outright when the service does not declare canTakeScreenshot,
+        // and some ROMs throw instead of reporting onFailure. An unguarded throw here escapes on the
+        // binder thread and takes the whole process down, so every step is fenced and reported as a
+        // normal failure instead.
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    try {
+                        val buffer = screenshot.hardwareBuffer
+                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                        buffer.close()
+                        callback(bitmap)
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "screenshot decode failed", e)
+                        callback(null)
+                    }
+                }
+                override fun onFailure(errorCode: Int) {
+                    Log.w(TAG, "takeScreenshot failed: $errorCode")
+                    callback(null)
+                }
+            })
+        } catch (e: Throwable) {
+            Log.w(TAG, "takeScreenshot unavailable", e)
+            callback(null)
+        }
     }
 
     private fun frameDifference(a: Bitmap, b: Bitmap): Double {
@@ -467,35 +537,57 @@ class ControlAccessibilityService : AccessibilityService() {
         return if (count == 0L) 255.0 else total.toDouble() / count
     }
 
-    private fun stitchFrames(source: List<Bitmap>): Bitmap {
-        require(source.isNotEmpty())
-        val width = source.minOf { it.width }
-        val topCrop = (source.first().height * .07f).toInt()
-        val bottomCrop = (source.first().height * .93f).toInt()
-        val frames = source.map { Bitmap.createBitmap(it, 0, topCrop.coerceAtMost(it.height - 1), width, (bottomCrop - topCrop).coerceAtMost(it.height - topCrop)) }
-        val overlaps = mutableListOf<Int>()
-        for (i in 1 until frames.size) overlaps += findOverlap(frames[i - 1], frames[i])
-        val totalHeight = frames.first().height + (1 until frames.size).sumOf { frames[it].height - overlaps[it - 1] }
-        val result = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-        var y = 0
-        frames.forEachIndexed { index, bitmap ->
-            val crop = if (index == 0) 0 else overlaps[index - 1]
-            canvas.drawBitmap(bitmap, 0f, (y - crop).toFloat(), null)
-            y += bitmap.height - crop
+    /**
+     * Appends captured screens to one tall bitmap and releases the frames it no longer needs.
+     * Keeping every screen alive as a separate full-resolution bitmap is what made long pages run
+     * out of memory, so only the previous screen — needed to measure the overlap — and the result
+     * are held. The result uses RGB_565: a long screenshot is saved as JPEG, and halving the bytes
+     * per pixel is what leaves room for a page several screens tall.
+     */
+    private inner class RollingStitch(private val width: Int, screenHeight: Int) {
+        private val topCrop = (screenHeight * .07f).toInt()
+        private val cropHeight = (screenHeight * .86f).toInt().coerceAtLeast(1)
+        private val maxHeight = (screenHeight * MAX_ROLLING_SCREENS).toInt()
+        private val bitmap = Bitmap.createBitmap(width, maxHeight, Bitmap.Config.RGB_565)
+        private val canvas = Canvas(bitmap)
+        private var used = 0
+        private var previous: Bitmap? = null
+        val lastFrame: Bitmap? get() = previous
+
+        /** False once the ceiling is reached; the caller keeps whatever was already stitched. */
+        fun append(frame: Bitmap, expectedTravel: Int): Boolean {
+            // Searching the whole screen for the best match picked up unrelated look-alike rows —
+            // cards on the home page are near-identical — and silently cut real content out of the
+            // image. The drag fixes the distance, so the search only has to refine it.
+            val expected = (cropHeight - expectedTravel).coerceIn(0, cropHeight - 1)
+            val overlap = previous?.let { findOverlap(it, frame, expected) } ?: 0
+            val srcTop = (topCrop + overlap).coerceAtMost(frame.height - 1)
+            val srcHeight = (cropHeight - overlap).coerceAtLeast(1).coerceAtMost(frame.height - srcTop)
+            if (used + srcHeight > maxHeight) return false
+            canvas.drawBitmap(frame, Rect(0, srcTop, width, srcTop + srcHeight), Rect(0, used, width, used + srcHeight), null)
+            used += srcHeight
+            previous?.recycle()
+            previous = frame
+            return true
         }
-        frames.forEach { it.recycle() }
-        return result
+
+        fun result(): Bitmap = Bitmap.createBitmap(bitmap, 0, 0, width, used.coerceAtLeast(1))
+
+        fun release() {
+            previous?.let { if (!it.isRecycled) it.recycle() }
+            previous = null
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
     }
 
-    private fun findOverlap(previous: Bitmap, next: Bitmap): Int {
+    private fun findOverlap(previous: Bitmap, next: Bitmap, expected: Int): Int {
         val height = minOf(previous.height, next.height)
         val width = minOf(previous.width, next.width)
-        var bestOverlap = (height * .25f).toInt()
+        var bestOverlap = expected
         var bestScore = Double.MAX_VALUE
-        val minOverlap = (height * .12f).toInt()
-        val maxOverlap = (height * .72f).toInt()
-        for (overlap in minOverlap..maxOverlap step 18) {
+        val minOverlap = (expected - ROLLING_OVERLAP_SLACK).coerceAtLeast(0)
+        val maxOverlap = (expected + ROLLING_OVERLAP_SLACK).coerceAtMost((height * .74f).toInt())
+        for (overlap in minOverlap..maxOverlap step 12) {
             var total = 0L
             var count = 0L
             val previousStart = height - overlap
@@ -528,8 +620,15 @@ class ControlAccessibilityService : AccessibilityService() {
     }
 
     private fun dispatch(path: Path, duration: Long, onDone: (() -> Unit)? = null, onCancelled: (() -> Unit)? = null) {
+        dispatch(
+            GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(),
+            onDone,
+            onCancelled
+        )
+    }
+
+    private fun dispatch(gesture: GestureDescription, onDone: (() -> Unit)? = null, onCancelled: (() -> Unit)? = null) {
         busy = true
-        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build()
         val accepted = dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) { if (onDone == null) busy = false; onDone?.invoke() }
             override fun onCancelled(gestureDescription: GestureDescription?) { if (onCancelled == null) busy = false; onCancelled?.invoke() }

@@ -95,6 +95,13 @@ class CameraProbeService : Service() {
         muteToggle = ::toggleMute,
         // Rolling screenshots report per-screen progress; surface it on the overlay feedback.
         actionProgress = { message -> overlayIndicator.showFeedback(message) },
+        // A rolling screenshot captures the real screen, so its own overlay has to leave the screen.
+        // The capture outlives "stop all control" when it is already running, and the dot must not
+        // come back for a session that has ended.
+        overlayVisible = { visible ->
+            if (visible) { if (!stopped) overlayIndicator.setHiddenForCapture(false) }
+            else overlayIndicator.setHiddenForCapture(true)
+        },
         launchApp = ::launchAppForGesture,
         favoriteCurrent = ::favoriteCurrentContent
     )

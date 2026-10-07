@@ -438,6 +438,8 @@ class GestureActionExecutor(
     private val volumeAdjust: (Boolean, (Boolean) -> Unit) -> Unit,
     private val muteToggle: ((Boolean) -> Unit) -> Unit = { callback -> callback(false) },
     private val actionProgress: ((String) -> Unit)? = null,
+    /** Hides the floating overlay while a rolling screenshot walks the page; shown again after. */
+    private val overlayVisible: ((Boolean) -> Unit)? = null,
     /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
     private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) },
     private val favoriteCurrent: ((Boolean) -> Unit) -> Unit = { callback -> callback(false) }
@@ -488,7 +490,8 @@ class GestureActionExecutor(
                 val service = accessibilityService() ?: return false
                 service.captureRollingScreenshot(
                     onProgress = { actionProgress?.invoke(it) },
-                    onComplete = { ok, _ -> callback(ok) }
+                    onComplete = { ok, _ -> callback(ok) },
+                    onOverlayVisible = { overlayVisible?.invoke(it) }
                 )
                 true
             }
