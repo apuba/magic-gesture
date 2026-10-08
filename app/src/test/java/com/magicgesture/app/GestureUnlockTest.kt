@@ -144,6 +144,38 @@ class GestureUnlockTest {
         assertTrue(GestureUnlockPlan.unlockedCodes(after.checkInCount).contains(GestureCode.G22))
     }
 
+    /** 一次把日期往后跳很多天：只发放一次奖励，不按天数补发，也不会一次解锁多个包。 */
+    @Test fun aLongDateJumpStillGrantsOnlyOnePackage() {
+        val state = GestureUnlockState(openingDay = 100L)
+        val result = GestureUnlockMachine.checkIn(state, 1000L) as CheckInResult.Unlocked
+        assertEquals(1, result.state.checkInCount)
+        assertEquals("跳 900 天也只解锁第 1 包", GestureUnlockPlan.PACKAGES[0], result.newCodes)
+        assertFalse(
+            "跳日期不得顺带解锁第 2 包",
+            GestureUnlockPlan.unlockedCodes(result.state.checkInCount).containsAll(GestureUnlockPlan.PACKAGES[1])
+        )
+    }
+
+    /** 连续大跨度跳日期：每次签到只前进一个包，不会因跨度大而跳包。 */
+    @Test fun repeatedLongJumpsAdvanceOnePackagePerCheckIn() {
+        var state = GestureUnlockState()
+        listOf(100L, 500L, 900L).forEachIndexed { index, day ->
+            val result = GestureUnlockMachine.checkIn(state, day) as CheckInResult.Unlocked
+            assertEquals(index + 1, result.state.checkInCount)
+            assertEquals(GestureUnlockPlan.PACKAGES[index], result.newCodes)
+            state = result.state
+        }
+    }
+
+    /** 先跳到未来签到，再把系统时间调回过去：进度与已解锁权益保持不变，且当天不能再签到。 */
+    @Test fun rollingTheClockBackAfterAFutureJumpKeepsProgress() {
+        val future = (GestureUnlockMachine.checkIn(GestureUnlockState(), 1000L) as CheckInResult.Unlocked).state
+        assertFalse("回拨后当天不可再签到", GestureUnlockMachine.canCheckIn(future, 500L))
+        assertEquals(CheckInResult.AlreadyCheckedIn, GestureUnlockMachine.checkIn(future, 500L))
+        assertEquals(1, future.checkInCount)
+        assertTrue(GestureUnlockPlan.unlockedCodes(1).containsAll(GestureUnlockPlan.PACKAGES[0]))
+    }
+
     @Test fun completingAllCheckInsStopsFurtherRewards() {
         var state = GestureUnlockState()
         repeat(GestureUnlockPlan.TOTAL_CHECK_INS) { day ->
