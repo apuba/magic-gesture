@@ -8,7 +8,7 @@
 
 | 材料 | 来源 | 是否可直接用 |
 |---|---|---|
-| 正式签名 APK | `app\build\outputs\apk\release\app-release.apk`（49,313,594 字节，0.9.0/9） | ✅ 同一包，签名 v2 |
+| 正式签名 APK | `app\build\outputs\apk\release\app-release.apk`（大小待重新构建后更新，1.0.0/10） | ✅ 同一包，签名 v2 |
 | 签名指纹 | MD5 `e26b95ecd7c5711b5753f2082279159b`、SHA‑1 `a5a0e143…`、SHA‑256 `98efd9db…`、公钥 1024 位十六进制 | ✅ |
 | 隐私政策 | `https://magicgesture.mt4000.com/privacy-policy.html` | ✅ |
 | 个人信息/SDK 清单 | `docs/store-listing-form-answers.md` §2.1 §2.2 | ✅ 口径一致 |

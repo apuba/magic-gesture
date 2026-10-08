@@ -1,7 +1,7 @@
 # 魔法手势 App 完整功能清单
 
 > 整理日期：2026-10-07
-> 包名：`com.magicgesture.app`　版本：0.9.0（versionCode 9）
+> 包名：`com.magicgesture.app`　版本：1.0.0（versionCode 10）
 > 数据来源：本机源码 `app/src/main/java/com/magicgesture/app/` 与 `AndroidManifest.xml`，手势与动作以 `GestureArchitecture.kt` 的出厂默认映射为准
 > 说明：默认动作可由用户在「手势练习与校准」中改绑；标注「未绑定」的手势出厂不执行任何动作
 

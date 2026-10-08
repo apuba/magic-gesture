@@ -8,7 +8,7 @@
 |---|---|
 | 应用名称 | 魔法手势 |
 | 包名 | `com.magicgesture.app` |
-| 版本 | `versionName 0.9.0` / `versionCode 9` |
+| 版本 | `versionName 1.0.0` / `versionCode 10` |
 | minSdk / targetSdk / compileSdk | 26 / 36 / 36 |
 | 类别 | 工具 / 效率（个别市场称「实用工具」） |
 | 权限 | `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`、`BIND_ACCESSIBILITY_SERVICE` |

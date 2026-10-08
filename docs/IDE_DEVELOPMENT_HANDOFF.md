@@ -134,7 +134,7 @@
 ## 1. 项目概况
 
 - **工程**：`e:/2026/MagicGesture-v0.9`，单模块 Android 应用（Kotlin，无 Compose，自绘 View）
-- **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 0.9.0` / `versionCode 9`
+- **身份**：`applicationId` / `namespace` = `com.magicgesture.app`；`versionName 1.0.0` / `versionCode 10`
 - **SDK**：minSdk 26，target/compileSdk 36；依赖 MediaPipe Tasks Vision 0.10.21（手部关键点，模型 `app/src/main/assets/hand_landmarker.task`）
 - **源码**：`app/src/main/java/com/magicgesture/app/` 单层包结构；本轮新增 `PrivacyPolicyActivity.kt`
 - **测试**：当前 124 个 JVM 用例全绿（含最近手选择、G24/PIP 与比心互斥、G35、自拍 EXIF、抓取拖动独占、小指释放防重复等回放）

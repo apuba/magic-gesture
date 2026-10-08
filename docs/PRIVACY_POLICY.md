@@ -1,6 +1,6 @@
 # 魔法手势隐私政策
 
-> 适用应用：魔法手势，包名 `com.magicgesture.app`，版本 `0.9.0`。  
+> 适用应用：魔法手势，包名 `com.magicgesture.app`，版本 `1.0.0`。
 > 运营主体：魔法手势开发者（个人开发者）。
 > 最近更新日期：2026年10月6日；生效日期：2026年10月6日。
 > 在线版本：<https://magicgesture.mt4000.com/privacy-policy.html>

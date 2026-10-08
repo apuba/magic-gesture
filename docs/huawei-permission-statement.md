@@ -10,7 +10,7 @@
 |---|---|
 | 应用名称 | 魔法手势 |
 | 包名 | `com.magicgesture.app` |
-| 版本 | `0.9.0`（`versionCode 9`） |
+| 版本 | `1.0.0`（`versionCode 10`） |
 | 类别 | 实用工具 |
 | 隐私政策 | `https://magicgesture.mt4000.com/privacy-policy.html` |
 | 是否含账号 | 否 |
