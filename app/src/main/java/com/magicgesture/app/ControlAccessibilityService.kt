@@ -47,24 +47,44 @@ class ControlAccessibilityService : AccessibilityService() {
          * about two screens tall, which is why a long page looked like it stopped almost immediately.
          */
         const val MAX_ROLLING_FRAMES = 24
-        const val MAX_ROLLING_SCREENS = 6f
+        const val MAX_ROLLING_SCREENS = 8f
         /**
          * How each screen is advanced: one slow drag whose travel is known. A quick swipe leaves the
          * distance to the fling, which on device moved the page by only a fifth of a screen and
          * cannot be predicted; a drag is followed one-to-one, so the overlap between two frames is
          * known instead of guessed.
          */
-        const val ROLLING_DRAG_MS = 800L
-        const val ROLLING_DRAG_TRAVEL = .60f
+        const val ROLLING_DRAG_MS = 1_400L
+        const val ROLLING_DRAG_TRAVEL = .35f
         /** Wait after the drag so any leftover inertia settles before the next frame is captured. */
         const val ROLLING_DRAG_SETTLE_MS = 400L
+        /** How many times a drag that moves nothing is retried before the page counts as finished. */
+        const val ROLLING_MAX_STALLS = 1
+        /** Row fingerprints used to line two frames up: colour per row, per column bucket. */
+        const val ROLLING_FINGERPRINT_COLS = 64
         /**
-         * How much of the drag the page actually follows. Measured at about three quarters on the
-         * test device; the search window below is what absorbs the difference.
+         * Upper bound of the seam search, as a share of the frame. A single drag scrolled 71% of the
+         * frame on the home page and 13px on the very next one, so the range has to cover both.
          */
-        const val ROLLING_DRAG_FOLLOW = .85f
-        /** How far the overlap search may stray from the distance the drag is expected to move. */
-        const val ROLLING_OVERLAP_SLACK = 400
+        const val ROLLING_MAX_SHIFT = .72f
+        /** With less than half the frame left overlapping a match wins by chance far too easily. */
+        const val ROLLING_THIN_OVERLAP_RATIO = .60f
+        /** Stride of the coarse pass; the fine pass then checks every pixel around it. */
+        const val ROLLING_COARSE_STEP = 8
+        /**
+         * Weight that pulls the seam towards the expected distance when rows look alike. Kept small
+         * on purpose: the measured travel was three times the hint, so a strong pull moves the seam
+         * off the true position and towards the hint.
+         */
+        const val ROLLING_OVERLAP_BIAS = .015
+        /**
+         * Above this the two frames are treated as not lining up. The score is the mean difference
+         * of the red+green+blue sum (0-765), not of a single channel, so a real seam on a text-heavy
+         * page measures around 60-70 and a single-channel threshold of 25 rejected every good seam.
+         */
+        const val ROLLING_SEAM_LIMIT = 110.0
+        /** A best score this close to "nothing moved" means the page did not actually scroll. */
+        const val ROLLING_STILL_RATIO = .90f
         /** How long after Recents a launcher event is treated as the switcher closing, not a target. */
         const val RECENTS_LAUNCHER_GRACE_MS = 3_000L
     }
@@ -82,6 +102,11 @@ class ControlAccessibilityService : AccessibilityService() {
     private var busy = false
     private val main = Handler(Looper.getMainLooper())
     private val imageWorker = Executors.newSingleThreadExecutor()
+    /**
+     * Notes from the last rolling capture. They are written to a file as well as the log: the cable
+     * drops often enough that a capture cannot be diagnosed from logcat alone.
+     */
+    private val rollingTrace = StringBuilder()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     @Volatile private var foregroundPackageName: String? = null
     @Volatile private var awaitingRecentsTarget = false
@@ -404,7 +429,8 @@ class ControlAccessibilityService : AccessibilityService() {
     fun captureRollingScreenshot(
         onProgress: (String) -> Unit,
         onComplete: (Boolean, String) -> Unit,
-        onOverlayVisible: (Boolean) -> Unit = {}
+        onOverlayVisible: (Boolean) -> Unit = {},
+        onPreview: (Bitmap) -> Unit = { it.recycle() }
     ) = main.post {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             onComplete(false, "滚动截图需要 Android 11 或更高版本")
@@ -417,21 +443,40 @@ class ControlAccessibilityService : AccessibilityService() {
         busy = true
         hideCursor()
         val metrics = resources.displayMetrics
-        val stitch = RollingStitch(metrics.widthPixels, metrics.heightPixels)
+        val stitch = RollingStitch()
         var screens = 0
+        var stalled = 0
+        var finished = false
+        rollingTrace.setLength(0)
+        trace("capture started")
 
-        fun finishCapture() {
+        fun finishCapture(success: Boolean, failureMessage: String = "滚动截图未能完成，请保持页面静止后重试") {
+            if (finished) return
+            finished = true
+            trace("finished success=$success after $screens screens")
             // Nothing is captured from here on, so the overlay can come back before the stitch runs.
             onOverlayVisible(true)
+            if (!success) {
+                stitch.release()
+                imageWorker.execute { saveRollingTrace() }
+                busy = false
+                onComplete(false, failureMessage)
+                return
+            }
             onProgress("正在拼接长图…")
             imageWorker.execute {
                 try {
                     val stitched = stitch.result()
+                    trace("image ${stitched.width}x${stitched.height}")
                     val uri = saveLongScreenshot(stitched)
+                    trace("saved=${uri != null}")
+                    val preview = if (uri != null) rollingPreview(stitched) else null
                     stitched.recycle()
                     stitch.release()
+                    saveRollingTrace()
                     main.post {
                         busy = false
+                        preview?.let(onPreview)
                         onComplete(uri != null, if (uri != null) "滚动截图已保存到图片/MagicGesture" else "滚动截图保存失败")
                     }
                 } catch (e: Throwable) {
@@ -439,12 +484,45 @@ class ControlAccessibilityService : AccessibilityService() {
                     // failed stitch kill the process instead of reporting an ordinary failure.
                     Log.w(TAG, "rolling screenshot stitch failed", e)
                     stitch.release()
+                    saveRollingTrace()
                     main.post { busy = false; onComplete(false, "滚动截图拼接失败，内容可能过长") }
                 }
             }
         }
 
-        fun captureNext() {
+        // Held as a value so the drag helper and the capture step can call each other.
+        var captureNext: () -> Unit = {}
+
+        /** One scroll plus the next capture. */
+        fun scrollAndCapture() {
+            // Keep canRetrieveWindowContent=false: scrolling is a deterministic injected drag and
+            // never searches or acts on another app's accessibility node tree.
+            val centreX = metrics.widthPixels * .5f
+            val travel = metrics.heightPixels * ROLLING_DRAG_TRAVEL
+            val lower = metrics.heightPixels * .80f
+            val path = Path().apply {
+                moveTo(centreX, lower)
+                lineTo(centreX, lower - travel)
+            }
+            // A drag the system refuses is not the end of the page: one more try keeps an otherwise
+            // good capture from ending after two screens.
+            val onCancelled: () -> Unit = {
+                if (stalled++ < ROLLING_MAX_STALLS) {
+                    trace("drag cancelled, retrying")
+                    main.postDelayed({ scrollAndCapture() }, ROLLING_DRAG_SETTLE_MS)
+                } else {
+                    trace("drag refused twice, stopping")
+                    finishCapture(false, "页面没有响应滚动手势，长截图未完成")
+                }
+            }
+            dispatch(
+                path, ROLLING_DRAG_MS,
+                onDone = { main.postDelayed({ captureNext() }, ROLLING_DRAG_SETTLE_MS) },
+                onCancelled = onCancelled
+            )
+        }
+
+        captureNext = {
             takeScreenBitmap { bitmap ->
                 if (bitmap == null) {
                     stitch.release()
@@ -454,32 +532,40 @@ class ControlAccessibilityService : AccessibilityService() {
                     return@takeScreenBitmap
                 }
                 val previous = stitch.lastFrame
-                if (previous != null && frameDifference(previous, bitmap) < 5.0) {
+                val difference = previous?.let { frameDifference(it, bitmap) } ?: Double.MAX_VALUE
+                if (difference < 5.0) {
+                    trace("page did not move (diff=${"%.1f".format(difference)})")
+                    // The page may still have room left and the drag simply did not land, so give it
+                    // one more chance before calling this the bottom.
+                    if (stalled++ < ROLLING_MAX_STALLS) {
+                        val dropped = bitmap
+                        dropped.recycle()
+                        scrollAndCapture()
+                        return@takeScreenBitmap
+                    }
+                    // Same view as the frame already stitched, so its tail still belongs at the end.
+                    stitch.appendTail(bitmap)
                     bitmap.recycle()
-                    finishCapture()
+                    finishCapture(true)
                     return@takeScreenBitmap
                 }
-                // A false return means the image has reached its height ceiling: keep what was
-                // captured instead of failing the whole gesture.
-                val followed = (metrics.heightPixels * ROLLING_DRAG_TRAVEL * ROLLING_DRAG_FOLLOW).toInt()
-                if (!stitch.append(bitmap, followed)) {
-                    bitmap.recycle()
-                    finishCapture()
-                    return@takeScreenBitmap
+                when (stitch.append(bitmap)) {
+                    AppendResult.FULL -> { trace("reached the height ceiling"); bitmap.recycle(); finishCapture(true); return@takeScreenBitmap }
+                    AppendResult.MISALIGNED -> {
+                        bitmap.recycle()
+                        finishCapture(false, "页面内容无法可靠对齐，未保存错误长图")
+                        return@takeScreenBitmap
+                    }
+                    AppendResult.BOTTOM -> { bitmap.recycle(); finishCapture(true); return@takeScreenBitmap }
+                    AppendResult.OK -> { stalled = 0 }
                 }
                 screens++
                 if (screens >= MAX_ROLLING_FRAMES) {
-                    finishCapture()
+                    trace("reached the frame limit")
+                    finishCapture(true)
                     return@takeScreenBitmap
                 }
-                val centreX = metrics.widthPixels * .5f
-                val travel = metrics.heightPixels * ROLLING_DRAG_TRAVEL
-                val lower = metrics.heightPixels * .80f
-                val path = Path().apply {
-                    moveTo(centreX, lower)
-                    lineTo(centreX, lower - travel)
-                }
-                dispatch(path, ROLLING_DRAG_MS, onDone = { main.postDelayed({ captureNext() }, ROLLING_DRAG_SETTLE_MS) }, onCancelled = { finishCapture() })
+                scrollAndCapture()
             }
         }
 
@@ -490,6 +576,20 @@ class ControlAccessibilityService : AccessibilityService() {
             onOverlayVisible(false)
             main.postDelayed({ captureNext() }, 300L)
         }, 700L)
+    }
+
+    /** Keeps a very tall long screenshot cheap enough for the overlay while preserving its shape. */
+    private fun rollingPreview(source: Bitmap): Bitmap? = try {
+        val scale = minOf(480f / source.width, 720f / source.height, 1f)
+        Bitmap.createScaledBitmap(
+            source,
+            (source.width * scale).toInt().coerceAtLeast(1),
+            (source.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
+    } catch (e: Throwable) {
+        Log.w(TAG, "rolling screenshot preview failed", e)
+        null
     }
 
     @SuppressLint("NewApi") // Called only after captureRollingScreenshot verifies API 30+.
@@ -522,6 +622,36 @@ class ControlAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun trace(line: String) {
+        Log.d(TAG, "rolling $line")
+        rollingTrace.append(line).append('\n')
+    }
+
+    /**
+     * Writes the capture notes to Downloads so they can be read back after the fact — a dropped
+     * adb connection otherwise leaves nothing to go on.
+     */
+    private fun saveRollingTrace() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val text = rollingTrace.toString()
+        if (text.isBlank()) return
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "rolling_trace.txt")
+            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        try {
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
+            contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+        } catch (e: Throwable) {
+            Log.w(TAG, "rolling trace write failed", e)
+        }
+    }
+
     private fun frameDifference(a: Bitmap, b: Bitmap): Double {
         val width = minOf(a.width, b.width)
         val height = minOf(a.height, b.height)
@@ -544,63 +674,193 @@ class ControlAccessibilityService : AccessibilityService() {
      * are held. The result uses RGB_565: a long screenshot is saved as JPEG, and halving the bytes
      * per pixel is what leaves room for a page several screens tall.
      */
-    private inner class RollingStitch(private val width: Int, screenHeight: Int) {
-        private val topCrop = (screenHeight * .07f).toInt()
-        private val cropHeight = (screenHeight * .86f).toInt().coerceAtLeast(1)
-        private val maxHeight = (screenHeight * MAX_ROLLING_SCREENS).toInt()
-        private val bitmap = Bitmap.createBitmap(width, maxHeight, Bitmap.Config.RGB_565)
-        private val canvas = Canvas(bitmap)
+    private inner class RollingStitch {
+        // The captured frames are not the size DisplayMetrics reports: sizing the crop from the
+        // metrics cut the first screen short and put every seam in the wrong place. Everything is
+        // measured off the first frame instead, which is also what keeps the buffer from being
+        // allocated for a screen taller than the frames that go into it.
+        private var width = 0
+        private var topCrop = 0
+        private var cropHeight = 0
+        private var maxHeight = 0
+        private lateinit var bitmap: Bitmap
+        private lateinit var canvas: Canvas
         private var used = 0
         private var previous: Bitmap? = null
+        private var previousRows: IntArray? = null
         val lastFrame: Bitmap? get() = previous
 
-        /** False once the ceiling is reached; the caller keeps whatever was already stitched. */
-        fun append(frame: Bitmap, expectedTravel: Int): Boolean {
-            // Searching the whole screen for the best match picked up unrelated look-alike rows —
-            // cards on the home page are near-identical — and silently cut real content out of the
-            // image. The drag fixes the distance, so the search only has to refine it.
-            val expected = (cropHeight - expectedTravel).coerceIn(0, cropHeight - 1)
-            val overlap = previous?.let { findOverlap(it, frame, expected) } ?: 0
-            val srcTop = (topCrop + overlap).coerceAtMost(frame.height - 1)
-            val srcHeight = (cropHeight - overlap).coerceAtLeast(1).coerceAtMost(frame.height - srcTop)
-            if (used + srcHeight > maxHeight) return false
+        private fun sizeTo(frame: Bitmap): Boolean {
+            if (width != 0) return true
+            width = frame.width
+            topCrop = (frame.height * .07f).toInt()
+            cropHeight = (frame.height * .86f).toInt().coerceAtLeast(1)
+            maxHeight = (frame.height * MAX_ROLLING_SCREENS).toInt()
+            trace("frame ${frame.width}x${frame.height} ceiling=$maxHeight")
+            // Bumped against the memory ceiling on tall pages: a failure here ends the capture with
+            // what fits instead of killing the service.
+            bitmap = try {
+                Bitmap.createBitmap(width, maxHeight, Bitmap.Config.RGB_565)
+            } catch (e: OutOfMemoryError) {
+                Log.w(TAG, "rolling buffer too large, stopping")
+                width = 0
+                return false
+            }
+            canvas = Canvas(bitmap)
+            return true
+        }
+
+        /**
+         * FULL once the ceiling is reached, MISALIGNED when the new frame cannot be lined up with
+         * the one before it — stitching a frame that does not line up is what produced visibly
+         * broken seams, so the capture stops and keeps what already lines up.
+         */
+        fun append(frame: Bitmap): AppendResult {
+            if (!sizeTo(frame)) return AppendResult.FULL
+            val rows = rowFingerprints(frame, topCrop, cropHeight)
+            // How far the page actually scrolled. Measuring the shift itself — instead of the
+            // overlap left over after cropping — keeps the search and the cut in the same units.
+            val expected = (frame.height * ROLLING_DRAG_TRAVEL).toInt()
+            val travel = previousRows?.let { findShift(it, rows, expected) }
+            if (previousRows != null && travel == null) {
+                trace("lost the seam, stopping at $used px")
+                return AppendResult.MISALIGNED
+            }
+            // A shift of zero is the end of the page. Nothing more lines up to be appended, so this
+            // last frame contributes only the tail below the crop.
+            if (travel?.shift == 0) {
+                appendTail(frame)
+                return AppendResult.BOTTOM
+            }
+            // The first screen has nothing above it, so it contributes its whole usable band;
+            // applying the predicted shift there cut the top of the image off.
+            val seam = travel?.let { (cropHeight - it.shift).coerceIn(0, cropHeight - 1) } ?: 0
+            val srcTop = (topCrop + seam).coerceAtMost(frame.height - 1)
+            val srcHeight = (cropHeight - seam).coerceAtLeast(1).coerceAtMost(frame.height - srcTop)
+            if (used + srcHeight > maxHeight) return AppendResult.FULL
             canvas.drawBitmap(frame, Rect(0, srcTop, width, srcTop + srcHeight), Rect(0, used, width, used + srcHeight), null)
             used += srcHeight
             previous?.recycle()
             previous = frame
-            return true
+            previousRows = rows
+            return AppendResult.OK
         }
 
-        fun result(): Bitmap = Bitmap.createBitmap(bitmap, 0, 0, width, used.coerceAtLeast(1))
+        /**
+         * Adds the strip below the crop: the bottom of the screen, minus the navigation bar. Every
+         * other frame only contributes above that line, so without this the last screenful loses
+         * its tail and the page ends early. The bar itself is excluded — it belongs to the system,
+         * not to the content, and its height comes from the platform so no device guess is needed.
+         */
+        fun appendTail(frame: Bitmap) {
+            if (width == 0) return
+            val top = topCrop + cropHeight
+            val navBar = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+                .takeIf { it > 0 }?.let { resources.getDimensionPixelSize(it) } ?: 0
+            val bottom = (frame.height - navBar).coerceIn(top, frame.height)
+            val take = minOf(bottom - top, maxHeight - used)
+            if (take <= 0) return
+            trace("tail +$take px (nav bar $navBar px)")
+            canvas.drawBitmap(frame, Rect(0, top, width, top + take), Rect(0, used, width, used + take), null)
+            used += take
+        }
+
+        fun result(): Bitmap = if (width == 0) Bitmap.createBitmap(1, 1, Bitmap.Config.RGB_565)
+        else Bitmap.createBitmap(bitmap, 0, 0, width, used.coerceAtLeast(1))
 
         fun release() {
             previous?.let { if (!it.isRecycled) it.recycle() }
             previous = null
-            if (!bitmap.isRecycled) bitmap.recycle()
+            previousRows = null
+            if (width != 0 && !bitmap.isRecycled) bitmap.recycle()
         }
     }
 
-    private fun findOverlap(previous: Bitmap, next: Bitmap, expected: Int): Int {
-        val height = minOf(previous.height, next.height)
-        val width = minOf(previous.width, next.width)
-        var bestOverlap = expected
-        var bestScore = Double.MAX_VALUE
-        val minOverlap = (expected - ROLLING_OVERLAP_SLACK).coerceAtLeast(0)
-        val maxOverlap = (expected + ROLLING_OVERLAP_SLACK).coerceAtMost((height * .74f).toInt())
-        for (overlap in minOverlap..maxOverlap step 12) {
-            var total = 0L
-            var count = 0L
-            val previousStart = height - overlap
-            for (offsetY in 0 until overlap step 42) for (x in width / 10 until width * 9 / 10 step 42) {
-                val a = previous.getPixel(x, previousStart + offsetY)
-                val b = next.getPixel(x, offsetY)
-                total += abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) + abs(Color.blue(a) - Color.blue(b))
-                count += 3
+    enum class AppendResult { OK, FULL, MISALIGNED, BOTTOM }
+
+    /**
+     * One colour sample per row and column bucket. Matching whole rows instead of a sparse grid
+     * is what keeps the seam accurate: a grid that sampled every 42nd pixel picked neighbouring
+     * look-alike rows on pages built from repeating cards and drifted the seam on every screen.
+     */
+    private fun rowFingerprints(frame: Bitmap, top: Int, height: Int): IntArray {
+        val cols = ROLLING_FINGERPRINT_COLS
+        val safeTop = top.coerceIn(0, frame.height - 1)
+        val safeHeight = height.coerceAtLeast(1).coerceAtMost(frame.height - safeTop)
+        val out = IntArray(safeHeight * cols)
+        var row = 0
+        val left = frame.width * .10f
+        val sampleWidth = frame.width * .80f
+        for (y in safeTop until safeTop + safeHeight) {
+            for (col in 0 until cols) {
+                val x = (left + sampleWidth * (col + .5f) / cols).toInt().coerceIn(0, frame.width - 1)
+                val pixel = frame.getPixel(x, y)
+                out[row * cols + col] = pixel and 0x00ffffff
             }
-            val score = if (count == 0L) Double.MAX_VALUE else total.toDouble() / count
-            if (score < bestScore) { bestScore = score; bestOverlap = overlap }
+            row++
         }
-        return bestOverlap
+        return out
+    }
+
+    private data class Seam(val shift: Int, val score: Double)
+
+    /**
+     * How far the page scrolled between two frames, in pixels. Null when no shift lines the frames
+     * up well enough to be trusted — a wrong shift is what puts a visible step in the stitched image.
+     */
+    private fun findShift(previousRows: IntArray, nextRows: IntArray, expected: Int): Seam? {
+        val cols = ROLLING_FINGERPRINT_COLS
+        val rowCount = minOf(previousRows.size, nextRows.size) / cols
+        val minShift = 1
+        val maxShift = (rowCount * ROLLING_MAX_SHIFT).toInt().coerceAtMost(rowCount - 1)
+        if (maxShift <= minShift) return null
+
+        fun scoreAt(shift: Int): Double {
+            val rows = rowCount - shift
+            var total = 0L
+            for (r in 0 until rows) {
+                val previousBase = (shift + r) * cols
+                val nextBase = r * cols
+                for (col in 0 until cols) {
+                    val a = previousRows[previousBase + col]
+                    val b = nextRows[nextBase + col]
+                    total += abs(Color.red(a) - Color.red(b))
+                    total += abs(Color.green(a) - Color.green(b))
+                    total += abs(Color.blue(a) - Color.blue(b))
+                }
+            }
+            return total.toDouble() / (rows * cols) + abs(shift - expected) * ROLLING_OVERLAP_BIAS
+        }
+
+        // Coarse pass for the neighbourhood, fine pass for the exact pixel: a seam that is off by a
+        // single pixel reads as a clear step in the finished image.
+        var coarse = minShift
+        var coarseScore = Double.MAX_VALUE
+        for (shift in minShift..maxShift step ROLLING_COARSE_STEP) {
+            val score = scoreAt(shift)
+            if (score < coarseScore) { coarseScore = score; coarse = shift }
+        }
+        var bestShift = coarse
+        var bestScore = Double.MAX_VALUE
+        val fineFrom = (coarse - ROLLING_COARSE_STEP).coerceAtLeast(minShift)
+        val fineTo = (coarse + ROLLING_COARSE_STEP).coerceAtMost(maxShift)
+        for (shift in fineFrom..fineTo) {
+            val score = scoreAt(shift)
+            if (score < bestScore) { bestScore = score; bestShift = shift }
+        }
+        val still = scoreAt(0)
+        trace("shift expected=$expected got=$bestShift score=${"%.1f".format(bestScore)} still=${"%.1f".format(still)}")
+        // A page that never moved still produces a low score somewhere in the range; without this
+        // check the search happily reports a shift that is just the closest look-alike pair of rows.
+        // A zero shift means "the bottom is here", not "the seam is broken", so it is reported as
+        // such and the caller ends the capture where things already line up.
+        // Measured: the 13px shift of a page already at its bottom had look-alike rows nearby that
+        // scored almost as well at 1484px, so a thin overlap has to beat "nothing moved" by a far
+        // wider margin before such a big shift is believed.
+        val ratio = if (bestShift > rowCount / 2) ROLLING_THIN_OVERLAP_RATIO else ROLLING_STILL_RATIO
+        if (bestScore > still * ratio) return Seam(0, bestScore)
+        if (bestScore > ROLLING_SEAM_LIMIT) return null
+        return Seam(bestShift, bestScore)
     }
 
     private fun saveLongScreenshot(bitmap: Bitmap): android.net.Uri? {
