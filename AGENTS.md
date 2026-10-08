@@ -22,7 +22,8 @@
 4. `docs/MAGIC_GESTURE_ANDROID_V1_DEVELOPMENT_SPEC.md`（架构与历史规格）
 5. `docs/GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`（当前正式版签到解锁需求；账号、付费、分享部分仅作二期记录）
 6. `docs/REQUIREMENTS_CHANGELOG.md`（已确认的现有功能行为变更，包含多人多手控制权）
-7. 涉及第三方收藏时，再读 `docs/THIRD_PARTY_APP_FAVORITE_BUTTON_REQUIREMENTS.md`
+7. 涉及 UI 设计稿落地、页面美化或新增页面时，再读 `docs/UI_DESIGN_IMPLEMENTATION_GUIDELINES.md`
+8. 涉及第三方收藏时，再读 `docs/THIRD_PARTY_APP_FAVORITE_BUTTON_REQUIREMENTS.md`
 
 文档与代码不一致时，不得自行猜测。先核对当前代码、Git 历史和产品负责人最新明确指示，并在交付中指出冲突。
 
@@ -98,6 +99,7 @@ Camera frame
 3. 保持精确中文文案、姿势描述、秒数和功能边界。
 4. 同步相关测试、首页说明、校准页说明和文档。
 5. 不因“顺便优化”加入新权限、联网、账号、埋点或付费依赖。
+6. 涉及 UI 设计稿落地时，必须遵守 `docs/UI_DESIGN_IMPLEMENTATION_GUIDELINES.md`；无法干净提取的背景或图标必须暂停并向产品负责人索取，禁止使用杂乱截图切片。
 
 ### 6.3 验证时
 
@@ -196,4 +198,5 @@ Camera frame
 - 当前状态、验证和接手事项更新 `IDE_DEVELOPMENT_HANDOFF.md`。
 - 当前签到解锁需求和二期构想统一维护在 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`；二期内容仍受真实上线硬门槛约束。
 - 已确认的现有功能行为变更统一追加到 `REQUIREMENTS_CHANGELOG.md`，不得创建按日期重复的需求变更文档。
+- UI 设计稿落地、素材处理和视觉验收规则统一维护在 `UI_DESIGN_IMPLEMENTATION_GUIDELINES.md`。
 - 文档不能把“计划”“代码完成”“构建通过”“真机通过”和“真实上线”混写成同一状态。
