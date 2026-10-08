@@ -159,11 +159,15 @@ class CalibrationActivity : Activity() {
             addView(cooldownCard(), blockMargins(22))
 
             addView(title("手势动作映射"))
-            addView(body("每个手势都可以换成其他动作。点击右侧按钮选择动作，选“默认”恢复出厂设置；修改立即生效，无需重启手势控制。").apply {
+            addView(body("每个手势都可以换成其他动作。列表按签到解锁顺序排列，灰色淡化的手势尚未解锁，不能换绑。点击右侧按钮选择动作，选“默认”恢复出厂设置；修改立即生效，无需重启手势控制。").apply {
                 setPadding(0, dp(5), 0, dp(12))
             })
             mappingButtons.clear()
-            gestureNames.forEach { (code, _) -> addView(mappingRow(code), blockMargins(8)) }
+            GestureUnlockPlan.groupedByStage(gestureNames.keys.toList()) { listOf(it) }.forEach { group ->
+                val locked = group.items.any { it !in unlockedCodes }
+                addView(stageHeader(group.stage, locked), blockMargins(10))
+                group.items.forEach { code -> addView(mappingRow(code, locked), blockMargins(8)) }
+            }
             addView(body("提示：功能开关控制的是手势本身（是否参与识别），映射控制的是触发后执行什么动作，两者相互独立。"), blockMargins(18))
 
             addView(title("收藏按钮位置"))
@@ -171,7 +175,7 @@ class CalibrationActivity : Activity() {
             addView(favoriteProfilesView(), blockMargins(18))
 
             addView(title("手势功能开关"))
-            addView(body("测试时可只开启一个手势，关闭的功能不会参与判断，也不会影响其他动作。").apply {
+            addView(body("测试时可只开启一个手势，关闭的功能不会参与判断，也不会影响其他动作。列表按签到解锁顺序排列，灰色淡化的手势尚未解锁。").apply {
                 setPadding(0, dp(5), 0, dp(12))
             })
             cursorSwitch = featureSwitch("指尖移动", "显示并移动青色光标。", savedFeatures.cursor)
@@ -201,7 +205,7 @@ class CalibrationActivity : Activity() {
             openApp2Switch = featureSwitch("张掌变二指", "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", savedFeatures.openApp2)
             openApp3Switch = featureSwitch("张掌变三指", "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。", savedFeatures.openApp3)
             openApp4Switch = featureSwitch("张掌变四指", "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。", savedFeatures.openApp4)
-            val switchCodes = mapOf<Switch, List<GestureCode>>(
+            val switchEntries = listOf(
                 cursorSwitch to listOf(GestureCode.G01),
                 clickSwitch to listOf(GestureCode.G02),
                 indexVerticalScrollSwitch to listOf(GestureCode.G03, GestureCode.G04),
@@ -229,18 +233,18 @@ class CalibrationActivity : Activity() {
                 openApp3Switch to listOf(GestureCode.G18),
                 openApp4Switch to listOf(GestureCode.G19)
             )
-            listOf(cursorSwitch, clickSwitch, indexVerticalScrollSwitch, palmVerticalScrollSwitch,
-                palmLeftScrollSwitch, indexLeftScrollSwitch, palmRightScrollSwitch, indexRightScrollSwitch,
-                screenshotSwitch, selfieSwitch, likeSwitch, thumbsUpSwitch, okSwitch, playPauseSwitch, pinkyMuteSwitch,
-                lotusRecentsSwitch, orchidBackSwitch, leftLSwitch, lShapeSwitch, clawDragSwitch,
-                cShapeSwitch, twoFingerMediaSwitch,
-                openApp1Switch, openApp2Switch, openApp3Switch, openApp4Switch).forEach { switch ->
-                if (switchCodes[switch].orEmpty().any { it !in unlockedCodes }) {
-                    // 未解锁的手势不能开启识别；开关值本身保留，解锁后自动可用。
-                    switch.isEnabled = false
-                    switch.text = "${switch.text}\n未解锁：完成对应次数的签到后自动开放。"
+            GestureUnlockPlan.groupedByStage(switchEntries) { it.second }.forEach { group ->
+                val locked = group.items.any { (_, codes) -> codes.any { it !in unlockedCodes } }
+                addView(stageHeader(group.stage, locked), blockMargins(10))
+                group.items.forEach { (switch, codes) ->
+                    if (codes.any { it !in unlockedCodes }) {
+                        // 未解锁的手势不能开启识别；开关值本身保留，解锁后自动可用。
+                        switch.isEnabled = false
+                        switch.text = "${switch.text}\n未解锁：${GestureUnlockPlan.stageLockLabel(GestureUnlockPlan.stageOfGroup(codes))}。"
+                        switch.alpha = LOCKED_ROW_ALPHA
+                    }
+                    addView(switch, blockMargins(8))
                 }
-                addView(switch, blockMargins(8))
             }
             addView(body("提示：如果只测试向下滑动，可关闭其余六项，保存后重新启动手势控制。"), blockMargins(22))
 
@@ -309,15 +313,16 @@ class CalibrationActivity : Activity() {
     }
 
     /** Gesture name on the left, current action on the right; tapping opens the action picker. */
-    private fun mappingRow(code: GestureCode) = LinearLayout(this).apply {
+    private fun mappingRow(code: GestureCode, locked: Boolean) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(16), dp(8), dp(10), dp(8))
-        background = rounded(Color.WHITE, 16, Color.rgb(226, 232, 240))
+        background = rounded(if (locked) Color.rgb(244, 244, 247) else Color.WHITE, 16, Color.rgb(226, 232, 240))
+        if (locked) alpha = LOCKED_ROW_ALPHA
         addView(TextView(this@CalibrationActivity).apply {
             text = gestureNames.getValue(code)
             textSize = 14.5f
-            setTextColor(Color.rgb(30, 41, 59))
+            setTextColor(if (locked) Color.rgb(120, 118, 140) else Color.rgb(30, 41, 59))
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val button = Button(this@CalibrationActivity).apply {
             textSize = 13f
@@ -326,19 +331,45 @@ class CalibrationActivity : Activity() {
             minHeight = dp(36)
             setPadding(dp(14), 0, dp(14), 0)
             stateListAnimator = null
-            setTextColor(Color.rgb(37, 99, 235))
-            background = pressable(Color.rgb(239, 246, 255), Color.rgb(219, 234, 254), 12, Color.rgb(191, 219, 254))
         }
         mappingButtons[code] = button
-        if (code !in unlockedCodes) {
+        if (locked) {
             // 未解锁的手势可以查看名称，但不能换绑动作。
             button.text = "未解锁"
             button.isEnabled = false
+            button.setTextColor(Color.rgb(120, 118, 140))
+            button.background = rounded(Color.rgb(233, 233, 238), 12, Color.rgb(213, 213, 219))
         } else {
             button.text = currentActionLabel(code)
+            button.setTextColor(Color.rgb(37, 99, 235))
+            button.background = pressable(Color.rgb(239, 246, 255), Color.rgb(219, 234, 254), 12, Color.rgb(191, 219, 254))
             button.setOnClickListener { showActionPicker(code) }
         }
         addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)))
+    }
+
+    /** 分组标题：说明本组是第几次签到解锁，以及该组当前是否已解锁。 */
+    private fun stageHeader(stage: Int, locked: Boolean) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(10), 0, dp(2))
+        addView(TextView(this@CalibrationActivity).apply {
+            text = GestureUnlockPlan.stageTitle(stage)
+            textSize = 14.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (locked) Color.rgb(120, 118, 140) else Color.rgb(37, 99, 235))
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (stage > GestureUnlockPlan.BASE_STAGE) addView(statusChip(if (locked) "未解锁" else "已解锁", locked))
+    }
+
+    private fun statusChip(text: String, locked: Boolean) = TextView(this).apply {
+        this.text = text
+        textSize = 11.5f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(if (locked) Color.rgb(120, 118, 140) else Color.rgb(35, 115, 78))
+        setPadding(dp(9), dp(3), dp(9), dp(3))
+        background = rounded(if (locked) Color.rgb(233, 233, 238) else Color.rgb(216, 240, 227), 99)
     }
 
     private fun currentAction(code: GestureCode): GestureAction? =
@@ -634,4 +665,9 @@ class CalibrationActivity : Activity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        /** 未解锁配置行的淡化程度：内容仍可读，但一眼区别于已解锁。 */
+        private const val LOCKED_ROW_ALPHA = 0.5f
+    }
 }

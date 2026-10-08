@@ -12,6 +12,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -72,6 +74,13 @@ class MainActivity : Activity() {
     }
     /** 锁状态广播是否已在 onResume 注册；onPause 时据此安全注销。 */
     private var recognitionLockReceiverRegistered = false
+
+    companion object {
+        /** 未解锁卡片的淡化程度：内容仍可读，但一眼就能与已解锁区分。 */
+        private const val LOCKED_CARD_ALPHA = 0.45f
+        /** 未解锁卡片的图标去色，与淡化一起构成明显的锁定样式。 */
+        private val GRAYSCALE_FILTER = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -255,35 +264,21 @@ class MainActivity : Activity() {
         val cooldownSeconds = GesturePreferences.cooldownMs(this) / 1000f
         val cooldownText = if (cooldownSeconds == cooldownSeconds.toLong().toFloat()) "${cooldownSeconds.toLong()}" else "%.1f".format(cooldownSeconds)
         content.addView(label("手掌正对前置摄像头，保持在画面中央。卡片紫色文字是当前绑定动作，换绑后会自动更新；灰色说明只描述手势做法。动作成功后进入 $cooldownText 秒冷却期，期间暂停全部手势识别（包括光标）。", 13f, Color.rgb(104, 102, 126), false).apply {
-            setPadding(0, dp(6), 0, dp(14))
+            setPadding(0, dp(6), 0, dp(8))
+        })
+        content.addView(label("下面按签到解锁顺序排列：先开箱即用的一组，再依次是每次签到解锁的功能包。灰色淡化的手势尚未解锁，姿势可以先预习，签到后自动开放。", 12.5f, Color.rgb(112, 110, 132), false).apply {
+            setPadding(0, 0, 0, dp(14))
         })
 
-        content.addView(gestureCard(R.drawable.gesture_point, "指尖移动", { "控制光标" }, "伸出食指缓慢移动，青色光标会跟随指尖。", "◎", "cursor", features.cursor), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_point, "指尖轻点", actionLabelOf(GestureCode.G02), "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。", "✓", "click", features.click), margins(bottom = 12))
-        // G03/G04/G09/G10 are reserved trajectory slots: hidden from this guide, still listed in the practice screen.
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌上挥 / 并掌下挥", actionLabelOf(GestureCode.G05, GestureCode.G06), "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。", "↕", "palm_vertical_scroll", features.palmVerticalScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌左挥", actionLabelOf(GestureCode.G07), "食指、中指、无名指和小指并拢后向左挥，拇指不限。", "←", "palm_left_scroll", features.palmLeftScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_four_fingers_together, "并掌右挥", actionLabelOf(GestureCode.G08), "食指、中指、无名指和小指并拢后向右挥，拇指不限。", "→", "palm_right_scroll", features.palmRightScroll), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_v, "V 手势", actionLabelOf(GestureCode.G11), "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。", "◎", "selfie", features.selfie), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_finger_heart, "指尖比心", actionLabelOf(GestureCode.G12), "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。", "♥", "like", features.like), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_thumbs_up, "拇指赞", actionLabelOf(GestureCode.G20), "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。", "👍", "thumbs_up", features.thumbsUp), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_ok, "OK 手势", actionLabelOf(GestureCode.G21), "拇指与食指相触，其余三指伸直并保持约 0.6 秒。", "OK", "ok", features.ok), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_fist, "握拳", actionLabelOf(GestureCode.G22), "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。", "拳", "play_pause", features.playPause), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_pinky, "小指手势", actionLabelOf(GestureCode.G23), "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。", "静", "pinky_mute", features.pinkyMute), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_lotus, "莲花指", actionLabelOf(GestureCode.G14), "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。", "⌂", "lotus_recents", features.lotusRecents), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_orchid, "兰花指", actionLabelOf(GestureCode.G15), "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。", "☰", "orchid_back", features.orchidBack), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_left_l, "单指枪·横向", actionLabelOf(GestureCode.G24), "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。", "L", "left_l", features.leftL), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_l_shape, "单指枪·竖向", actionLabelOf(GestureCode.G25), "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。", "L", "l_shape", features.lShape), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_claw, "抓取手势", actionLabelOf(GestureCode.G26), "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。", "↔", "claw_drag", features.clawDrag), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_c_shape, "C 手势", actionLabelOf(GestureCode.G27), "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。", "C", "c_shape", features.cShape), margins(bottom = 12))
-        // G28 是系统级识别锁：所有用户可用、不可关闭、不可换绑，因此卡片没有开关。
-        content.addView(gestureCard(R.drawable.gesture_love, "Love 手势（识别锁）", { "锁定 / 解锁全部识别" }, "大拇指、食指和小指伸展，中指与无名指收拢，稳定保持 1 秒即可锁定识别；再次保持 1 秒解锁。锁定期间只有该手势可用，姿势消失约 0.8 秒后才能再次切换。", "♥", "love_lock", features.loveLock, showSwitch = false), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_666, "六六顺手势", actionLabelOf(GestureCode.G34), "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。", "6", "six666", features.six666), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指左挥 / 双指右挥", actionLabelOf(GestureCode.G29, GestureCode.G30), "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指上拉 / 双指下拉", actionLabelOf(GestureCode.G31, GestureCode.G32), "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_fingers_together, "双指双点", actionLabelOf(GestureCode.G33), "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。", "2", "two_finger_media", features.twoFingerMedia), margins(bottom = 12))
-        content.addView(gestureCard(R.drawable.gesture_two_finger_gun, "双指枪·竖向", actionLabelOf(GestureCode.G35), "食指与中指并拢向上，拇指明显向外侧伸出并与食指保持 45°–90°夹角：右手拇指向右，左手拇指向左；无名指和小指收拢，稳定保持 1 秒。", "↑", "two_finger_up", features.twoFingerUp), margins(bottom = 12))
-        content.addView(palmSeriesCard(features), margins(bottom = 18))
+        // 分组与排序只依赖签到批次；卡片文案与开关值在这里一次性装配。
+        val groups = GestureUnlockPlan.groupedByStage(guideCards(features)) { it.codes }
+        groups.forEach { group ->
+            val locked = group.items.any { card -> card.codes.any { it !in unlockedCodes } }
+            content.addView(stageHeader(group.stage, locked))
+            group.items.forEach { card ->
+                content.addView(guideCardView(card, locked), margins(bottom = 12))
+            }
+        }
 
         content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -343,8 +338,10 @@ class MainActivity : Activity() {
      */
     private fun actionLabelOf(vararg codes: GestureCode): () -> String {
         // 未解锁的手势先显示解锁条件；用户仍然可以看到姿势与用途，但不能换绑或执行。
-        val locked = codes.firstOrNull { it !in unlockedCodes }
-        if (locked != null) return { lockLabel(locked) }
+        // 多编号卡片按其中最晚的批次提示，避免出现“部分解锁”的错觉。
+        if (codes.any { it !in unlockedCodes }) {
+            return { GestureUnlockPlan.stageLockLabel(GestureUnlockPlan.stageOfGroup(codes.toList())) }
+        }
         return {
             val manager = GestureMappingManager(GesturePreferences.actionOverrides(this))
             val labels = codes.mapNotNull { code ->
@@ -361,27 +358,26 @@ class MainActivity : Activity() {
         }
     }
 
-    /** 未解锁手势的紫色动作标签文案。 */
-    private fun lockLabel(code: GestureCode): String {
-        val required = GestureUnlockPlan.checkInRequiredFor(code)
-        val name = GESTURE_DISPLAY_NAMES[code] ?: code.name
-        return if (required == null) "$name 未解锁" else "$name 未解锁 · 第 $required 次签到后开放"
-    }
-
-    private fun gestureCard(image: Int, title: String, actionText: () -> String, description: String, badge: String, feature: String, enabled: Boolean, secondImage: Int? = null, showSwitch: Boolean = true): View = LinearLayout(this).apply {
+    private fun gestureCard(
+        image: Int, title: String, actionText: () -> String, description: String, badge: String,
+        feature: String, enabled: Boolean, secondImage: Int? = null, showSwitch: Boolean = true,
+        locked: Boolean = false
+    ): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12), dp(12), dp(15), dp(12))
-        background = rounded(Color.WHITE, 20)
-        elevation = dp(2).toFloat()
+        background = rounded(if (locked) Color.rgb(244, 244, 247) else Color.WHITE, 20)
+        elevation = if (locked) 0f else dp(2).toFloat()
+        if (locked) alpha = LOCKED_CARD_ALPHA
         val imageWidth = if (secondImage == null) 96 else 132
         addView(FrameLayout(this@MainActivity).apply {
-            background = rounded(Color.rgb(245, 243, 255), 16)
+            background = rounded(if (locked) Color.rgb(236, 236, 241) else Color.rgb(245, 243, 255), 16)
             if (secondImage == null) {
                 addView(ImageView(this@MainActivity).apply {
                     setImageResource(image)
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                     setPadding(dp(5), dp(5), dp(5), dp(5))
+                    if (locked) colorFilter = GRAYSCALE_FILTER
                 }, FrameLayout.LayoutParams(dp(88), dp(88), Gravity.CENTER))
             } else {
                 addView(LinearLayout(this@MainActivity).apply {
@@ -390,19 +386,21 @@ class MainActivity : Activity() {
                     addView(ImageView(this@MainActivity).apply {
                         setImageResource(image)
                         scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        if (locked) colorFilter = GRAYSCALE_FILTER
                     }, LinearLayout.LayoutParams(dp(51), dp(82)))
-                    addView(label("→", 16f, Color.rgb(91, 87, 218), true).apply {
+                    addView(label("→", 16f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
                         gravity = Gravity.CENTER
                     }, LinearLayout.LayoutParams(dp(18), dp(82)))
                     addView(ImageView(this@MainActivity).apply {
                         setImageResource(secondImage)
                         scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        if (locked) colorFilter = GRAYSCALE_FILTER
                     }, LinearLayout.LayoutParams(dp(51), dp(82)))
                 }, FrameLayout.LayoutParams(dp(124), dp(88), Gravity.CENTER))
             }
             addView(label(badge, 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
-                background = rounded(Color.rgb(91, 87, 218), 99)
+                background = rounded(if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), 99)
             }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END))
         }, LinearLayout.LayoutParams(dp(imageWidth), dp(96)))
         addView(LinearLayout(this@MainActivity).apply {
@@ -410,10 +408,14 @@ class MainActivity : Activity() {
             setPadding(dp(14), 0, 0, 0)
             addView(LinearLayout(this@MainActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(label(title, 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(label(title, 17f, if (locked) Color.rgb(96, 94, 112) else Color.rgb(38, 37, 59), true),
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                if (locked) addView(statusChip("未解锁", Color.rgb(112, 110, 132), Color.rgb(233, 233, 238)), chipParams())
                 if (showSwitch) addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
             })
-            val actionView = label(actionText(), 13f, Color.rgb(91, 87, 218), true).apply { setPadding(0, dp(3), 0, 0) }
+            val actionView = label(actionText(), 13f, if (locked) Color.rgb(120, 118, 140) else Color.rgb(91, 87, 218), !locked).apply {
+                setPadding(0, dp(3), 0, 0)
+            }
             actionLabelViews += actionView to actionText
             addView(actionView)
             addView(label(description, 12.5f, Color.rgb(105, 103, 124), false).apply {
@@ -422,6 +424,12 @@ class MainActivity : Activity() {
             })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
     }
+
+    /** 标题行里的状态标签：与右侧开关之间留出间距。 */
+    private fun chipParams() = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply { marginEnd = dp(6) }
 
     /**
      * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，12 次签到后 G01–G35 全部拥有。
@@ -515,58 +523,147 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The open-palm family lives in one card: the G13 screenshot sequence and the four
-     * "fold to N fingers" app openers all start from the same spread hand, so they are
-     * grouped instead of being scattered through the general guide list.
+     * 首页手势指南的一张卡片。[codes] 决定它归属第几次签到，也决定它显示为已解锁还是淡化锁定。
+     *
+     * 五指张开系列（G13、G16–G19）原先收在一个大容器里，跨了第 0、6、7 批，无法按签到顺序排列；
+     * 现在拆成独立卡片，说明里自带“从五指明显张开开始”，开合掌留在开箱即用组，
+     * 张掌变指按第 6、7 次签到排到对应分组。
      */
-    private fun palmSeriesCard(features: GestureFeatureConfig): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(14), dp(14), dp(13))
-        background = rounded(Color.rgb(239, 240, 255), 20)
-        addView(label("五指张开系列手势", 17f, Color.rgb(38, 37, 59), true))
-        addView(label("这些组合手势都从五指明显张开开始，再按卡片所示完成后续姿势。实际执行结果以每张卡片显示的当前绑定动作为准。", 12.5f, Color.rgb(105, 103, 124), false).apply {
-            setPadding(0, dp(6), 0, dp(11))
-            setLineSpacing(0f, 1.15f)
-        })
-        addView(screenshotCard(features.screenshot), margins(bottom = 12))
-        addView(label("张掌变一指至四指", 14f, Color.rgb(66, 63, 160), true).apply {
-            setPadding(0, dp(2), 0, dp(9))
-        })
-        addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_1), "张掌变一指",
-            actionLabelOf(GestureCode.G16),
-            "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。",
-            "open_app_1", features.openApp1
-        ), margins(bottom = 10))
-        addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_2), "张掌变二指",
-            actionLabelOf(GestureCode.G17),
-            "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。",
-            "open_app_2", features.openApp2
-        ), margins(bottom = 10))
-        addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_3), "张掌变三指",
-            actionLabelOf(GestureCode.G18),
-            "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。",
-            "open_app_3", features.openApp3
-        ), margins(bottom = 10))
-        addView(sequenceCard(
-            listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_4), "张掌变四指",
-            actionLabelOf(GestureCode.G19),
-            "五指张开稳定后，收起大拇指保留四指并保持约 0.6 秒。",
-            "open_app_4", features.openApp4
-        ), margins(bottom = 2))
+    private data class GuideCard(
+        val codes: List<GestureCode>,
+        val title: String,
+        val description: String,
+        val badge: String,
+        val feature: String,
+        val switchOn: Boolean,
+        /** 序列手势（开合掌、张掌变指）用多张步骤图，此时 [image] 不使用。 */
+        val image: Int,
+        val steps: List<Int>? = null,
+        val secondImage: Int? = null,
+        val showSwitch: Boolean = true,
+        val fixedAction: (() -> String)? = null
+    )
+
+    /** 手势指南卡片清单：按签到批次顺序书写，渲染时再按批次分组。 */
+    private fun guideCards(features: GestureFeatureConfig): List<GuideCard> = listOf(
+        // 开箱即用：7 个基础编号 + 系统级识别锁 G28。
+        GuideCard(listOf(GestureCode.G01), "指尖移动", "伸出食指缓慢移动，青色光标会跟随指尖。",
+            "◎", "cursor", features.cursor, R.drawable.gesture_point, fixedAction = { "控制光标" }),
+        GuideCard(listOf(GestureCode.G02), "指尖轻点", "只伸出食指稳定约 0.2 秒，弯曲食指后在 1 秒内重新伸直。",
+            "✓", "click", features.click, R.drawable.gesture_point),
+        // G03/G04/G09/G10 are reserved trajectory slots: hidden from this guide, still listed in the practice screen.
+        GuideCard(listOf(GestureCode.G05, GestureCode.G06), "并掌上挥 / 并掌下挥", "食指、中指、无名指和小指并拢后整只手上下挥动，拇指不限。",
+            "↕", "palm_vertical_scroll", features.palmVerticalScroll, R.drawable.gesture_four_fingers_together),
+        GuideCard(listOf(GestureCode.G24), "单指枪·横向", "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。",
+            "L", "left_l", features.leftL, R.drawable.gesture_left_l),
+        GuideCard(listOf(GestureCode.G11), "V 手势", "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。",
+            "◎", "selfie", features.selfie, R.drawable.gesture_v),
+        GuideCard(listOf(GestureCode.G13), "开合掌", "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持。手指并拢时不会进入该组合。",
+            "✋", "screenshot", features.screenshot, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm)),
+        // G28 是系统级识别锁：所有用户可用、不可关闭、不可换绑，因此卡片没有开关。
+        GuideCard(listOf(GestureCode.G28), "Love 手势（识别锁）", "大拇指、食指和小指伸展，中指与无名指收拢，稳定保持 1 秒即可锁定识别；再次保持 1 秒解锁。锁定期间只有该手势可用，姿势消失约 0.8 秒后才能再次切换。",
+            "♥", "love_lock", features.loveLock, R.drawable.gesture_love, showSwitch = false, fixedAction = { "锁定 / 解锁全部识别" }),
+        // 第 1 次签到
+        GuideCard(listOf(GestureCode.G22), "握拳", "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。",
+            "拳", "play_pause", features.playPause, R.drawable.gesture_fist),
+        // 第 2 次签到
+        GuideCard(listOf(GestureCode.G31, GestureCode.G32), "双指上拉 / 双指下拉", "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。",
+            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
+        // 第 3 次签到
+        GuideCard(listOf(GestureCode.G29, GestureCode.G30), "双指左挥 / 双指右挥", "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。",
+            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
+        GuideCard(listOf(GestureCode.G33), "双指双点", "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。",
+            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
+        // 第 4 次签到
+        GuideCard(listOf(GestureCode.G23), "小指手势", "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。",
+            "静", "pinky_mute", features.pinkyMute, R.drawable.gesture_pinky),
+        // 第 5 次签到
+        GuideCard(listOf(GestureCode.G21), "OK 手势", "拇指与食指相触，其余三指伸直并保持约 0.6 秒。",
+            "OK", "ok", features.ok, R.drawable.gesture_ok),
+        // 第 6 次签到
+        GuideCard(listOf(GestureCode.G16), "张掌变一指", "从五指明显张开开始：稳定后收起其他手指只保留食指并保持约 0.6 秒。",
+            "1", "open_app_1", features.openApp1, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_1)),
+        GuideCard(listOf(GestureCode.G17), "张掌变二指", "从五指明显张开开始：稳定后收起其他手指保留食指与中指并保持约 0.6 秒。",
+            "2", "open_app_2", features.openApp2, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_2)),
+        // 第 7 次签到
+        GuideCard(listOf(GestureCode.G18), "张掌变三指", "从五指明显张开开始：稳定后保留食指、中指与无名指并保持约 0.6 秒。",
+            "3", "open_app_3", features.openApp3, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_3)),
+        GuideCard(listOf(GestureCode.G19), "张掌变四指", "从五指明显张开开始：稳定后收起大拇指保留四指并保持约 0.6 秒。",
+            "4", "open_app_4", features.openApp4, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_open_app_4)),
+        // 第 8 次签到
+        GuideCard(listOf(GestureCode.G14), "莲花指", "拇指与无名指相触，食指、中指和小指伸展并保持约 0.6 秒。",
+            "⌂", "lotus_recents", features.lotusRecents, R.drawable.gesture_lotus),
+        GuideCard(listOf(GestureCode.G15), "兰花指", "拇指与中指相触，食指、无名指和小指伸展并保持约 0.6 秒。",
+            "☰", "orchid_back", features.orchidBack, R.drawable.gesture_orchid),
+        // 第 9 次签到
+        GuideCard(listOf(GestureCode.G07), "并掌左挥", "食指、中指、无名指和小指并拢后向左挥，拇指不限。",
+            "←", "palm_left_scroll", features.palmLeftScroll, R.drawable.gesture_four_fingers_together),
+        GuideCard(listOf(GestureCode.G08), "并掌右挥", "食指、中指、无名指和小指并拢后向右挥，拇指不限。",
+            "→", "palm_right_scroll", features.palmRightScroll, R.drawable.gesture_four_fingers_together),
+        // 第 10 次签到
+        GuideCard(listOf(GestureCode.G25), "单指枪·竖向", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。",
+            "L", "l_shape", features.lShape, R.drawable.gesture_l_shape),
+        GuideCard(listOf(GestureCode.G27), "C 手势", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。",
+            "C", "c_shape", features.cShape, R.drawable.gesture_c_shape),
+        // 第 11 次签到
+        GuideCard(listOf(GestureCode.G12), "指尖比心", "拇指压在食指第一关节处并与食指交叉，其余三指收拢握住，稳定保持约 0.6 秒。",
+            "♥", "like", features.like, R.drawable.gesture_finger_heart),
+        GuideCard(listOf(GestureCode.G20), "拇指赞", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。",
+            "👍", "thumbs_up", features.thumbsUp, R.drawable.gesture_thumbs_up),
+        // 第 12 次签到：G03/G04/G09/G10 为轨迹预留，首页不展示。
+        GuideCard(listOf(GestureCode.G26), "抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。",
+            "↔", "claw_drag", features.clawDrag, R.drawable.gesture_claw),
+        GuideCard(listOf(GestureCode.G34), "六六顺手势", "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。",
+            "6", "six666", features.six666, R.drawable.gesture_666),
+        GuideCard(listOf(GestureCode.G35), "双指枪·竖向", "食指与中指并拢向上，拇指明显向外侧伸出并与食指保持 45°–90°夹角：右手拇指向右，左手拇指向左；无名指和小指收拢，稳定保持 1 秒。",
+            "↑", "two_finger_up", features.twoFingerUp, R.drawable.gesture_two_finger_gun)
+    )
+
+    /** 渲染一张指南卡片：未解锁时整卡淡化，开关以关闭且不可操作的状态显示。 */
+    private fun guideCardView(card: GuideCard, locked: Boolean): View {
+        val actionText = card.fixedAction ?: actionLabelOf(*card.codes.toTypedArray())
+        // 未解锁手势不参与识别，开关值保持原样，这里只把显示值收敛为关闭。
+        val switchOn = card.switchOn && !locked
+        return if (card.steps != null) {
+            sequenceCard(card.steps, card.title, actionText, card.description, card.feature, switchOn, locked)
+        } else {
+            gestureCard(card.image, card.title, actionText, card.description, card.badge, card.feature, switchOn, card.secondImage, card.showSwitch, locked)
+        }
     }
 
-    /** G13: spread → fist → spread, so the open palm is shown twice. */
-    private fun screenshotCard(enabled: Boolean): View = sequenceCard(
-        listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm),
-        "开合掌",
-        actionLabelOf(GestureCode.G13),
-        "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持。手指并拢时不会进入该组合。",
-        "screenshot",
-        enabled
-    )
+    /**
+     * 分组标题：说明本组是第几次签到解锁，以及该组当前是否已解锁。
+     * 开箱即用组恒为已解锁，标题本身已写明，不再重复加状态标签。
+     */
+    private fun stageHeader(stage: Int, locked: Boolean): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(16), 0, dp(8))
+        addView(LinearLayout(this@MainActivity).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label(
+                GestureUnlockPlan.stageTitle(stage), 15.5f,
+                if (locked) Color.rgb(112, 110, 132) else Color.rgb(66, 63, 160), true
+            ), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (stage > GestureUnlockPlan.BASE_STAGE) {
+                addView(statusChip(
+                    if (locked) "未解锁" else "已解锁",
+                    if (locked) Color.rgb(112, 110, 132) else Color.rgb(35, 115, 78),
+                    if (locked) Color.rgb(233, 233, 238) else Color.rgb(216, 240, 227)
+                ))
+            }
+        })
+        if (locked) {
+            addView(label("继续每日签到即可解锁本组手势。", 12f, Color.rgb(134, 132, 155), false).apply {
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+    }
+
+    private fun statusChip(text: String, textColor: Int, fill: Int) = label(text, 11.5f, textColor, true).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(9), dp(3), dp(9), dp(3))
+        background = rounded(fill, 99)
+    }
 
     /**
      * Sequence gestures (G13, G16-G19) put the step illustrations on top, then the title row,
@@ -579,12 +676,14 @@ class MainActivity : Activity() {
         actionText: (() -> String)?,
         description: String,
         feature: String,
-        enabled: Boolean
+        enabled: Boolean,
+        locked: Boolean = false
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(14), dp(14), dp(14), dp(15))
-        background = rounded(Color.WHITE, 20)
-        elevation = dp(2).toFloat()
+        background = rounded(if (locked) Color.rgb(244, 244, 247) else Color.WHITE, 20)
+        elevation = if (locked) 0f else dp(2).toFloat()
+        if (locked) alpha = LOCKED_CARD_ALPHA
         // Three-step sequences need narrower frames so the whole row still fits a phone.
         val frameWidth = if (steps.size >= 3) dp(60) else dp(78)
         val arrowWidth = if (steps.size >= 3) dp(26) else dp(38)
@@ -592,23 +691,28 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             steps.forEachIndexed { index, image ->
                 if (index > 0) {
-                    addView(label("→", 18f, Color.rgb(91, 87, 218), true).apply {
+                    addView(label("→", 18f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
                         gravity = Gravity.CENTER
                     }, LinearLayout.LayoutParams(arrowWidth, dp(76)))
                 }
                 addView(ImageView(this@MainActivity).apply {
                     setImageResource(image)
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    if (locked) colorFilter = GRAYSCALE_FILTER
                 }, LinearLayout.LayoutParams(frameWidth, dp(80)))
             }
         })
         addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(label(title, 17f, Color.rgb(38, 37, 59), true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(label(title, 17f, if (locked) Color.rgb(96, 94, 112) else Color.rgb(38, 37, 59), true),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (locked) addView(statusChip("未解锁", Color.rgb(112, 110, 132), Color.rgb(233, 233, 238)), chipParams())
             addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
         })
         if (actionText != null) {
-            val actionView = label(actionText(), 13f, Color.rgb(91, 87, 218), true).apply { setPadding(0, dp(4), 0, 0) }
+            val actionView = label(actionText(), 13f, if (locked) Color.rgb(120, 118, 140) else Color.rgb(91, 87, 218), !locked).apply {
+                setPadding(0, dp(4), 0, 0)
+            }
             actionLabelViews += actionView to actionText
             addView(actionView)
         }
