@@ -21,6 +21,12 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     private var lastSentAt = 0L
     private var lastResultAt = 0L
     private val closed = AtomicBoolean(false)
+    /**
+     * A paused pipeline may still be asked for one preview frame by the selfie fallback, but it
+     * must not submit frames to MediaPipe or deliver a result that was already in flight. This is
+     * also the hard recognition lock used while a rolling screenshot mutates the page.
+     */
+    private val recognitionPaused = AtomicBoolean(false)
     @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
     @Volatile private var firstDetectionLogged = false
     init {
@@ -32,7 +38,7 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
             .setNumHands(2)
             .setRunningMode(RunningMode.LIVE_STREAM)
             .setResultListener { result, _ ->
-                if (closed.get()) return@setResultListener
+                if (closed.get() || recognitionPaused.get()) return@setResultListener
                 val now = SystemClock.uptimeMillis()
                 if (now - lastResultAt > 300) engine.lost(now).forEach(onEvent)
                 lastResultAt = now
@@ -84,8 +90,14 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         // to the engine as the hand being lowered and frees the lock of a hold that already fired.
         lastResultAt = SystemClock.uptimeMillis()
         engine.resume()
+        recognitionPaused.set(false)
     }
-    @Synchronized fun pause() { engine.stop() }
+    @Synchronized fun pause() {
+        // Set the cross-thread gate first: an already-running MediaPipe callback must not publish
+        // another gesture after the caller has declared the operation exclusive.
+        recognitionPaused.set(true)
+        engine.stop()
+    }
     /** Routes per-frame engine diagnostics to a sink (logcat) so thresholds can be tuned on device. */
     fun setDiag(sink: ((String) -> Unit)?) { engine.diag = sink }
     @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
@@ -110,6 +122,10 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         pendingFrameCapture?.let { capture ->
             pendingFrameCapture = null
             capture(rotated.copy(Bitmap.Config.ARGB_8888, false))
+        }
+        if (recognitionPaused.get()) {
+            rotated.recycle()
+            return
         }
         val mpImage = BitmapImageBuilder(rotated).build()
         try {

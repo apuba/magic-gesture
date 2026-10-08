@@ -219,7 +219,21 @@ class OverlayIndicator(
         }
     }
 
-    /** Shows a short-lived thumbnail of the just-saved selfie, similar to the system screenshot preview. Takes bitmap ownership. */    fun showSelfiePreview(source: Bitmap) {
+    /** Shows a short-lived thumbnail of the just-saved selfie, similar to the system screenshot preview. Takes bitmap ownership. */
+    fun showSelfiePreview(source: Bitmap) = showSavedImagePreview(
+        source = source,
+        description = "自拍已保存，这是照片缩略图预览",
+        maxPreviewHeight = Int.MAX_VALUE
+    )
+
+    /** Shows the complete long screenshot as a bounded, short-lived preview. Takes bitmap ownership. */
+    fun showRollingScreenshotPreview(source: Bitmap) = showSavedImagePreview(
+        source = source,
+        description = "滚动长截图已保存，这是截图缩略图预览",
+        maxPreviewHeight = dp(220)
+    )
+
+    private fun showSavedImagePreview(source: Bitmap, description: String, maxPreviewHeight: Int) {
         if (!Settings.canDrawOverlays(context)) { source.recycle(); return }
         main.post {
             main.removeCallbacks(hideSelfiePreview)
@@ -245,7 +259,9 @@ class OverlayIndicator(
                 scaled
             } catch (_: Exception) { return@post }
             val viewWidth = previewWidth + dp(8)
-            val viewHeight = (previewWidth * ratio).toInt().coerceAtLeast(dp(48)) + dp(8)
+            val viewHeight = (previewWidth * ratio).toInt()
+                .coerceAtLeast(dp(48))
+                .coerceAtMost(maxPreviewHeight) + dp(8)
             val previewParams = WindowManager.LayoutParams(
                 viewWidth,
                 viewHeight,
@@ -271,7 +287,7 @@ class OverlayIndicator(
                     setColor(Color.WHITE)
                     setStroke(dp(1), Color.argb(170, 255, 255, 255))
                 }
-                contentDescription = "自拍已保存，这是照片缩略图预览"
+                contentDescription = description
                 alpha = 0f
             }
             try {

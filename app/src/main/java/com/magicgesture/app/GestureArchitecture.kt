@@ -1,6 +1,7 @@
 package com.magicgesture.app
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
 import android.view.KeyEvent
 
 enum class GestureCode {
@@ -447,6 +448,8 @@ class GestureActionExecutor(
     private val actionProgress: ((String) -> Unit)? = null,
     /** Hides the floating overlay while a rolling screenshot walks the page; shown again after. */
     private val overlayVisible: ((Boolean) -> Unit)? = null,
+    /** Shows the saved rolling screenshot briefly; ownership of the bitmap passes to the callback. */
+    private val rollingScreenshotPreview: ((Bitmap) -> Unit)? = null,
     /** Launches the app bound to the given open-app slot (1..4); false when unbound or missing. */
     private val launchApp: (GestureCode, (Boolean) -> Unit) -> Unit = { _, callback -> callback(false) },
     private val favoriteCurrent: ((Boolean) -> Unit) -> Unit = { callback -> callback(false) }
@@ -498,7 +501,11 @@ class GestureActionExecutor(
                 service.captureRollingScreenshot(
                     onProgress = { actionProgress?.invoke(it) },
                     onComplete = { ok, _ -> callback(ok) },
-                    onOverlayVisible = { overlayVisible?.invoke(it) }
+                    onOverlayVisible = { overlayVisible?.invoke(it) },
+                    onPreview = { bitmap ->
+                        val preview = rollingScreenshotPreview
+                        if (preview != null) preview(bitmap) else bitmap.recycle()
+                    }
                 )
                 true
             }

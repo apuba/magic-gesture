@@ -82,6 +82,8 @@ class CameraProbeService : Service() {
     private var lastFrameRotation = Int.MIN_VALUE
     private var controlMode = false
     @Volatile private var selfieInProgress = false
+    /** True from rolling-screenshot submission until its terminal callback. */
+    @Volatile private var rollingScreenshotInProgress = false
     private var pendingHighQualitySelfie: ((ByteArray?) -> Unit)? = null
     private val highQualitySelfieTimeout = Runnable { completeHighQualitySelfie(null) }
     private var featureConfig = GestureFeatureConfig()
@@ -114,6 +116,7 @@ class CameraProbeService : Service() {
             if (visible) { if (!stopped) overlayIndicator.setHiddenForCapture(false) }
             else overlayIndicator.setHiddenForCapture(true)
         },
+        rollingScreenshotPreview = { bitmap -> overlayIndicator.showRollingScreenshotPreview(bitmap) },
         launchApp = ::launchAppForGesture,
         favoriteCurrent = ::favoriteCurrentContent
     )
@@ -269,6 +272,9 @@ class CameraProbeService : Service() {
             try {
                 val newPipeline = HandPipeline(this) { event ->
                             val service = ControlAccessibilityService.active
+                            // A result may already be queued when G34 starts the exclusive capture.
+                            // Drop it at the service boundary as well as pausing MediaPipe below.
+                            if (rollingScreenshotInProgress) return@HandPipeline
                             if (favoriteFlowActive) return@HandPipeline
                             // 自拍倒计时期间冻结全部手势：连识别提示也不显示，避免与倒计时抢占浮层。
                             if (selfieInProgress) return@HandPipeline
@@ -417,7 +423,11 @@ class CameraProbeService : Service() {
         val isRollingScreenshot = mapped.mapping.action == GestureAction.ROLLING_SCREENSHOT
         // A rolling screenshot is a multi-second exclusive action. Freeze before its first frame so
         // cursor, holds, paths and other actions cannot alter the page while it is being stitched.
-        if (isRollingScreenshot) pipeline?.pause()
+        if (isRollingScreenshot) {
+            rollingScreenshotInProgress = true
+            pipeline?.pause()
+            ControlAccessibilityService.active?.hideCursor()
+        }
         // A drag is one action delivered as START/MOVE/END. Cooling down on any MOVE would freeze
         // the pipeline mid-drag, so the cooldown starts only when the finger is lifted; MOVE is
         // also kept out of the log so one long drag does not flood it.
@@ -425,7 +435,10 @@ class CameraProbeService : Service() {
             Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> ${mapped.mapping.action}")
         }
         val submitted = actionExecutor.execute(mapped) { success ->
-            if (isRollingScreenshot && !success) pipeline?.resume()
+            if (isRollingScreenshot) {
+                rollingScreenshotInProgress = false
+                if (!success) pipeline?.resume()
+            }
             if (mapped.mapping.cooldownPolicy == CooldownPolicy.GLOBAL_AFTER_SUCCESS ||
                 (isDrag && dragPhase == GestureEvent.DragPhase.END)
             ) {
@@ -438,7 +451,10 @@ class CameraProbeService : Service() {
             }
         }
         if (!submitted && mapped.mapping.action != GestureAction.MOVE_CURSOR) {
-            if (isRollingScreenshot) pipeline?.resume()
+            if (isRollingScreenshot) {
+                rollingScreenshotInProgress = false
+                pipeline?.resume()
+            }
             finishAction(false, mapped.mapping.action.successMessage(), "无障碍服务未连接")
         }
     }
@@ -1145,6 +1161,7 @@ class CameraProbeService : Service() {
         isControlRunning = false
         // 停止全部控制后清除锁状态：下次主动启动控制默认从正常识别开始。
         recognitionLocked = false
+        rollingScreenshotInProgress = false
         stopped = true
         val pipelineToClose = synchronized(modelInitLock) {
             modelInitGeneration++
