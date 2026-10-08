@@ -6,7 +6,7 @@
 
 | 项目 | 当前状态 |
 |---|---|
-| 版本 | V0.9.0（`versionCode=9`） |
+| 版本 | V1.0.0（`versionCode=10`） |
 | 应用 ID | `com.magicgesture.app` |
 | Android 版本 | `minSdk=26`，`targetSdk=36`，`compileSdk=36` |
 | 手势范围 | G01–G35，不新增 G36 及后续编号 |
