@@ -462,19 +462,23 @@ class MainActivity : Activity() {
 
     private fun refreshCheckInCard() {
         if (!::checkInSummary.isInitialized || !::checkInNext.isInitialized || !::checkInButton.isInitialized) return
-        val state = GestureUnlockStore(this).state()
+        val store = GestureUnlockStore(this)
+        val state = store.state()
         val total = GestureUnlockPlan.TOTAL_CHECK_INS
         val complete = GestureUnlockPlan.isComplete(state.checkInCount)
-        checkInSummary.text = if (complete) {
-            "已完成 $total 次签到，G01–G35 全部解锁。"
-        } else {
-            "已签到 ${state.checkInCount} / $total 次 · 每天主动签到一次，断签不清零，已解锁的功能永久保留。"
+        // 开箱当天只开放开箱即用的手势，第 1 次签到留给明天。
+        val openingDay = GestureUnlockMachine.isOpeningDay(state, store.todayEpochDay())
+        checkInSummary.text = when {
+            complete -> "已完成 $total 次签到，G01–G35 全部解锁。"
+            openingDay -> "已签到 ${state.checkInCount} / $total 次 · 今天是开箱第一天，先熟悉开箱即用的手势，明天起可每天签到一次。"
+            else -> "已签到 ${state.checkInCount} / $total 次 · 每天主动签到一次，断签不清零，已解锁的功能永久保留。"
         }
         val next = GestureUnlockPlan.nextPackageLabel(state.checkInCount)
         checkInNext.text = if (next != null) "下一次解锁：$next" else "全部手势已解锁，可在校准页为每个手势指定动作。"
-        val canCheckIn = !complete && GestureUnlockStore(this).canCheckInToday()
+        val canCheckIn = !complete && store.canCheckInToday()
         checkInButton.text = when {
             complete -> "已全部解锁"
+            openingDay -> "明天可开始第 1 次签到"
             canCheckIn -> "今日签到"
             else -> "今日已签到"
         }
@@ -493,6 +497,7 @@ class MainActivity : Activity() {
                 rebuildContent(preserveScroll = true)
             }
             CheckInResult.AlreadyCheckedIn -> Toast.makeText(this, "今天已经签到过了，明天再来", Toast.LENGTH_SHORT).show()
+            CheckInResult.OpeningDay -> Toast.makeText(this, "今天是开箱第一天，明天起可以开始第 1 次签到", Toast.LENGTH_SHORT).show()
             CheckInResult.Completed -> Toast.makeText(this, "全部手势已解锁", Toast.LENGTH_SHORT).show()
         }
     }
@@ -556,14 +561,12 @@ class MainActivity : Activity() {
             "↕", "palm_vertical_scroll", features.palmVerticalScroll, R.drawable.gesture_four_fingers_together),
         GuideCard(listOf(GestureCode.G24), "单指枪·横向", "食指向左伸直，大拇指在食指根部外侧竖起、不得贴近食指关节，两指夹角保持在 45°–90°，其余三指收拢并保持约 0.6 秒。",
             "L", "left_l", features.leftL, R.drawable.gesture_left_l),
-        GuideCard(listOf(GestureCode.G11), "V 手势", "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。",
-            "◎", "selfie", features.selfie, R.drawable.gesture_v),
-        GuideCard(listOf(GestureCode.G13), "开合掌", "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持。手指并拢时不会进入该组合。",
-            "✋", "screenshot", features.screenshot, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm)),
         // G28 是系统级识别锁：所有用户可用、不可关闭、不可换绑，因此卡片没有开关。
         GuideCard(listOf(GestureCode.G28), "Love 手势（识别锁）", "大拇指、食指和小指伸展，中指与无名指收拢，稳定保持 1 秒即可锁定识别；再次保持 1 秒解锁。锁定期间只有该手势可用，姿势消失约 0.8 秒后才能再次切换。",
             "♥", "love_lock", features.loveLock, R.drawable.gesture_love, showSwitch = false, fixedAction = { "锁定 / 解锁全部识别" }),
         // 第 1 次签到
+        GuideCard(listOf(GestureCode.G11), "V 手势", "食指和中指组成 V 字并稳定保持 2 秒，等待倒计时结束；倒计时期间暂停全部手势识别，可以立刻放下手。",
+            "◎", "selfie", features.selfie, R.drawable.gesture_v),
         GuideCard(listOf(GestureCode.G22), "握拳", "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。",
             "拳", "play_pause", features.playPause, R.drawable.gesture_fist),
         // 第 2 次签到：双指上下拉持续增减音量，独立开关。
@@ -611,6 +614,8 @@ class MainActivity : Activity() {
         GuideCard(listOf(GestureCode.G20), "拇指赞", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。",
             "👍", "thumbs_up", features.thumbsUp, R.drawable.gesture_thumbs_up),
         // 第 7 次签到：G03/G04/G09/G10 为轨迹预留，首页不展示。
+        GuideCard(listOf(GestureCode.G13), "开合掌", "五指必须明显分开并保持，看到提示后握拳，再次将五指明显分开并保持。手指并拢时不会进入该组合。",
+            "✋", "screenshot", features.screenshot, 0, steps = listOf(R.drawable.gesture_palm, R.drawable.gesture_fist, R.drawable.gesture_palm)),
         GuideCard(listOf(GestureCode.G26), "抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。",
             "↔", "claw_drag", features.clawDrag, R.drawable.gesture_claw),
         GuideCard(listOf(GestureCode.G34), "六六顺手势", "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。",

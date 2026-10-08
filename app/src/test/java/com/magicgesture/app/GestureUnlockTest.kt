@@ -13,18 +13,26 @@ import org.junit.Test
  */
 class GestureUnlockTest {
 
-    @Test fun initialStateOwnsSevenBaseCodesPlusTheSystemControl() {
+    @Test fun initialStateOwnsFiveBaseCodesPlusTheSystemControl() {
         val unlocked = GestureUnlockPlan.unlockedCodes(0)
-        // 7 个基础编号 + G28 识别锁（系统级控制，与签到无关）。
-        assertEquals(7 + SYSTEM_CONTROL_CODES.size, unlocked.size)
+        // 5 个基础编号 + G28 识别锁（系统级控制，与签到无关）。
+        assertEquals(5 + SYSTEM_CONTROL_CODES.size, unlocked.size)
         assertTrue(
             unlocked.containsAll(
-                listOf(
-                    GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06,
-                    GestureCode.G24, GestureCode.G11, GestureCode.G13
-                )
+                listOf(GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06, GestureCode.G24)
             )
         )
+    }
+
+    /** 2026-10-08：V 手势改第 1 次签到，开合掌改第 7 次签到，都不再开箱即用。 */
+    @Test fun vGestureAndScreenshotMoveOutOfTheOpeningSet() {
+        val unlocked = GestureUnlockPlan.unlockedCodes(0)
+        assertFalse("V 手势改为第 1 次签到", GestureCode.G11 in unlocked)
+        assertFalse("开合掌改为第 7 次签到", GestureCode.G13 in unlocked)
+        assertEquals(1, GestureUnlockPlan.stageOf(GestureCode.G11))
+        assertEquals(7, GestureUnlockPlan.stageOf(GestureCode.G13))
+        assertTrue(GestureCode.G11 in GestureUnlockPlan.unlockedCodes(1))
+        assertTrue(GestureCode.G13 in GestureUnlockPlan.unlockedCodes(7))
     }
 
     /** 识别锁对所有用户可用，不随签到解锁，也不属于任何功能包。 */
@@ -55,6 +63,7 @@ class GestureUnlockTest {
 
     @Test fun checkInRequiredForReportsTheDayAGestureArrives() {
         assertNull("基础编号不需要签到", GestureUnlockPlan.checkInRequiredFor(GestureCode.G01))
+        assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G11))
         assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G22))
         assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G23))
         assertEquals(2, GestureUnlockPlan.checkInRequiredFor(GestureCode.G31))
@@ -65,6 +74,7 @@ class GestureUnlockTest {
         assertEquals(6, GestureUnlockPlan.checkInRequiredFor(GestureCode.G34))
         assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G03))
         assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G10))
+        assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G13))
         assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G35))
     }
 
@@ -81,7 +91,34 @@ class GestureUnlockTest {
         val unlocked = result as CheckInResult.Unlocked
         assertEquals(1, unlocked.state.checkInCount)
         assertEquals(100L, unlocked.state.lastCheckInDay)
-        assertEquals(listOf(GestureCode.G22, GestureCode.G23), unlocked.newCodes)
+        assertEquals(listOf(GestureCode.G11, GestureCode.G22, GestureCode.G23), unlocked.newCodes)
+    }
+
+    /** 开箱当天不能签到：今天开箱的话，第 1 次签到留到明天。 */
+    @Test fun theFirstCheckInIsNotAllowedOnTheOpeningDay() {
+        val state = GestureUnlockState(openingDay = 100L)
+        assertFalse("开箱当天不可签到", GestureUnlockMachine.canCheckIn(state, 100L))
+        assertEquals(CheckInResult.OpeningDay, GestureUnlockMachine.checkIn(state, 100L))
+        assertTrue("次日即可开始第 1 次签到", GestureUnlockMachine.canCheckIn(state, 101L))
+        val nextDay = GestureUnlockMachine.checkIn(state, 101L) as CheckInResult.Unlocked
+        assertEquals(1, nextDay.state.checkInCount)
+    }
+
+    /** 开箱日只挡第一次，之后的连续签到不受影响。 */
+    @Test fun openingDayOnlyDelaysTheFirstCheckIn() {
+        var state = GestureUnlockState(openingDay = 100L)
+        repeat(GestureUnlockPlan.TOTAL_CHECK_INS) { day ->
+            state = (GestureUnlockMachine.checkIn(state, 101L + day) as CheckInResult.Unlocked).state
+        }
+        assertEquals(GestureUnlockPlan.TOTAL_CHECK_INS, state.checkInCount)
+        assertEquals(GestureCode.entries.toSet(), GestureUnlockPlan.unlockedCodes(state.checkInCount))
+    }
+
+    /** 没有开箱日记录（老用户升级）时，第一次签到照常可用，不会多等一天。 */
+    @Test fun aMissingOpeningDayNeverBlocksCheckIn() {
+        val state = GestureUnlockState()
+        assertTrue(GestureUnlockMachine.canCheckIn(state, 100L))
+        assertTrue(GestureUnlockMachine.checkIn(state, 100L) is CheckInResult.Unlocked)
     }
 
     @Test fun aSecondCheckInOnTheSameDayIsRefused() {
@@ -121,7 +158,8 @@ class GestureUnlockTest {
     @Test fun lockedGesturesStayOffEvenWhenTheirSwitchIsStoredAsOn() {
         val features = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(0))
         assertTrue(features.cursor)
-        assertTrue(features.selfie)
+        assertFalse("V 手势属于第 1 次签到", features.selfie)
+        assertFalse("开合掌属于第 7 次签到", features.screenshot)
         assertFalse("G22 属于第 1 次签到", features.playPause)
         assertFalse("G31/G32 属于第 2 次签到", features.twoFingerVolume)
         assertFalse("G29/G30/G33 属于第 3 次签到", features.twoFingerTrack)

@@ -1,6 +1,9 @@
 package com.magicgesture.app
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import java.time.Instant
 import java.time.ZoneId
 
@@ -18,10 +21,14 @@ import java.time.ZoneId
  */
 object GestureUnlockPlan {
 
-    /** 正式用户初始拥有的 7 个编号。 */
+    /**
+     * 正式用户开箱即用的 5 个编号。
+     *
+     * 2026-10-08 由产品负责人确认：V 手势（G11）与开合掌（G13）移出开箱即用组——前者改成
+     * 第 1 次签到解锁，后者改成第 7 次签到解锁，开箱当天只保留光标、点击与滚动这类基础操作。
+     */
     val BASE_CODES: List<GestureCode> = listOf(
-        GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06,
-        GestureCode.G24, GestureCode.G11, GestureCode.G13
+        GestureCode.G01, GestureCode.G02, GestureCode.G05, GestureCode.G06, GestureCode.G24
     )
 
     /**
@@ -32,7 +39,7 @@ object GestureUnlockPlan {
      * G28（Love 手势）是系统级识别锁，不属于任何功能包。
      */
     val PACKAGES: List<List<GestureCode>> = listOf(
-        listOf(GestureCode.G22, GestureCode.G23),
+        listOf(GestureCode.G11, GestureCode.G22, GestureCode.G23),
         listOf(
             GestureCode.G31, GestureCode.G32,
             GestureCode.G29, GestureCode.G30, GestureCode.G33
@@ -42,20 +49,20 @@ object GestureUnlockPlan {
         listOf(GestureCode.G14, GestureCode.G15, GestureCode.G07, GestureCode.G08),
         listOf(GestureCode.G25, GestureCode.G27, GestureCode.G26, GestureCode.G34),
         listOf(
-            GestureCode.G35,
+            GestureCode.G13, GestureCode.G35,
             GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10
         )
     )
 
     /** 功能包在首页与签到卡片上的中文说明，顺序与 [PACKAGES] 一致。 */
     val PACKAGE_LABELS: List<String> = listOf(
-        "握拳播放/暂停与小指静音",
+        "V 手势、握拳播放/暂停与小指静音",
         "两指媒体控制：切歌、音量与双击播放暂停",
         "点赞、拇指赞与 OK 收藏",
         "张掌收指打开常用与更多 App",
         "桌面、最近任务与并掌左右滚动",
         "单指枪竖向、C 手势、抓取与六六顺",
-        "双指枪竖向与轨迹预留"
+        "开合掌、双指枪竖向与轨迹预留"
     )
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size
@@ -157,14 +164,21 @@ val GESTURE_CODES_BY_FEATURE: Map<String, List<GestureCode>> = mapOf(
     "open_app_4" to listOf(GestureCode.G19)
 )
 
+/**
+ * @param openingDay 开箱（首次安装并启动）所在的自然日；第 1 次签到必须晚于这一天，
+ * 也就是今天开箱的话，最早明天才能开始第 1 次签到。老用户升级时记为昨天，不再多等一天。
+ */
 data class GestureUnlockState(
     val checkInCount: Int = 0,
-    val lastCheckInDay: Long? = null
+    val lastCheckInDay: Long? = null,
+    val openingDay: Long? = null
 )
 
-/** 签到结果：成功解锁、当天已签到、或已全部解锁。失败不得伪装成成功。 */
+/** 签到结果：成功解锁、开箱当天、当天已签到、或已全部解锁。失败不得伪装成成功。 */
 sealed interface CheckInResult {
     data class Unlocked(val state: GestureUnlockState, val newCodes: List<GestureCode>) : CheckInResult
+    /** 开箱当天不能签到，第 1 次签到留到明天。 */
+    data object OpeningDay : CheckInResult
     data object AlreadyCheckedIn : CheckInResult
     data object Completed : CheckInResult
 }
@@ -177,15 +191,22 @@ object GestureUnlockMachine {
 
     fun canCheckIn(state: GestureUnlockState, todayEpochDay: Long): Boolean =
         !GestureUnlockPlan.isComplete(state.checkInCount) &&
+            !isOpeningDay(state, todayEpochDay) &&
             (state.lastCheckInDay == null || todayEpochDay > state.lastCheckInDay)
+
+    /** 开箱当天：只开放开箱即用的手势，第一次签到留给第二天。 */
+    fun isOpeningDay(state: GestureUnlockState, todayEpochDay: Long): Boolean =
+        state.openingDay != null && todayEpochDay <= state.openingDay
 
     fun checkIn(state: GestureUnlockState, todayEpochDay: Long): CheckInResult {
         if (GestureUnlockPlan.isComplete(state.checkInCount)) return CheckInResult.Completed
+        // 开箱当天不发放签到权益，与“已签到”区分开，便于页面给出不同的说明。
+        if (isOpeningDay(state, todayEpochDay)) return CheckInResult.OpeningDay
         // 同一天或时间回拨都视为不可再次领取；进度与已解锁权益保持不变。
         if (state.lastCheckInDay != null && todayEpochDay <= state.lastCheckInDay) return CheckInResult.AlreadyCheckedIn
         val gained = GestureUnlockPlan.PACKAGES[state.checkInCount]
         return CheckInResult.Unlocked(
-            GestureUnlockState(state.checkInCount + 1, todayEpochDay),
+            GestureUnlockState(state.checkInCount + 1, todayEpochDay, state.openingDay),
             gained
         )
     }
@@ -209,12 +230,45 @@ class GestureUnlockStore(
     /** Debug/内部测试构建允许全部解锁；正式 Release 恒为 false。 */
     private val debugUnlockAll: Boolean = BuildConfig.DEBUG
 ) {
-    fun state(): GestureUnlockState {
+    fun state(now: Long = System.currentTimeMillis()): GestureUnlockState {
         val prefs = context.getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE)
         val count = prefs.getInt(COUNT, 0).coerceIn(0, GestureUnlockPlan.TOTAL_CHECK_INS)
         val last = if (prefs.contains(LAST_DAY)) prefs.getLong(LAST_DAY, 0L) else null
-        return GestureUnlockState(count, last)
+        return GestureUnlockState(count, last, openingDay(prefs, now))
     }
+
+    /**
+     * 开箱日：首次安装所在的自然日，第 1 次签到必须晚于它（今天开箱，明天才能第 1 次签到）。
+     *
+     * 取自包管理器的首次安装时间，因此升级、重装与清除数据的行为都符合直觉：
+     * 升级用户的安装日早于今天，当天即可照常签到；卸载重装视为重新开箱，当天要等到第二天。
+     * 只在首次读取时写入一次，之后不再变更——用户改系统日期也不会把已过掉的等待期找回来。
+     */
+    private fun openingDay(prefs: SharedPreferences, now: Long): Long {
+        val stored = if (prefs.contains(OPENING_DAY)) prefs.getLong(OPENING_DAY, 0L) else null
+        if (stored != null) return stored
+        val today = todayEpochDay(now)
+        val installDay = installEpochDay()
+        val value = if (installDay != null && installDay < today) installDay else today
+        prefs.edit().putLong(OPENING_DAY, value).apply()
+        return value
+    }
+
+    /** 本 App 首次安装的自然日；取不到时返回 null，由调用方退回今天。 */
+    private fun installEpochDay(): Long? = try {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION") context.packageManager.getPackageInfo(context.packageName, 0)
+        }
+        Instant.ofEpochMilli(info.firstInstallTime).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 今天是否是开箱当天：是的话第 1 次签到要等到明天。 */
+    fun isOpeningDay(now: Long = System.currentTimeMillis()): Boolean =
+        GestureUnlockMachine.isOpeningDay(state(now), todayEpochDay(now))
 
     fun unlockedCodes(): Set<GestureCode> = GestureUnlockPlan.unlockedCodes(state().checkInCount)
 
@@ -223,11 +277,11 @@ class GestureUnlockStore(
     fun entitlement(): GestureEntitlement = GestureEntitlement(unlockedCodes(), debugUnlockAll)
 
     fun canCheckInToday(now: Long = System.currentTimeMillis()): Boolean =
-        GestureUnlockMachine.canCheckIn(state(), todayEpochDay(now))
+        GestureUnlockMachine.canCheckIn(state(now), todayEpochDay(now))
 
     /** 主动签到；写入后立即生效，运行中的控制服务通过偏好监听刷新权益。 */
     fun checkIn(now: Long = System.currentTimeMillis()): CheckInResult {
-        val current = state()
+        val current = state(now)
         val result = GestureUnlockMachine.checkIn(current, todayEpochDay(now))
         if (result is CheckInResult.Unlocked) {
             context.getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).edit()
@@ -247,6 +301,7 @@ class GestureUnlockStore(
         const val KEY_PREFIX = "unlock_"
         private const val COUNT = "unlock_checkin_count"
         private const val LAST_DAY = "unlock_last_day"
+        private const val OPENING_DAY = "unlock_opening_day"
     }
 }
 
