@@ -45,7 +45,14 @@ data class GestureFeatureConfig(
     val loveLock: Boolean = true,
     // G34 "666": thumb and pinky out, other fingers curled. Unbound by default.
     val six666: Boolean = true,
-    val twoFingerMedia: Boolean = true,
+    /**
+     * G29/G30 双指左右挥切歌与 G33 双指双点播放/暂停（第 3 次签到解锁）。
+     * 原先与音量共用一个 `two_finger_media` 开关，导致第 2 次签到后切歌未解锁却已经可用，
+     * 页面又显示禁用；拆分后与页面卡片和签到批次一一对应。
+     */
+    val twoFingerTrack: Boolean = true,
+    /** G31/G32 双指上下拉持续增减音量（第 2 次签到解锁），独立于切歌开关。 */
+    val twoFingerVolume: Boolean = true,
     // G35: two fingers together pointing up with the thumb sideways, held 1s to scroll feeds.
     val twoFingerUp: Boolean = true,
     // G16-G19 open-app sequences: open palm, then fold to 1-4 fingers.
@@ -234,6 +241,9 @@ object GesturePreferences {
                 .apply()
         }
         val legacyScroll = prefs.getBoolean("feature_scroll", true)
+        // 旧版只有 feature_two_finger_media 一个开关；拆成两个后用它作为两个新键的初始值，
+        // 用户此前关闭过的话两个新开关都继承关闭，不再被默认值强制打开。
+        val legacyTwoFingerMedia = prefs.getBoolean("feature_two_finger_media", true)
         return GestureFeatureConfig(
             cursor = prefs.getBoolean("feature_cursor", true),
             click = prefs.getBoolean("feature_click", true),
@@ -259,7 +269,8 @@ object GesturePreferences {
             cShape = prefs.getBoolean("feature_c_shape", true),
             loveLock = prefs.getBoolean("feature_love_lock", true),
             six666 = prefs.getBoolean("feature_six666", true),
-            twoFingerMedia = prefs.getBoolean("feature_two_finger_media", true),
+            twoFingerTrack = prefs.getBoolean("feature_two_finger_track", legacyTwoFingerMedia),
+            twoFingerVolume = prefs.getBoolean("feature_two_finger_volume", legacyTwoFingerMedia),
             twoFingerUp = prefs.getBoolean("feature_two_finger_up", true),
             openApp1 = prefs.getBoolean("feature_open_app_1", true),
             openApp2 = prefs.getBoolean("feature_open_app_2", true),
@@ -344,7 +355,8 @@ object GesturePreferences {
             .putBoolean("feature_claw_drag", features.clawDrag)
             .putBoolean("feature_c_shape", features.cShape)
             .putBoolean("feature_love_lock", features.loveLock)
-            .putBoolean("feature_two_finger_media", features.twoFingerMedia)
+            .putBoolean("feature_two_finger_track", features.twoFingerTrack)
+            .putBoolean("feature_two_finger_volume", features.twoFingerVolume)
             .putBoolean("feature_two_finger_up", features.twoFingerUp)
             .putBoolean("feature_open_app_1", features.openApp1)
             .putBoolean("feature_open_app_2", features.openApp2)

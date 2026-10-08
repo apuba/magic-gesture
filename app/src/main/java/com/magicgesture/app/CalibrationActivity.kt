@@ -84,7 +84,8 @@ class CalibrationActivity : Activity() {
     private lateinit var lShapeSwitch: Switch
     private lateinit var clawDragSwitch: Switch
     private lateinit var cShapeSwitch: Switch
-    private lateinit var twoFingerMediaSwitch: Switch
+    private lateinit var twoFingerTrackSwitch: Switch
+    private lateinit var twoFingerVolumeSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -200,7 +201,8 @@ class CalibrationActivity : Activity() {
             clawDragSwitch = featureSwitch("抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢；保持约 0.6 秒按下手指，移动手掌持续拖动，张开手指结束。默认动作为拖动，可在上方映射中更换。", savedFeatures.clawDrag)
             cShapeSwitch = featureSwitch("C 手势", "五指自然弯曲围成 C 形并保持约 0.6 秒。初版阈值，待真机校准。", savedFeatures.cShape)
             addView(body("Love 手势（识别锁）：大拇指、食指和小指伸展，中指与无名指收拢并稳定保持 1 秒，即可锁定或解锁全部手势识别。它对所有用户可用，不可关闭，也不能换成其他动作。").apply { setPadding(0, dp(4), 0, dp(10)) })
-            twoFingerMediaSwitch = featureSwitch("双指媒体控制", "食指与中指并拢伸直、其余手指收起：整只手左右轻挥切歌（只动手指不触发）；向上或向下拉动后保持姿势，持续增减音量，改变姿势后停止；两指快速弯下再伸直、连点两下为播放/暂停。", savedFeatures.twoFingerMedia)
+            twoFingerVolumeSwitch = featureSwitch("双指持续增减音量", "食指与中指并拢伸直、其余手指收起，向上或向下拉动后保持姿势，持续增减音量；改变姿势后停止。与切歌开关相互独立。", savedFeatures.twoFingerVolume)
+            twoFingerTrackSwitch = featureSwitch("双指切歌与双击播放暂停", "食指与中指并拢伸直、其余手指收起：整只手左右轻挥切歌（只动手指不触发）；两指快速弯下再伸直、连点两下为播放/暂停。与音量开关相互独立。", savedFeatures.twoFingerTrack)
             openApp1Switch = featureSwitch("张掌变一指", "五指张开稳定后，收起其他手指只保留食指并保持约 0.6 秒。", savedFeatures.openApp1)
             openApp2Switch = featureSwitch("张掌变二指", "五指张开稳定后，收起其他手指保留食指与中指并保持约 0.6 秒。", savedFeatures.openApp2)
             openApp3Switch = featureSwitch("张掌变三指", "五指张开稳定后，保留食指、中指与无名指并保持约 0.6 秒。", savedFeatures.openApp3)
@@ -227,7 +229,8 @@ class CalibrationActivity : Activity() {
                 lShapeSwitch to listOf(GestureCode.G25),
                 clawDragSwitch to listOf(GestureCode.G26),
                 cShapeSwitch to listOf(GestureCode.G27),
-                twoFingerMediaSwitch to listOf(GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33),
+                twoFingerTrackSwitch to listOf(GestureCode.G29, GestureCode.G30, GestureCode.G33),
+                twoFingerVolumeSwitch to listOf(GestureCode.G31, GestureCode.G32),
                 openApp1Switch to listOf(GestureCode.G16),
                 openApp2Switch to listOf(GestureCode.G17),
                 openApp3Switch to listOf(GestureCode.G18),
@@ -297,7 +300,8 @@ class CalibrationActivity : Activity() {
                             cShape = cShapeSwitch.isChecked,
                             // 识别锁不可关闭：没有开关，保存时保留原有值，避免把配置写死成关闭。
                             loveLock = savedFeatures.loveLock,
-                            twoFingerMedia = twoFingerMediaSwitch.isChecked,
+                            twoFingerTrack = twoFingerTrackSwitch.isChecked,
+                            twoFingerVolume = twoFingerVolumeSwitch.isChecked,
                             openApp1 = openApp1Switch.isChecked,
                             openApp2 = openApp2Switch.isChecked,
                             openApp3 = openApp3Switch.isChecked,

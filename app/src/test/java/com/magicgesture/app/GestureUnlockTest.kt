@@ -110,9 +110,20 @@ class GestureUnlockTest {
         assertTrue(features.cursor)
         assertTrue(features.selfie)
         assertFalse("G22 属于第 1 次签到", features.playPause)
-        assertFalse("G29-G33 尚未解锁", features.twoFingerMedia)
+        assertFalse("G31/G32 属于第 2 次签到", features.twoFingerVolume)
+        assertFalse("G29/G30/G33 属于第 3 次签到", features.twoFingerTrack)
         assertFalse(features.openApp1)
         assertFalse(features.six666)
+    }
+
+    /** 音量（第 2 次签到）与切歌（第 3 次签到）各用自己的开关，不能互相提前解锁。 */
+    @Test fun volumeAndTrackUnlockAtTheirOwnCheckIn() {
+        val afterSecond = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(2))
+        assertTrue("第 2 次签到后音量可用", afterSecond.twoFingerVolume)
+        assertFalse("第 2 次签到后切歌仍锁定", afterSecond.twoFingerTrack)
+        val afterThird = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(3))
+        assertTrue(afterThird.twoFingerVolume)
+        assertTrue("第 3 次签到后切歌可用", afterThird.twoFingerTrack)
     }
 
     @Test fun unlockingRestoresTheSwitchTheUserNeverTurnedOff() {

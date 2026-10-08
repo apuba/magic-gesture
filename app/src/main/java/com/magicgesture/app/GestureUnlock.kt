@@ -151,9 +151,8 @@ val GESTURE_CODES_BY_FEATURE: Map<String, List<GestureCode>> = mapOf(
     "c_shape" to listOf(GestureCode.G27),
     "love_lock" to listOf(GestureCode.G28),
     "six666" to listOf(GestureCode.G34),
-    "two_finger_media" to listOf(
-        GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33
-    ),
+    "two_finger_track" to listOf(GestureCode.G29, GestureCode.G30, GestureCode.G33),
+    "two_finger_volume" to listOf(GestureCode.G31, GestureCode.G32),
     "two_finger_up" to listOf(GestureCode.G35),
     "open_app_1" to listOf(GestureCode.G16),
     "open_app_2" to listOf(GestureCode.G17),
@@ -287,9 +286,8 @@ fun GestureFeatureConfig.restrictedTo(unlocked: Set<GestureCode>): GestureFeatur
     // unlocked.hasAny(G28) 判断，结果恒为 false，识别锁将永远无法触发。
     loveLock = true,
     six666 = six666 && unlocked.hasAny(GestureCode.G34),
-    twoFingerMedia = twoFingerMedia && unlocked.hasAny(
-        GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33
-    ),
+    twoFingerTrack = twoFingerTrack && unlocked.hasAny(GestureCode.G29, GestureCode.G30, GestureCode.G33),
+    twoFingerVolume = twoFingerVolume && unlocked.hasAny(GestureCode.G31, GestureCode.G32),
     twoFingerUp = twoFingerUp && unlocked.hasAny(GestureCode.G35),
     openApp1 = openApp1 && unlocked.hasAny(GestureCode.G16),
     openApp2 = openApp2 && unlocked.hasAny(GestureCode.G17),

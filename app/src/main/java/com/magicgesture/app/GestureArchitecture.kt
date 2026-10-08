@@ -433,7 +433,9 @@ class GestureFeatureGate {
         GestureCode.G27 -> features.cShape
         // G28 is the recognition lock: a control state, not a mapped action, so no switch gates it.
         GestureCode.G34 -> features.six666
-        GestureCode.G29, GestureCode.G30, GestureCode.G31, GestureCode.G32, GestureCode.G33 -> features.twoFingerMedia
+        // 切歌 / 双击播放暂停与持续音量是两个独立开关，分别对应各自的签到批次。
+        GestureCode.G29, GestureCode.G30, GestureCode.G33 -> features.twoFingerTrack
+        GestureCode.G31, GestureCode.G32 -> features.twoFingerVolume
         GestureCode.G35 -> features.twoFingerUp
         else -> false
     }

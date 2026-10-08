@@ -409,22 +409,26 @@ class GestureArchitectureTest {
         assertEquals(GestureCode.G32, heldQuieter.mapping.code)
         assertEquals(GestureAction.VOLUME_DOWN, heldQuieter.mapping.action)
 
-        // All four directions share one feature switch and are remappable.
-        assertFalse(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = false)))
-        assertTrue(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerMedia = true)))
-        assertTrue(gate.allows(louder.mapping, GestureFeatureConfig(twoFingerMedia = true)))
-        assertTrue(gate.allows(quieter.mapping, GestureFeatureConfig(twoFingerMedia = true)))
+        // 音量与切歌是两个独立开关：关掉切歌不影响音量，关掉音量不影响切歌。
+        assertFalse(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerTrack = false)))
+        assertTrue(gate.allows(previous.mapping, GestureFeatureConfig(twoFingerTrack = true)))
+        assertTrue("关掉音量开关不得影响切歌", gate.allows(previous.mapping, GestureFeatureConfig(twoFingerVolume = false)))
+        assertTrue(gate.allows(louder.mapping, GestureFeatureConfig(twoFingerVolume = true)))
+        assertTrue(gate.allows(quieter.mapping, GestureFeatureConfig(twoFingerVolume = true)))
+        assertFalse(gate.allows(louder.mapping, GestureFeatureConfig(twoFingerVolume = false)))
+        assertTrue("关掉切歌开关不得影响音量", gate.allows(louder.mapping, GestureFeatureConfig(twoFingerTrack = false)))
         assertTrue(mappings.isRemappable(GestureCode.G29))
         assertTrue(mappings.isRemappable(GestureCode.G30))
         assertTrue(mappings.isRemappable(GestureCode.G31))
         assertTrue(mappings.isRemappable(GestureCode.G32))
 
-        // G33 double-tap toggles play/pause and shares the same switch.
+        // G33 double-tap toggles play/pause and shares the track switch, not the volume one.
         val toggle = requireNotNull(mappings.resolve(GestureEvent.TwoFingerDoubleTap)).mapping
         assertEquals(GestureCode.G33, toggle.code)
         assertEquals(GestureAction.PLAY_PAUSE, toggle.action)
-        assertFalse(gate.allows(toggle, GestureFeatureConfig(twoFingerMedia = false)))
-        assertTrue(gate.allows(toggle, GestureFeatureConfig(twoFingerMedia = true)))
+        assertFalse(gate.allows(toggle, GestureFeatureConfig(twoFingerTrack = false)))
+        assertTrue(gate.allows(toggle, GestureFeatureConfig(twoFingerTrack = true)))
+        assertTrue("音量开关与双击播放暂停无关", gate.allows(toggle, GestureFeatureConfig(twoFingerVolume = false)))
         assertTrue(mappings.isRemappable(GestureCode.G33))
     }
 }

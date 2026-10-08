@@ -1108,6 +1108,9 @@ class GestureEngine(
      * whole hand left/right for track control or pull up/down and hold for continuous volume. The
      * pose is also a common "neutral" hand shape, so this machine never consumes frames —
      * every other detector keeps observing them; it only emits events on its own transitions.
+     *
+     * 左右挥（G29/G30）受切歌开关控制，上下拉（G31/G32）受音量开关控制：两个手势共用一个状态机，
+     * 但开关已经拆分，关闭其中任何一个都不能把另一个一起关掉。
      */
     private fun advanceTwoFingerSwipe(
         pose: Boolean,
@@ -1116,7 +1119,7 @@ class GestureEngine(
         now: Long,
         output: MutableList<GestureEvent>
     ) {
-        if (!features.twoFingerMedia) {
+        if (!features.twoFingerTrack && !features.twoFingerVolume) {
             twoFingerState = TwoFingerSwipeState.IDLE
             twoFingerStart = null
             twoFingerStartWrist = null
@@ -1132,7 +1135,14 @@ class GestureEngine(
                 if (twoFingerTapState == TwoFingerTapState.IDLE ||
                     twoFingerTapState == TwoFingerTapState.HELD
                 ) {
-                    output += GestureEvent.Feedback("两指并拢已识别：左右挥切歌，上下拉住持续调音量")
+                    output += GestureEvent.Feedback(
+                        when {
+                            features.twoFingerTrack && features.twoFingerVolume ->
+                                "两指并拢已识别：左右挥切歌，上下拉住持续调音量"
+                            features.twoFingerTrack -> "两指并拢已识别：左右挥切歌"
+                            else -> "两指并拢已识别：上下拉住持续调音量"
+                        }
+                    )
                 }
             }
             TwoFingerSwipeState.TRACKING -> {
@@ -1170,13 +1180,17 @@ class GestureEngine(
                         twoFingerTapState == TwoFingerTapState.FIRED_WAIT
                     val fired = when {
                         // Landmark y grows downward, so a wave up produces negative dy.
-                        dx <= -twoFingerHorizontalTrigger && horizontal && wholeHand && elapsed <= 5000 ->
+                        dx <= -twoFingerHorizontalTrigger && horizontal && wholeHand &&
+                            features.twoFingerTrack && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.LEFT)
-                        dx >= twoFingerHorizontalTrigger && horizontal && wholeHand && elapsed <= 5000 ->
+                        dx >= twoFingerHorizontalTrigger && horizontal && wholeHand &&
+                            features.twoFingerTrack && elapsed <= 5000 ->
                             GestureEvent.TwoFingerSwipe(GestureEvent.TwoFingerDirection.RIGHT)
-                        dy <= -.065f * movementScale && vertical && !doubleTapFinishing && elapsed <= 5000 ->
+                        dy <= -.065f * movementScale && vertical && !doubleTapFinishing &&
+                            features.twoFingerVolume && elapsed <= 5000 ->
                             GestureEvent.TwoFingerVolumeHold(true, GestureEvent.VolumeHoldPhase.START)
-                        dy >= .055f * movementScale && vertical && !doubleTapFinishing && elapsed <= 5000 ->
+                        dy >= .055f * movementScale && vertical && !doubleTapFinishing &&
+                            features.twoFingerVolume && elapsed <= 5000 ->
                             GestureEvent.TwoFingerVolumeHold(false, GestureEvent.VolumeHoldPhase.START)
                         elapsed > 5000 -> null
                         else -> null
@@ -1238,7 +1252,8 @@ class GestureEngine(
         now: Long,
         output: MutableList<GestureEvent>
     ) {
-        if (!features.twoFingerMedia) {
+        // G33 双击播放/暂停与左右挥切歌同属一个开关：它和音量互不影响。
+        if (!features.twoFingerTrack) {
             twoFingerTapState = TwoFingerTapState.IDLE
             return
         }

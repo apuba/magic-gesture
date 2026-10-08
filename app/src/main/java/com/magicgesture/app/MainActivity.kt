@@ -566,14 +566,14 @@ class MainActivity : Activity() {
         // 第 1 次签到
         GuideCard(listOf(GestureCode.G22), "握拳", "四指收拢形成握拳并稳定保持 1 秒，期间显示倒计时。",
             "拳", "play_pause", features.playPause, R.drawable.gesture_fist),
-        // 第 2 次签到
+        // 第 2 次签到：双指上下拉持续增减音量，独立开关。
         GuideCard(listOf(GestureCode.G31, GestureCode.G32), "双指上拉 / 双指下拉", "食指与中指并拢伸直，向上或向下拉动后保持姿势；改变姿势后结束保持状态。",
-            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
-        // 第 3 次签到
+            "2", "two_finger_volume", features.twoFingerVolume, R.drawable.gesture_two_fingers_together),
+        // 第 3 次签到：双指左右挥切歌与双指双点播放/暂停，共用切歌开关。
         GuideCard(listOf(GestureCode.G29, GestureCode.G30), "双指左挥 / 双指右挥", "食指与中指并拢伸直、其余手指收起，整只手向左或向右轻挥；只动手指、手腕不跟着移动时不触发。",
-            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
+            "2", "two_finger_track", features.twoFingerTrack, R.drawable.gesture_two_fingers_together),
         GuideCard(listOf(GestureCode.G33), "双指双点", "食指与中指并拢伸直，两指快速弯下再伸直，连续完成两次。",
-            "2", "two_finger_media", features.twoFingerMedia, R.drawable.gesture_two_fingers_together),
+            "2", "two_finger_track", features.twoFingerTrack, R.drawable.gesture_two_fingers_together),
         // 第 4 次签到
         GuideCard(listOf(GestureCode.G23), "小指手势", "仅伸出小指，拇指、食指、中指和无名指收拢，稳定保持 1 秒；释放后才能再次触发。",
             "静", "pinky_mute", features.pinkyMute, R.drawable.gesture_pinky),
@@ -791,7 +791,8 @@ class MainActivity : Activity() {
         "c_shape" -> "C 手势"
         "love_lock" -> "Love 手势"
         "six666" -> "六六顺手势"
-        "two_finger_media" -> "双指媒体控制"
+        "two_finger_track" -> "双指切歌与双击播放暂停"
+        "two_finger_volume" -> "双指持续增减音量"
         "open_app_1" -> "张掌变一指"
         "open_app_2" -> "张掌变二指"
         "open_app_3" -> "张掌变三指"
@@ -825,7 +826,8 @@ class MainActivity : Activity() {
             "c_shape" to features.cShape,
             "love_lock" to features.loveLock,
             "six666" to features.six666,
-            "two_finger_media" to features.twoFingerMedia,
+            "two_finger_track" to features.twoFingerTrack,
+            "two_finger_volume" to features.twoFingerVolume,
             "open_app_1" to features.openApp1,
             "open_app_2" to features.openApp2,
             "open_app_3" to features.openApp3,
