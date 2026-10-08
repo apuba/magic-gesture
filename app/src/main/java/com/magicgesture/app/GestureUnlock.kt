@@ -63,6 +63,36 @@ object GestureUnlockPlan {
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size
 
+    /** 展示批次：0 表示开箱即用，即基础编号与系统级控制编号。 */
+    const val BASE_STAGE = 0
+
+    /** 单个编号的展示批次：0 = 开箱即用，N = 第 N 次签到解锁。 */
+    fun stageOf(code: GestureCode): Int = checkInRequiredFor(code) ?: BASE_STAGE
+
+    /**
+     * 一张卡片或一行往往覆盖多个编号（例如并掌上挥 + 并掌下挥），展示批次取其中最晚的一个，
+     * 保证只有该卡片覆盖的全部手势都解锁后，它才会显示为已解锁。
+     */
+    fun stageOfGroup(codes: Collection<GestureCode>): Int = codes.maxOfOrNull { stageOf(it) } ?: BASE_STAGE
+
+    /** 分组标题；首页手势指南与校准页共用同一套文案。 */
+    fun stageTitle(stage: Int): String =
+        if (stage <= BASE_STAGE) "开箱即用 · 已解锁" else "第 $stage 次签到解锁"
+
+    /** 未解锁提示文案；批次之外的情况统一显示“未解锁”。 */
+    fun stageLockLabel(stage: Int): String =
+        if (stage <= BASE_STAGE) "未解锁" else "第 $stage 次签到后开放"
+
+    /**
+     * 按展示批次稳定分组：批次升序，同批次保持传入顺序。
+     * 首页手势指南、校准页动作映射列表与功能开关列表共用，避免三处各写一份排序。
+     * 只影响展示，不改变 [PACKAGES] 与解锁权益。
+     */
+    fun <T> groupedByStage(items: List<T>, codesOf: (T) -> Collection<GestureCode>): List<StageGroup<T>> =
+        items.groupBy { stageOfGroup(codesOf(it)) }.entries
+            .sortedBy { it.key }
+            .map { StageGroup(it.key, it.value) }
+
     /**
      * 给定签到次数后用户拥有的全部编号；次数会被收敛到 0..[TOTAL_CHECK_INS]。
      * 系统级控制编号（识别锁）始终拥有，与签到进度无关。
@@ -89,6 +119,9 @@ object GestureUnlockPlan {
 
     fun isComplete(checkInCount: Int): Boolean = checkInCount >= TOTAL_CHECK_INS
 }
+
+/** 同一展示批次下的一组手势卡片或配置行。 */
+data class StageGroup<T>(val stage: Int, val items: List<T>)
 
 /**
  * 功能开关键 → 该开关覆盖的手势编号。首页与校准页据此把未解锁手势的开关置为不可用，

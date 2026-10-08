@@ -136,4 +136,54 @@ class GestureUnlockTest {
     @Test fun displayNamesCoverEveryGestureCode() {
         assertEquals(GestureCode.entries.toSet(), GESTURE_DISPLAY_NAMES.keys)
     }
+
+    @Test fun stagePutsBaseAndSystemControlCodesBeforeEveryCheckIn() {
+        GestureUnlockPlan.BASE_CODES.forEach { assertEquals("基础编号为开箱即用", 0, GestureUnlockPlan.stageOf(it)) }
+        SYSTEM_CONTROL_CODES.forEach { assertEquals("识别锁为开箱即用", 0, GestureUnlockPlan.stageOf(it)) }
+        assertEquals(1, GestureUnlockPlan.stageOf(GestureCode.G22))
+        assertEquals(9, GestureUnlockPlan.stageOf(GestureCode.G07))
+        assertEquals(12, GestureUnlockPlan.stageOf(GestureCode.G35))
+    }
+
+    /** 一张卡片覆盖多个编号时，展示批次取其中最晚的一个。 */
+    @Test fun stageOfGroupFollowsTheLatestGestureBehindOneCard() {
+        assertEquals(0, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G05, GestureCode.G06)))
+        assertEquals(3, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G29, GestureCode.G30)))
+        assertEquals(2, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G31, GestureCode.G32)))
+    }
+
+    @Test fun groupedByStageListsBaseFirstThenEveryCheckInInOrder() {
+        val cards = listOf(
+            "握拳" to listOf(GestureCode.G22),
+            "并掌上挥 / 并掌下挥" to listOf(GestureCode.G05, GestureCode.G06),
+            "抓取手势" to listOf(GestureCode.G26),
+            "双指左挥 / 双指右挥" to listOf(GestureCode.G29, GestureCode.G30)
+        )
+        val groups = GestureUnlockPlan.groupedByStage(cards) { it.second }
+        assertEquals(listOf(0, 1, 3, 12), groups.map { it.stage })
+        assertEquals(listOf("并掌上挥 / 并掌下挥"), groups[0].items.map { it.first })
+        assertEquals(listOf("握拳"), groups[1].items.map { it.first })
+        assertEquals(listOf("双指左挥 / 双指右挥"), groups[2].items.map { it.first })
+        assertEquals(listOf("抓取手势"), groups[3].items.map { it.first })
+    }
+
+    /** 同批次内的顺序保持书写顺序，避免每次构建后卡片位置跳动。 */
+    @Test fun groupedByStageKeepsTheWrittenOrderInsideAStage() {
+        val cards = listOf(
+            "莲花指" to listOf(GestureCode.G14),
+            "兰花指" to listOf(GestureCode.G15)
+        )
+        val groups = GestureUnlockPlan.groupedByStage(cards) { it.second }
+        assertEquals(1, groups.size)
+        assertEquals(8, groups.first().stage)
+        assertEquals(listOf("莲花指", "兰花指"), groups.first().items.map { it.first })
+    }
+
+    @Test fun stageTitlesAndLockLabelsUseTheCheckInWording() {
+        assertEquals("开箱即用 · 已解锁", GestureUnlockPlan.stageTitle(0))
+        assertEquals("第 1 次签到解锁", GestureUnlockPlan.stageTitle(1))
+        assertEquals("第 12 次签到解锁", GestureUnlockPlan.stageTitle(GestureUnlockPlan.TOTAL_CHECK_INS))
+        assertEquals("第 1 次签到后开放", GestureUnlockPlan.stageLockLabel(1))
+        assertEquals("未解锁", GestureUnlockPlan.stageLockLabel(0))
+    }
 }
