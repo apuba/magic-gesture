@@ -432,7 +432,7 @@ class MainActivity : Activity() {
     ).apply { marginEnd = dp(6) }
 
     /**
-     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，12 次签到后 G01–G35 全部拥有。
+     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，7 次签到后 G01–G35 全部拥有。
      * 权益只保存在本机，不联网、无账号、无付费入口。
      */
     private fun checkInCard(): View = LinearLayout(this).apply {
@@ -610,7 +610,7 @@ class MainActivity : Activity() {
             "♥", "like", features.like, R.drawable.gesture_finger_heart),
         GuideCard(listOf(GestureCode.G20), "拇指赞", "其余四指收拢，大拇指明显向上并稳定保持约 0.6 秒。",
             "👍", "thumbs_up", features.thumbsUp, R.drawable.gesture_thumbs_up),
-        // 第 12 次签到：G03/G04/G09/G10 为轨迹预留，首页不展示。
+        // 第 7 次签到：G03/G04/G09/G10 为轨迹预留，首页不展示。
         GuideCard(listOf(GestureCode.G26), "抓取手势", "手心正对摄像头，五根手指分别张开并向内弯曲，手指之间不能并拢。保持约 0.6 秒按下手指并持续拖动，移动手掌控制方向，张开手指结束；拖动时长不限。",
             "↔", "claw_drag", features.clawDrag, R.drawable.gesture_claw),
         GuideCard(listOf(GestureCode.G34), "六六顺手势", "大拇指与小指伸出，食指、中指与无名指握住，保持约 0.6 秒。默认未绑定动作，可在校准页映射中指定。",

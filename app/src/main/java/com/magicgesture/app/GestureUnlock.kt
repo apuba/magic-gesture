@@ -8,7 +8,7 @@ import java.time.ZoneId
  * 每日签到解锁权益（正式版一期，完全离线）。
  *
  * 产品规则见 `docs/GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`：
- * - 初始开放 7 个基础编号；每天主动签到一次，永久解锁下一个功能包；断签不清零；12 次全部解锁。
+ * - 初始开放 7 个基础编号；每天主动签到一次，永久解锁下一个功能包；断签不清零；7 次全部解锁。
  * - 所有正式 Release 用户同一规则；Debug/内部测试构建允许全部解锁，且不得进入正式包。
  *
  * 三层必须保持独立，不得混为一层：
@@ -24,41 +24,38 @@ object GestureUnlockPlan {
         GestureCode.G24, GestureCode.G11, GestureCode.G13
     )
 
-    /** 12 个功能包，第 N 次签到解锁 `PACKAGES[N - 1]`。 */
+    /**
+     * 7 个功能包，第 N 次签到解锁 `PACKAGES[N - 1]`。
+     *
+     * 2026-10-08 由产品负责人确认把 12 次签到缩短为 7 次：原 12 个包按原优先级顺序合并，
+     * 不拆散共用开关或同一动作族（两指媒体控制整族进第 2 次，张掌收指四连进第 4 次）。
+     * G28（Love 手势）是系统级识别锁，不属于任何功能包。
+     */
     val PACKAGES: List<List<GestureCode>> = listOf(
-        listOf(GestureCode.G22),
-        listOf(GestureCode.G31, GestureCode.G32),
-        listOf(GestureCode.G29, GestureCode.G30, GestureCode.G33),
-        listOf(GestureCode.G23),
-        listOf(GestureCode.G21),
-        listOf(GestureCode.G16, GestureCode.G17),
-        listOf(GestureCode.G18, GestureCode.G19),
-        listOf(GestureCode.G14, GestureCode.G15),
-        listOf(GestureCode.G07, GestureCode.G08),
-        // G28（Love 手势）自 2026-10-07 起是系统级识别锁：所有用户一开始就能用，
-        // 不可关闭、不可换绑，因此不再作为第 10 次签到的奖励内容。
-        listOf(GestureCode.G25, GestureCode.G27),
-        listOf(GestureCode.G12, GestureCode.G20),
+        listOf(GestureCode.G22, GestureCode.G23),
         listOf(
-            GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10,
-            GestureCode.G26, GestureCode.G34, GestureCode.G35
+            GestureCode.G31, GestureCode.G32,
+            GestureCode.G29, GestureCode.G30, GestureCode.G33
+        ),
+        listOf(GestureCode.G12, GestureCode.G20, GestureCode.G21),
+        listOf(GestureCode.G16, GestureCode.G17, GestureCode.G18, GestureCode.G19),
+        listOf(GestureCode.G14, GestureCode.G15, GestureCode.G07, GestureCode.G08),
+        listOf(GestureCode.G25, GestureCode.G27, GestureCode.G26, GestureCode.G34),
+        listOf(
+            GestureCode.G35,
+            GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10
         )
     )
 
     /** 功能包在首页与签到卡片上的中文说明，顺序与 [PACKAGES] 一致。 */
     val PACKAGE_LABELS: List<String> = listOf(
-        "握拳播放/暂停",
-        "两指持续增减音量",
-        "两指切歌与双击播放暂停",
-        "小指手势静音开关",
-        "OK 收藏当前内容",
-        "张掌收指打开常用 App",
-        "张掌收指打开更多 App",
-        "莲花指与兰花指",
-        "并掌左右滚动",
-        "通知栏与系统导航",
-        "点赞手势",
-        "轨迹预留与高级手势"
+        "握拳播放/暂停与小指静音",
+        "两指媒体控制：切歌、音量与双击播放暂停",
+        "点赞、拇指赞与 OK 收藏",
+        "张掌收指打开常用与更多 App",
+        "桌面、最近任务与并掌左右滚动",
+        "单指枪竖向、C 手势、抓取与六六顺",
+        "双指枪竖向与轨迹预留"
     )
 
     val TOTAL_CHECK_INS: Int = PACKAGES.size

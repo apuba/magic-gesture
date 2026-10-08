@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * 离线签到解锁的纯逻辑测试（不依赖 Android）。
- * 覆盖：初始 7 个基础编号、12 次全部解锁、一天一次、断签不清零、时间回拨、
+ * 覆盖：初始 7 个基础编号、7 次全部解锁、一天一次、断签不清零、时间回拨、
  * 解锁权益与功能开关互不覆盖，以及公共映射表的完整性。
  */
 class GestureUnlockTest {
@@ -36,7 +36,7 @@ class GestureUnlockTest {
         }
     }
 
-    @Test fun twelveCheckInsUnlockEveryGestureCode() {
+    @Test fun sevenCheckInsUnlockEveryGestureCode() {
         val unlocked = GestureUnlockPlan.unlockedCodes(GestureUnlockPlan.TOTAL_CHECK_INS)
         assertEquals(GestureCode.entries.toSet(), unlocked)
     }
@@ -56,10 +56,23 @@ class GestureUnlockTest {
     @Test fun checkInRequiredForReportsTheDayAGestureArrives() {
         assertNull("基础编号不需要签到", GestureUnlockPlan.checkInRequiredFor(GestureCode.G01))
         assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G22))
+        assertEquals(1, GestureUnlockPlan.checkInRequiredFor(GestureCode.G23))
         assertEquals(2, GestureUnlockPlan.checkInRequiredFor(GestureCode.G31))
-        assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G03))
-        assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G10))
-        assertEquals(12, GestureUnlockPlan.checkInRequiredFor(GestureCode.G34))
+        assertEquals(2, GestureUnlockPlan.checkInRequiredFor(GestureCode.G29))
+        assertEquals(3, GestureUnlockPlan.checkInRequiredFor(GestureCode.G21))
+        assertEquals(4, GestureUnlockPlan.checkInRequiredFor(GestureCode.G16))
+        assertEquals(5, GestureUnlockPlan.checkInRequiredFor(GestureCode.G07))
+        assertEquals(6, GestureUnlockPlan.checkInRequiredFor(GestureCode.G34))
+        assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G03))
+        assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G10))
+        assertEquals(7, GestureUnlockPlan.checkInRequiredFor(GestureCode.G35))
+    }
+
+    /** 2026-10-08 起只需 7 次签到：27 个非基础编号必须全部落在这 7 个包里。 */
+    @Test fun sevenPackagesCoverEveryNonBaseGesture() {
+        assertEquals(7, GestureUnlockPlan.TOTAL_CHECK_INS)
+        val packed = GestureUnlockPlan.PACKAGES.flatten().toSet()
+        assertEquals(GestureCode.entries.toSet() - GestureUnlockPlan.BASE_CODES.toSet() - SYSTEM_CONTROL_CODES, packed)
     }
 
     @Test fun firstCheckInUnlocksTheFirstPackage() {
@@ -68,7 +81,7 @@ class GestureUnlockTest {
         val unlocked = result as CheckInResult.Unlocked
         assertEquals(1, unlocked.state.checkInCount)
         assertEquals(100L, unlocked.state.lastCheckInDay)
-        assertEquals(listOf(GestureCode.G22), unlocked.newCodes)
+        assertEquals(listOf(GestureCode.G22, GestureCode.G23), unlocked.newCodes)
     }
 
     @Test fun aSecondCheckInOnTheSameDayIsRefused() {
@@ -116,14 +129,17 @@ class GestureUnlockTest {
         assertFalse(features.six666)
     }
 
-    /** 音量（第 2 次签到）与切歌（第 3 次签到）各用自己的开关，不能互相提前解锁。 */
-    @Test fun volumeAndTrackUnlockAtTheirOwnCheckIn() {
+    /** 音量与切歌同在第 2 次签到解锁，但仍是两个开关：关掉一个不影响另一个。 */
+    @Test fun volumeAndTrackUnlockTogetherButStaySeparateSwitches() {
+        val afterFirst = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(1))
+        assertFalse("第 1 次签到后音量仍锁定", afterFirst.twoFingerVolume)
+        assertFalse("第 1 次签到后切歌仍锁定", afterFirst.twoFingerTrack)
         val afterSecond = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(2))
-        assertTrue("第 2 次签到后音量可用", afterSecond.twoFingerVolume)
-        assertFalse("第 2 次签到后切歌仍锁定", afterSecond.twoFingerTrack)
-        val afterThird = GestureFeatureConfig().restrictedTo(GestureUnlockPlan.unlockedCodes(3))
-        assertTrue(afterThird.twoFingerVolume)
-        assertTrue("第 3 次签到后切歌可用", afterThird.twoFingerTrack)
+        assertTrue(afterSecond.twoFingerVolume)
+        assertTrue(afterSecond.twoFingerTrack)
+        val volumeOnly = GestureFeatureConfig(twoFingerTrack = false).restrictedTo(GestureUnlockPlan.unlockedCodes(2))
+        assertTrue("关切歌不得影响音量", volumeOnly.twoFingerVolume)
+        assertFalse(volumeOnly.twoFingerTrack)
     }
 
     @Test fun unlockingRestoresTheSwitchTheUserNeverTurnedOff() {
@@ -152,15 +168,16 @@ class GestureUnlockTest {
         GestureUnlockPlan.BASE_CODES.forEach { assertEquals("基础编号为开箱即用", 0, GestureUnlockPlan.stageOf(it)) }
         SYSTEM_CONTROL_CODES.forEach { assertEquals("识别锁为开箱即用", 0, GestureUnlockPlan.stageOf(it)) }
         assertEquals(1, GestureUnlockPlan.stageOf(GestureCode.G22))
-        assertEquals(9, GestureUnlockPlan.stageOf(GestureCode.G07))
-        assertEquals(12, GestureUnlockPlan.stageOf(GestureCode.G35))
+        assertEquals(5, GestureUnlockPlan.stageOf(GestureCode.G07))
+        assertEquals(7, GestureUnlockPlan.stageOf(GestureCode.G35))
     }
 
     /** 一张卡片覆盖多个编号时，展示批次取其中最晚的一个。 */
     @Test fun stageOfGroupFollowsTheLatestGestureBehindOneCard() {
         assertEquals(0, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G05, GestureCode.G06)))
-        assertEquals(3, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G29, GestureCode.G30)))
+        assertEquals(2, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G29, GestureCode.G30)))
         assertEquals(2, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G31, GestureCode.G32)))
+        assertEquals(5, GestureUnlockPlan.stageOfGroup(listOf(GestureCode.G14, GestureCode.G07)))
     }
 
     @Test fun groupedByStageListsBaseFirstThenEveryCheckInInOrder() {
@@ -171,7 +188,7 @@ class GestureUnlockTest {
             "双指左挥 / 双指右挥" to listOf(GestureCode.G29, GestureCode.G30)
         )
         val groups = GestureUnlockPlan.groupedByStage(cards) { it.second }
-        assertEquals(listOf(0, 1, 3, 12), groups.map { it.stage })
+        assertEquals(listOf(0, 1, 2, 6), groups.map { it.stage })
         assertEquals(listOf("并掌上挥 / 并掌下挥"), groups[0].items.map { it.first })
         assertEquals(listOf("握拳"), groups[1].items.map { it.first })
         assertEquals(listOf("双指左挥 / 双指右挥"), groups[2].items.map { it.first })
@@ -186,14 +203,14 @@ class GestureUnlockTest {
         )
         val groups = GestureUnlockPlan.groupedByStage(cards) { it.second }
         assertEquals(1, groups.size)
-        assertEquals(8, groups.first().stage)
+        assertEquals(5, groups.first().stage)
         assertEquals(listOf("莲花指", "兰花指"), groups.first().items.map { it.first })
     }
 
     @Test fun stageTitlesAndLockLabelsUseTheCheckInWording() {
         assertEquals("开箱即用 · 已解锁", GestureUnlockPlan.stageTitle(0))
         assertEquals("第 1 次签到解锁", GestureUnlockPlan.stageTitle(1))
-        assertEquals("第 12 次签到解锁", GestureUnlockPlan.stageTitle(GestureUnlockPlan.TOTAL_CHECK_INS))
+        assertEquals("第 7 次签到解锁", GestureUnlockPlan.stageTitle(GestureUnlockPlan.TOTAL_CHECK_INS))
         assertEquals("第 1 次签到后开放", GestureUnlockPlan.stageLockLabel(1))
         assertEquals("未解锁", GestureUnlockPlan.stageLockLabel(0))
     }
