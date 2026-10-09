@@ -106,6 +106,16 @@ object GesturePreferences {
     fun reverseHorizontal(context: Context): Boolean = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getBoolean(REVERSE_HORIZONTAL, false)
 
+    /**
+     * Saved on toggle so no extra save button is needed. The value is read once when the pipeline
+     * is built, so it takes effect after the control session is restarted, not live.
+     */
+    fun saveReverseHorizontal(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(REVERSE_HORIZONTAL, enabled)
+            .apply()
+    }
+
     fun feedbackEnabled(context: Context): Boolean = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .getBoolean(FEEDBACK, true)
 
