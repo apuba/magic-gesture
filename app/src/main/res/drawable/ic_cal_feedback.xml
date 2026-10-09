@@ -1,0 +1,19 @@
+<!-- 显示识别反馈卡片图标：显示器轮廓。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4.6,5h14.8a0.9,0.9 0 0,1 0.9,0.9v8.2a0.9,0.9 0 0,1 -0.9,0.9H4.6a0.9,0.9 0 0,1 -0.9,-0.9V5.9A0.9,0.9 0 0,1 4.6,5z"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M9,19.4h6M12,15.2v4.2"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

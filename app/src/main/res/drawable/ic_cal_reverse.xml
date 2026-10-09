@@ -1,0 +1,21 @@
+<!-- 反转左右方向卡片图标：上下两条反向箭头。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M17,8.6L7,8.6M9.6,6L7,8.6l2.6,2.6"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M7,15.4L17,15.4M14.4,12.8L17,15.4l-2.6,2.6"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>
