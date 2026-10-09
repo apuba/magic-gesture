@@ -1,6 +1,7 @@
 package com.magicgesture.app
 
 import android.Manifest
+import android.animation.ObjectAnimator
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
@@ -32,6 +33,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.RelativeSizeSpan
+import android.view.animation.LinearInterpolator
 import android.view.accessibility.AccessibilityManager
 import android.view.Gravity
 import android.view.View
@@ -72,6 +74,8 @@ class MainActivity : Activity() {
     private lateinit var heroOuterRing: View
     private lateinit var heroGlowRing: View
     private lateinit var heroColorRing: View
+    /** 运行态中央渐变环的旋转动画；非运行态与页面不可见时必须停掉并归零。 */
+    private var heroRingSpinAnimator: ObjectAnimator? = null
     private var updatingFeatureSwitches = false
     /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
     private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
@@ -99,6 +103,8 @@ class MainActivity : Activity() {
     companion object {
         /** 未解锁卡片的淡化程度：内容仍可读，但一眼就能与已解锁区分。 */
         private const val LOCKED_CARD_ALPHA = 0.45f
+        /** 运行态中央渐变环转一圈的时长：慢到能看出在转，又不会抢视线。 */
+        private const val HERO_RING_SPIN_MS = 3200L
         /** 未解锁卡片的图标去色，与淡化一起构成明显的锁定样式。 */
         private val GRAYSCALE_FILTER = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
         /** 页面底色 #000620：背景图随页面滚走之后露出的就是这个颜色。 */
@@ -576,6 +582,8 @@ class MainActivity : Activity() {
         val previousScrollY = contentScroll?.scrollY ?: 0
         actionLabelViews.clear()
         featureSwitches.clear()
+        // 旧视图马上要被替换，先停掉挂在旧圆环上的动画。
+        setHeroRingSpinning(false)
         setContentView(buildContent())
         // Rebuilt views start from their default state, so re-apply live control and permission
         // state. Without the permission refresh, a successful check-in temporarily brought the
@@ -1208,6 +1216,40 @@ class MainActivity : Activity() {
         (heroOuterRing.background as GradientDrawable).setStroke(dp(1), rim)
         (heroGlowRing.background as GradientDrawable).setStroke(dp(1), glow)
         heroColorRing.background = ovalGradient(ring)
+        setHeroRingSpinning(running)
+    }
+
+    /**
+     * 手势控制运行时，让中央那圈扫掠渐变环匀速旋转，作为“正在运行”的动态指示。
+     *
+     * 圆环与内部的图标、标题、说明行是同一个 FrameLayout 里的同级视图，
+     * 所以旋转圆环不会带动内容：圆环一直转，文字与图标始终正向。
+     * 停下状态请求的动画会立刻取消并把角度归零，避免留在倾斜位置。
+     */
+    private fun setHeroRingSpinning(spinning: Boolean) {
+        if (!::heroColorRing.isInitialized) return
+        if (spinning) {
+            val existing = heroRingSpinAnimator
+            if (existing?.isRunning == true) return
+            // 只是暂停过就接着转，避免每次刷新都从 0° 重新开始。
+            if (existing != null && existing.isPaused) {
+                existing.resume()
+                return
+            }
+            heroRingSpinAnimator = ObjectAnimator.ofFloat(heroColorRing, View.ROTATION, 0f, 360f).apply {
+                duration = HERO_RING_SPIN_MS
+                interpolator = LinearInterpolator()
+                // 无限重复、每圈都从 0° 重新开始（RESTART）：只要控制还在运行，
+                // 圆环就一圈接一圈不停下来，不会来回摆动也不会转一轮就停。
+                repeatCount = ObjectAnimator.INFINITE
+                repeatMode = ObjectAnimator.RESTART
+                start()
+            }
+            return
+        }
+        heroRingSpinAnimator?.cancel()
+        heroRingSpinAnimator = null
+        heroColorRing.rotation = 0f
     }
 
     /**
@@ -1451,12 +1493,15 @@ class MainActivity : Activity() {
             }
             recognitionLockReceiverRegistered = false
         }
+        // 页面不可见时不转环：省电，也不会让“运行中”的动画在后台空转。
+        setHeroRingSpinning(false)
         super.onPause()
     }
 
     override fun onDestroy() {
         consentDialog?.dismiss()
         consentDialog = null
+        setHeroRingSpinning(false)
         super.onDestroy()
     }
 
@@ -1487,6 +1532,10 @@ class MainActivity : Activity() {
             startForegroundService(Intent(this, CameraProbeService::class.java).putExtra("control", controlMode))
             pendingControl = false
             status.text = "●  启动中，请等待悬浮圆点与通知出现"
+            // 服务启动成功后不会回调首页，延迟回读真实状态：
+            // 让用户留在首页时也能看到按钮切到「运行中」、圆环开始转。
+            status.postDelayed({ refreshControlButton() }, 1200L)
+            status.postDelayed({ refreshControlButton() }, 2600L)
             if (controlMode) {
                 status.postDelayed({
                     startActivity(Intent(Intent.ACTION_MAIN).apply {
