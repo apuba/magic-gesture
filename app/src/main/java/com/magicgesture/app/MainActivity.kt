@@ -128,6 +128,7 @@ class MainActivity : Activity() {
             Color.rgb(71, 69, 255),
             Color.rgb(10, 218, 255)
         )
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -447,7 +448,7 @@ class MainActivity : Activity() {
             addView(heroControlIcon, LinearLayout.LayoutParams(dp(32), dp(32)).apply { bottomMargin = dp(4) })
             // 标题不用 Button：Button 默认 48dp 最小高度与自身排版留白会把图标↔标题、
             // 标题↔说明各撑开十几 dp；改用 TextView，点击由上面的圆环容器统一接管。
-            startControlButton = label("开始使用", 17f, Color.WHITE, true).apply {
+            startControlButton = label("开始手势", 17f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
                 includeFontPadding = false
                 setLineSpacing(dp(2).toFloat(), 1f)
@@ -475,13 +476,13 @@ class MainActivity : Activity() {
             startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
         }, menuButtonParams(end = 4))
         addView(menuImageButton(R.drawable.menu_mapping, "手势映射") {
-            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+            startActivity(Intent(this@MainActivity, GestureMappingActivity::class.java))
         }, menuButtonParams(start = 4, end = 4))
         addView(menuImageButton(R.drawable.menu_authorization, "保持授权") {
             startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
         }, menuButtonParams(start = 4, end = 4))
         addView(menuImageButton(R.drawable.menu_favorite, "收藏位置") {
-            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+            startActivity(Intent(this@MainActivity, FavoriteLocationActivity::class.java))
         }, menuButtonParams(start = 4))
     }
 
@@ -648,7 +649,8 @@ class MainActivity : Activity() {
         background = rounded(if (locked) Color.argb(190, 19, 35, 62) else COLOR_SURFACE, 18, COLOR_BORDER)
         elevation = if (locked) 0f else dp(2).toFloat()
         if (locked) alpha = LOCKED_CARD_ALPHA
-        setOnClickListener { startActivity(Intent(this@MainActivity, CalibrationActivity::class.java)) }
+        // 换绑动作已拆到映射页，手势卡整行点击进映射页。
+        setOnClickListener { startActivity(Intent(this@MainActivity, GestureMappingActivity::class.java)) }
         addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER
             buildIcon(this)
@@ -1136,8 +1138,10 @@ class MainActivity : Activity() {
         val permissionsReady = Settings.canDrawOverlays(this) && isAccessibilityServiceEnabled()
         when {
             CameraProbeService.recognitionLocked -> {
-                startControlButton.text = controlButtonLabel("◇", "解除锁定")
-                setHeroControlIcon(null)
+                // 设计稿：识别锁定态中央图标改用 lock.png（原图 1254x1254，画面本身带约两成留白，
+                // 按 36dp 显示与其它状态的图标视觉大小一致），标题只留「解除锁定」。
+                startControlButton.text = "解除锁定"
+                setHeroControlIcon(resources.getDrawable(R.drawable.lock, theme), 36)
             }
             running -> {
                 // 设计稿：运行态 = 深绿圆徽 + 白色圆角方块 + 加粗「运行中」，
@@ -1155,9 +1159,9 @@ class MainActivity : Activity() {
                 setHeroControlIcon(resources.getDrawable(R.drawable.warning, theme), 68, spacingDp = 0)
             }
             else -> {
-                // 设计稿：就绪态 = 白色播放三角 + 加粗「开始使用」，副标题「一键启动手势控制」
+                // 设计稿：就绪态 = 白色播放三角 + 加粗「开始手势」，副标题「一键启动手势控制」
                 // 由下方状态行显示，整体留在内圈圆环里。
-                startControlButton.text = "开始使用"
+                startControlButton.text = "开始手势"
                 setHeroControlIcon(playIcon(), 32)
             }
         }
@@ -1169,7 +1173,7 @@ class MainActivity : Activity() {
 
     /**
      * 按设计稿让中央状态环随真实控制状态变色：
-     * 未授权红橙、启动中蓝、运行中绿、识别锁定琥珀、就绪蓝紫。
+     * 未授权红橙、启动中蓝、运行中青绿、识别锁定琥珀、就绪蓝紫。
      * 只改颜色，不改尺寸与层级，避免布局跳动。
      */
     private fun applyHeroState(running: Boolean, permissionsReady: Boolean) {
@@ -1184,9 +1188,11 @@ class MainActivity : Activity() {
                 ring = intArrayOf(Color.rgb(255, 205, 90), Color.rgb(255, 150, 40), Color.rgb(255, 95, 60), Color.rgb(255, 205, 90))
             }
             running -> {
+                // 渐变改用「开始手势」那一套蓝紫霓虹（HERO_RING_READY）；
+                // 内外描边仍是运行态的青绿，让人一眼看出控制正在运行。
                 glow = Color.argb(120, 60, 255, 190)
                 rim = Color.argb(200, 60, 255, 190)
-                ring = intArrayOf(Color.rgb(110, 255, 210), Color.rgb(30, 220, 160), Color.rgb(8, 160, 120), Color.rgb(110, 255, 210))
+                ring = HERO_RING_READY
             }
             pendingControl -> {
                 glow = Color.argb(120, 60, 170, 255)
@@ -1415,7 +1421,8 @@ class MainActivity : Activity() {
      */
     /**
      * 中央按钮上方的状态图标：就绪=白色播放三角，运行=深绿圆徽停止符，
-     * 未授权=warning.png（原图 1278x1230，由 ImageView 按 dp 缩放，不必再手动 setBounds）。
+     * 识别锁定=lock.png，未授权=warning.png（两张都是一千多像素的原图，
+     * 由 ImageView 按 dp 缩放，不必再手动 setBounds）。
      * 图标与标题的间距由它在竖向容器里的 bottomMargin 统一控制（10dp）。
      */
     private fun setHeroControlIcon(drawable: Drawable?, sizeDp: Int = 0, spacingDp: Int = 8) {
