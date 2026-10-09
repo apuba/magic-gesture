@@ -11,18 +11,27 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.app.Dialog
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextUtils
+import android.text.style.RelativeSizeSpan
 import android.view.accessibility.AccessibilityManager
 import android.view.Gravity
 import android.view.View
@@ -38,14 +47,16 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var startControlButton: Button
-    private lateinit var overlayPermissionButton: Button
-    private lateinit var accessibilityPermissionButton: Button
-    private lateinit var setupStatusText: TextView
+    private lateinit var startControlButton: TextView
+    /** 中央按钮上方的状态图标（播放三角 / 停止徽标 / 警示图标），独立成行以便精确控制间距。 */
+    private lateinit var heroControlIcon: ImageView
+    private lateinit var overlayPermissionButton: View
+    private lateinit var accessibilityPermissionButton: View
     private lateinit var setupGuideContainer: LinearLayout
+    /** 未授权时需要隐藏的区块：中间快捷菜单（手势校准/手势映射等）与每日签到卡。 */
+    private lateinit var quickAccessRow: View
+    private lateinit var checkInCardView: View
     private lateinit var checkInSummary: TextView
-    private lateinit var checkInNext: TextView
-    private lateinit var checkInButton: Button
     private val requestCamera = 100
     private var pendingControl = false
     private var waitingForOverlayPermission = false
@@ -54,6 +65,13 @@ class MainActivity : Activity() {
     private val actionLabelViews = mutableListOf<Pair<TextView, () -> String>>()
     /** Latest home ScrollView, used to keep the scroll position when the page is rebuilt. */
     private var contentScroll: ScrollView? = null
+    private var tipsAnchor: View? = null
+    /** “常用手势”标题行锚点，底部导航“手势列表”滚动目标。 */
+    private var gesturesAnchor: View? = null
+    /** 中央状态环：外圈、辉光圈、彩色渐变环，颜色随真实控制状态切换。 */
+    private lateinit var heroOuterRing: View
+    private lateinit var heroGlowRing: View
+    private lateinit var heroColorRing: View
     private var updatingFeatureSwitches = false
     /** 当前已解锁的手势编号；Debug 构建全开，正式版按签到进度。 */
     private var unlockedCodes: Set<GestureCode> = GestureUnlockPlan.BASE_CODES.toSet()
@@ -69,7 +87,10 @@ class MainActivity : Activity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != CameraProbeService.ACTION_RECOGNITION_LOCK_CHANGED) return
             if (!homeContentReady) return
-            runOnUiThread { refreshStatusText(force = true) }
+            runOnUiThread {
+                refreshControlButton()
+                refreshStatusText(force = true)
+            }
         }
     }
     /** 锁状态广播是否已在 onResume 注册；onPause 时据此安全注销。 */
@@ -80,12 +101,31 @@ class MainActivity : Activity() {
         private const val LOCKED_CARD_ALPHA = 0.45f
         /** 未解锁卡片的图标去色，与淡化一起构成明显的锁定样式。 */
         private val GRAYSCALE_FILTER = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        /** 页面底色 #000620：背景图随页面滚走之后露出的就是这个颜色。 */
+        private val COLOR_BG = Color.rgb(0, 6, 32)
+        private val COLOR_SURFACE = Color.argb(210, 7, 31, 67)
+        private val COLOR_BORDER = Color.rgb(37, 88, 151)
+        private val COLOR_CYAN = Color.rgb(24, 215, 255)
+        private val COLOR_MAGENTA = Color.rgb(202, 66, 255)
+        /** 手势卡里的动作文字沿用旧版紫色（与卡内「›」箭头同色）。 */
+        private val COLOR_ACTION = Color.rgb(91, 87, 218)
+        private val COLOR_GREEN = Color.rgb(21, 224, 187)
+        private val COLOR_AMBER = Color.rgb(255, 184, 40)
+        private val TEXT_SECONDARY = Color.rgb(214, 225, 245)
+        private val TEXT_MUTED = Color.rgb(158, 180, 211)
+        /** 就绪态的中央状态环渐变（与设计稿蓝紫霓虹一致），复用避免每次刷新重建数组。 */
+        private val HERO_RING_READY = intArrayOf(
+            Color.rgb(10, 218, 255),
+            Color.rgb(33, 116, 255),
+            Color.rgb(180, 52, 255),
+            Color.rgb(255, 107, 235),
+            Color.rgb(71, 69, 255),
+            Color.rgb(10, 218, 255)
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(72, 69, 198)
-        window.navigationBarColor = Color.rgb(246, 245, 255)
         // 隐私政策必须先于任何权限申请和相机/无障碍能力生效：未同意时不构建首页。
         if (!PrivacyConsent.isAccepted(this)) {
             // 未构建首页时给窗口一个纯色背景，避免透明 Activity 透出桌面壁纸。
@@ -98,6 +138,9 @@ class MainActivity : Activity() {
 
     /** Builds the home page. Only reached after the privacy policy has been accepted. */
     private fun enterHome() {
+        // 首页是深色霓虹风格；首启同意弹窗仍是浅色主题，因此系统栏颜色在进入首页时再切换。
+        window.statusBarColor = COLOR_BG
+        window.navigationBarColor = COLOR_BG
         setContentView(buildContent())
         homeContentReady = true
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -185,113 +228,90 @@ class MainActivity : Activity() {
         unlockedCodes = GestureUnlockStore(this).entitlement().codes
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(36))
+            setPadding(dp(15), dp(18), dp(15), dp(104))
         }
 
-        content.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(24), dp(22), dp(22))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(74, 72, 211), Color.rgb(142, 91, 224))).apply {
-                cornerRadius = dp(26).toFloat()
-            }
-            elevation = dp(6).toFloat()
-            addView(label("魔法手势", 30f, Color.WHITE, true))
-            addView(label("让手势成为你的隐形遥控器", 15f, Color.rgb(235, 233, 255), false).apply { setPadding(0, dp(6), 0, 0) })
-            addView(label("前置摄像头识别 · 全局悬浮控制 · 本机处理", 12f, Color.rgb(214, 211, 255), false).apply { setPadding(0, dp(16), 0, 0) })
-        }, margins(bottom = 14))
+        content.addView(buildBrandHeader(), margins(bottom = 4))
+        content.addView(buildStatusHero(), margins(bottom = 10))
 
-        status = label("●  准备就绪，等待启动", 14f, Color.rgb(35, 115, 78), true).apply {
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = rounded(Color.rgb(232, 249, 240), 16)
-        }
-        content.addView(status, margins(bottom = 12))
-        content.addView(checkInCard(), margins(bottom = 12))
-
+        // 授权引导区：两张并排授权卡；两项授权都完成后整块隐藏。
+        // 产品要求：红色授权横幅（banner_authorization）、状态提示条与隐私说明文字暂不展示。
         setupGuideContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        setupGuideContainer.addView(label("首次使用设置", 22f, Color.rgb(31, 31, 55), true))
-        setupGuideContainer.addView(label("只需完成以下两项系统授权，即可让魔法手势在其他 App 中持续运行。", 13f, Color.rgb(104, 102, 126), false).apply {
-            setPadding(0, dp(6), 0, dp(12))
-        })
 
-        overlayPermissionButton = actionButton("去开启悬浮窗权限", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
+        // 设计稿切片：悬浮窗、无障碍两张图片按钮（图标与文案已烘焙在切片内），整块可点。
+        // 未授权时用灰色切片（floating_d / accessible_d），已授权时换回亮色切片。
+        overlayPermissionButton = permissionImageButton(
+            R.drawable.banner_floating, R.drawable.banner_floating_disabled, "开启悬浮窗"
+        ) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
-        setupGuideContainer.addView(permissionCard(
-            "1", "允许显示悬浮窗",
-            "允许“魔法手势-隔空手势”显示在其他应用上层。开启后会显示一个小悬浮圆点，点击圆点可以重新打开 App。",
-            "在系统页面中开启“允许显示在其他应用的上层”。",
-            overlayPermissionButton
-        ), margins(bottom = 10))
-
-        accessibilityPermissionButton = actionButton("去开启无障碍服务", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
+        accessibilityPermissionButton = permissionImageButton(
+            R.drawable.banner_accessible, R.drawable.banner_accessible_disabled, "开启无障碍"
+        ) {
             showAccessibilityDisclosure()
         }
-        setupGuideContainer.addView(permissionCard(
-            "2", "开启无障碍服务",
-            "无障碍服务用于执行点击、页面滑动、截图和视频双击等操作。V 字自拍由本 App 的前置摄像头直接保存，不读取其他应用内容。",
-            "进入“已下载的应用”或“已安装的服务”，找到本 App 并开启“使用服务”。",
-            accessibilityPermissionButton
-        ), margins(bottom = 10))
+        setupGuideContainer.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            // 固定 65dp 高：两套切片统一尺寸，状态切换时避免行高跳动。
+            addView(overlayPermissionButton,
+                LinearLayout.LayoutParams(0, dp(65), 1f).apply { marginEnd = dp(7) })
+            addView(accessibilityPermissionButton,
+                LinearLayout.LayoutParams(0, dp(65), 1f).apply { marginStart = dp(7) })
+        }, margins(bottom = 10))
 
-        setupStatusText = label("请先完成以上两项设置，再启动手势控制。", 13f, Color.rgb(157, 92, 20), true).apply {
-            setPadding(dp(15), dp(13), dp(15), dp(13))
-            background = rounded(Color.rgb(255, 247, 226), 14, Color.rgb(244, 216, 157))
+        content.addView(setupGuideContainer, margins(bottom = 8))
+        quickAccessRow = buildQuickAccessGrid()
+        content.addView(quickAccessRow, margins(bottom = 12))
+        checkInCardView = checkInCard()
+        content.addView(checkInCardView, margins(bottom = 14))
+        // 建好就按当前授权状态定一次可见性，避免首屏闪现未授权的菜单与签到卡。
+        applyPermissionGating()
+
+        val gestureHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("常用手势", 20f, Color.WHITE, true),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
-        setupGuideContainer.addView(setupStatusText, margins(bottom = 10))
-        setupGuideContainer.addView(label("无障碍服务仅用于执行你主动做出的手势操作，不会读取或上传聊天记录、密码及其他隐私内容。关闭手势控制后，摄像头和悬浮控件会同时停止。", 11.5f, Color.rgb(112, 110, 132), false).apply {
-            setPadding(dp(4), 0, dp(4), dp(16))
-        })
-        content.addView(setupGuideContainer)
-
-        startControlButton = actionButton("✦  启动手势控制", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
-            pendingControl = true
-            startProbe()
-        }
-        content.addView(startControlButton, margins(bottom = 10, height = 54))
-        content.addView(actionButton("停止所有控制", Color.rgb(255, 240, 242), Color.rgb(190, 51, 67), Color.rgb(255, 216, 222), Color.rgb(255, 205, 213)) {
-            stopService(Intent(this@MainActivity, CameraProbeService::class.java))
-            status.text = "●  已请求停止，摄像头与悬浮控件即将关闭"
-            status.postDelayed({ refreshControlButton() }, 250)
-        }, margins(bottom = 10, height = 48))
-        content.addView(actionButton("手势练习与校准", Color.WHITE, Color.rgb(37, 99, 235), Color.rgb(219, 234, 254), Color.rgb(191, 219, 254)) {
-            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
-        }, margins(bottom = 10, height = 50))
-        content.addView(actionButton("⚡  保持授权不丢失", Color.rgb(255, 247, 226), Color.rgb(157, 92, 20), Color.rgb(255, 243, 224), Color.rgb(244, 216, 157)) {
-            startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
-        }, margins(bottom = 24, height = 50))
-
-        content.addView(label("手势使用指南", 22f, Color.rgb(31, 31, 55), true))
+        gesturesAnchor = gestureHeader
+        content.addView(gestureHeader)
         val cooldownSeconds = GesturePreferences.cooldownMs(this) / 1000f
         val cooldownText = if (cooldownSeconds == cooldownSeconds.toLong().toFloat()) "${cooldownSeconds.toLong()}" else "%.1f".format(cooldownSeconds)
-        content.addView(label("手掌正对前置摄像头，保持在画面中央。卡片紫色文字是当前绑定动作，换绑后会自动更新；灰色说明只描述手势做法。动作成功后进入 $cooldownText 秒冷却期，期间暂停全部手势识别（包括光标）。", 13f, Color.rgb(104, 102, 126), false).apply {
-            setPadding(0, dp(6), 0, dp(8))
-        })
-        content.addView(label("下面按签到解锁顺序排列：先开箱即用的一组，再依次是每次签到解锁的功能包。灰色淡化的手势尚未解锁，姿势可以先预习，签到后自动开放。", 12.5f, Color.rgb(112, 110, 132), false).apply {
-            setPadding(0, 0, 0, dp(14))
-        })
+        content.addView(label(
+            "1. 手掌对准前置摄像头，保持在画面中央\n" +
+                "2. 做出手势即触发对应动作，成功后冷却 $cooldownText 秒\n" +
+                "3. 点手势行的灰字，看该手势的完整做法",
+            13f, TEXT_SECONDARY, false
+        ).apply {
+            // 整段说明放进带边框的面板里，与下方卡片区分开；三步要点分行，一眼看清怎么操作。
+            setPadding(dp(13), dp(11), dp(13), dp(11))
+            background = neonPanel(14)
+            setLineSpacing(dp(4).toFloat(), 1f)
+        }, margins(bottom = 14))
 
         // 分组与排序只依赖签到批次；卡片文案与开关值在这里一次性装配。
         val groups = GestureUnlockPlan.groupedByStage(guideCards(features)) { it.codes }
         groups.forEach { group ->
             val locked = group.items.any { card -> card.codes.any { it !in unlockedCodes } }
-            content.addView(stageHeader(group.stage, locked))
+            // 开箱即用那一组不再显示「开箱即用 · 已解锁」标题，直接列卡片。
+            if (group.stage > GestureUnlockPlan.BASE_STAGE) content.addView(stageHeader(group.stage, locked))
             group.items.forEach { card ->
                 content.addView(guideCardView(card, locked), margins(bottom = 12))
             }
         }
 
-        content.addView(LinearLayout(this).apply {
+        tipsAnchor = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(15), dp(16), dp(15))
-            background = rounded(Color.rgb(239, 240, 255), 16)
-            addView(label("使用提示", 15f, Color.rgb(66, 63, 160), true))
-            addView(label("• 保持环境光线充足，避免逆光，手掌距离手机约 40–80 厘米\n• 屏幕顶部出现文字提示后即可开始动作；挥动、滚动类手势久等不会失效，会自动重新计时，无需重新摆姿势\n• 动作清晰但不需要用力，完成后先让手势复位\n• 手腕避免被袖口、手套或过宽的饰品遮挡，否则识别会明显变差\n• 识别不到或容易误触时，可到“手势练习与校准”中调整灵敏度\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, Color.rgb(78, 77, 111), false).apply {
+            background = neonPanel(16)
+            addView(label("使用提示", 15f, COLOR_CYAN, true))
+            addView(label("• 保持环境光线充足，避免逆光，手掌距离手机约 40–80 厘米\n• 屏幕顶部出现文字提示后即可开始动作；挥动、滚动类手势久等不会失效，会自动重新计时，无需重新摆姿势\n• 动作清晰但不需要用力，完成后先让手势复位\n• 手腕避免被袖口、手套或过宽的饰品遮挡，否则识别会明显变差\n• 识别不到或容易误触时，可到“手势练习与校准”中调整灵敏度\n• 点击通知中的“停止”可立即关闭摄像头和全部控制", 13f, TEXT_SECONDARY, false).apply {
                 setPadding(0, dp(7), 0, 0)
                 setLineSpacing(0f, 1.2f)
             })
-        })
+        }
+        content.addView(tipsAnchor)
 
-        content.addView(label("隐私政策与权限说明", 13f, Color.rgb(83, 80, 214), false).apply {
+        content.addView(label("隐私政策与权限说明", 13f, COLOR_CYAN, false).apply {
             gravity = Gravity.CENTER
             paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
             setPadding(dp(12), dp(20), dp(12), dp(4))
@@ -300,12 +320,249 @@ class MainActivity : Activity() {
             }
         })
 
-        return ScrollView(this).apply {
-            setBackgroundColor(Color.rgb(246, 245, 255))
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
             isFillViewport = true
-            addView(content)
-            contentScroll = this
+            // 背景图放进滚动容器，随页面一起上下滚动；图片滚过之后露出 #000620 页底色。
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(homeBackgroundView(), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+                addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+            })
         }
+        contentScroll = scroll
+        return FrameLayout(this).apply {
+            setBackgroundColor(COLOR_BG)
+            addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            // 底部固定导航按产品要求暂时隐藏：`buildBottomNav()` 保留，需要时把下面这行注释取消即可恢复。
+            // addView(buildBottomNav(), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        }
+    }
+
+    private fun homeBackgroundView(): View = object : ImageView(this) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val width = MeasureSpec.getSize(widthMeasureSpec)
+            val height = (width * 1870f / 841f).toInt()
+            setMeasuredDimension(width, height)
+        }
+    }.apply {
+        setImageResource(R.drawable.home_neon_bg)
+        scaleType = ImageView.ScaleType.FIT_XY
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    private fun buildBrandHeader(): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(4), dp(6), dp(4), dp(6))
+        addView(ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.app_icon)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "魔法手势"
+            background = rounded(Color.argb(80, 27, 71, 140), 14, Color.rgb(35, 146, 255))
+            clipToOutline = true
+        }, LinearLayout.LayoutParams(dp(42), dp(42)))
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, dp(8), 0)
+            addView(label("魔法手势", 19f, Color.WHITE, true))
+            addView(label("用手势，掌控你的手机", 11.5f, TEXT_SECONDARY, false).apply {
+                setPadding(0, dp(2), 0, 0)
+            })
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // 设计稿切片：图标 + 文字一体的霓虹按钮，直接整图展示。
+        addView(headerImageAction(R.drawable.header_trick, "使用技巧") { scrollTo(tipsAnchor) },
+            LinearLayout.LayoutParams(dp(54), dp(57)).apply { marginEnd = dp(7) })
+        addView(headerImageAction(R.drawable.header_setting, "设置") {
+            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }, LinearLayout.LayoutParams(dp(54), dp(57)))
+    }
+
+    private fun headerImageAction(drawableRes: Int, description: String, action: () -> Unit) =
+        ImageView(this).apply {
+            setImageResource(drawableRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = description
+            setOnClickListener { action() }
+        }
+
+    private fun buildStatusHero(): View = FrameLayout(this).apply {
+        heroOuterRing = View(this@MainActivity).apply {
+            background = oval(Color.argb(16, 20, 70, 180), Color.argb(190, 17, 199, 255), 1)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        // 圆环栈整体收缩到原来的 80%（252/238/218/188 → 202/190/174/150）。
+        addView(heroOuterRing, FrameLayout.LayoutParams(dp(202), dp(202), Gravity.CENTER))
+        heroGlowRing = View(this@MainActivity).apply {
+            background = oval(Color.argb(20, 34, 53, 186), Color.argb(135, 37, 137, 255), 1)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        addView(heroGlowRing, FrameLayout.LayoutParams(dp(190), dp(190), Gravity.CENTER))
+        heroColorRing = View(this@MainActivity).apply {
+            background = ovalGradient(HERO_RING_READY)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        addView(heroColorRing, FrameLayout.LayoutParams(dp(174), dp(174), Gravity.CENTER))
+        addView(View(this@MainActivity).apply {
+            background = oval(Color.rgb(8, 23, 87), Color.argb(185, 125, 103, 255), 1)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, FrameLayout.LayoutParams(dp(150), dp(150), Gravity.CENTER))
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            // 警告态图标 68dp + 文字需要完整排布，放开裁剪作为兜底。
+            clipChildren = false
+            clipToPadding = false
+            val startAction = {
+                if (CameraProbeService.recognitionLocked) {
+                    startService(Intent(this@MainActivity, CameraProbeService::class.java).setAction(CameraProbeService.ACTION_UNLOCK_RECOGNITION))
+                    status.text = "正在解除识别锁定"
+                    status.postDelayed({ refreshControlButton() }, 250)
+                } else if (CameraProbeService.isControlRunning) {
+                    stopService(Intent(this@MainActivity, CameraProbeService::class.java))
+                    status.text = "已请求停止，摄像头与悬浮控件即将关闭"
+                    status.postDelayed({ refreshControlButton() }, 250)
+                } else if (!(Settings.canDrawOverlays(this@MainActivity) && isAccessibilityServiceEnabled())) {
+                    // 设计稿：未授权时中央按钮把用户带到下方授权区，由授权卡逐项完成授权。
+                    status.text = "请先完成下方悬浮窗与无障碍授权"
+                    scrollTo(setupGuideContainer)
+                } else {
+                    pendingControl = true
+                    startProbe()
+                }
+            }
+            // 整块（图标 + 标题 + 副标题）都可点：图标区与副标题区由容器接管，标题由按钮自身接管。
+            setOnClickListener { startAction() }
+            // 状态图标单独成行：图标与文字的间距由这里的 margin 精确控制
+            // （此前用复合 drawable，TextView 的排版把两者间距算成了 34dp）。
+            heroControlIcon = ImageView(this@MainActivity).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            // 图标与标题的间距：这里统一给 4dp（原 8dp 减半）。
+            addView(heroControlIcon, LinearLayout.LayoutParams(dp(32), dp(32)).apply { bottomMargin = dp(4) })
+            // 标题不用 Button：Button 默认 48dp 最小高度与自身排版留白会把图标↔标题、
+            // 标题↔说明各撑开十几 dp；改用 TextView，点击由上面的圆环容器统一接管。
+            startControlButton = label("开始使用", 17f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                setLineSpacing(dp(2).toFloat(), 1f)
+                setPadding(dp(14), dp(2), dp(14), dp(2))
+                background = ovalPressable(Color.TRANSPARENT, Color.argb(75, 67, 51, 190))
+            }
+            addView(startControlButton, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+            status = label(heroStatusText(), 11.5f, Color.rgb(226, 232, 255), false).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(4), 0, dp(4), 0)
+            }
+            // 标题与说明行的间距同样减半：6dp → 3dp。
+            addView(status, LinearLayout.LayoutParams(dp(150), LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(3) })
+        }, FrameLayout.LayoutParams(dp(150), dp(150), Gravity.CENTER))
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(216))
+    }
+
+    private fun buildQuickAccessGrid(): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER
+        addView(menuImageButton(R.drawable.menu_calibration, "手势校准") {
+            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }, menuButtonParams(end = 4))
+        addView(menuImageButton(R.drawable.menu_mapping, "手势映射") {
+            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }, menuButtonParams(start = 4, end = 4))
+        addView(menuImageButton(R.drawable.menu_authorization, "保持授权") {
+            startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
+        }, menuButtonParams(start = 4, end = 4))
+        addView(menuImageButton(R.drawable.menu_favorite, "收藏位置") {
+            startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }, menuButtonParams(start = 4))
+    }
+
+    private fun menuImageButton(image: Int, label: String, action: () -> Unit) = ImageView(this).apply {
+        setImageResource(image)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        adjustViewBounds = false
+        contentDescription = label
+        isClickable = true
+        isFocusable = true
+        foreground = pressable(Color.TRANSPARENT, Color.argb(75, 255, 255, 255), 18)
+        setOnClickListener { action() }
+    }
+
+    private fun menuButtonParams(start: Int = 0, end: Int = 0) =
+        LinearLayout.LayoutParams(0, dp(102), 1f).apply {
+            marginStart = dp(start)
+            marginEnd = dp(end)
+        }
+
+    /**
+     * 固定底部导航：控制（回到顶部状态区）、手势列表（滚到常用手势）、设置（校准页）。
+     * 设计稿第三个标签是“我的”，当前版本没有个人中心页面，按既定决策使用“设置”。
+     */
+    private fun buildBottomNav(): View {
+        val activeColor = Color.rgb(122, 168, 255)
+        val idleColor = TEXT_MUTED
+        data class NavItem(val container: LinearLayout, val iconView: TextView, val textView: TextView, val selectable: Boolean)
+        val holders = mutableListOf<NavItem>()
+        var activeIndex = 0
+        fun repaint() {
+            holders.forEachIndexed { index, item ->
+                val color = if (index == activeIndex) activeColor else idleColor
+                item.iconView.setTextColor(color)
+                item.textView.setTextColor(color)
+                item.container.background = if (index == activeIndex) rounded(Color.argb(70, 24, 62, 140), 16) else null
+            }
+        }
+        fun item(icon: String, title: String, selectable: Boolean, action: () -> Unit): View =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(9), 0, dp(9))
+                val iconView = label(icon, 19f, idleColor, true).apply { gravity = Gravity.CENTER }
+                val textView = label(title, 11.5f, idleColor, true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(2), 0, 0)
+                }
+                addView(iconView)
+                addView(textView)
+                setOnClickListener {
+                    if (selectable) {
+                        val index = holders.indexOfFirst { it.container === this }
+                        if (index >= 0) {
+                            activeIndex = index
+                            repaint()
+                        }
+                    }
+                    action()
+                }
+                holders += NavItem(this, iconView, textView, selectable)
+            }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                setColor(Color.argb(242, 4, 15, 38))
+                cornerRadii = floatArrayOf(
+                    dp(22).toFloat(), dp(22).toFloat(),
+                    dp(22).toFloat(), dp(22).toFloat(),
+                    0f, 0f, 0f, 0f
+                )
+                setStroke(dp(1), COLOR_BORDER)
+            }
+            addView(item("⌂", "控制", true) { contentScroll?.smoothScrollTo(0, 0) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            addView(item("☰", "手势列表", true) { scrollTo(gesturesAnchor) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            addView(item("⚙", "设置", false) {
+                startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            repaint()
+        }
+    }
+
+    private fun scrollTo(target: View?) {
+        val scroll = contentScroll ?: return
+        scroll.post { scroll.smoothScrollTo(0, target?.top ?: 0) }
     }
 
     /**
@@ -358,71 +615,138 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun gestureCard(
-        image: Int, title: String, actionText: () -> String, description: String, badge: String,
-        feature: String, enabled: Boolean, secondImage: Int? = null, showSwitch: Boolean = true,
-        locked: Boolean = false
+    /**
+     * 常用手势行（按设计稿重排）：左侧手势图，中间「标题 + 副标题 + 功能类型标签」，
+     * 右侧开关与箭头。副标题开头是当前绑定动作（换绑后自动更新），其后带手势做法摘要。
+     * [buildIcon] 负责往 64dp 高的图标区里放手势图（单图 / 双图 / 序列步骤图）。
+     */
+    /**
+     * 一条手势行：标题 + 紫色动作标签（当前绑定动作）+ 两行做法说明。
+     * [actionText] 为 null 表示固定动作由外部分配，此时不显示动作标签。
+     */
+    private fun guideRow(
+        title: String,
+        description: String,
+        actionText: (() -> String)?,
+        feature: String,
+        enabled: Boolean,
+        showSwitch: Boolean,
+        locked: Boolean,
+        buildIcon: (LinearLayout) -> Unit
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(12), dp(15), dp(12))
-        background = rounded(if (locked) Color.rgb(244, 244, 247) else Color.WHITE, 20)
+        setPadding(dp(10), dp(9), dp(12), dp(9))
+        background = rounded(if (locked) Color.argb(190, 19, 35, 62) else COLOR_SURFACE, 18, COLOR_BORDER)
         elevation = if (locked) 0f else dp(2).toFloat()
         if (locked) alpha = LOCKED_CARD_ALPHA
-        val imageWidth = if (secondImage == null) 96 else 132
-        addView(FrameLayout(this@MainActivity).apply {
-            background = rounded(if (locked) Color.rgb(236, 236, 241) else Color.rgb(245, 243, 255), 16)
-            if (secondImage == null) {
+        setOnClickListener { startActivity(Intent(this@MainActivity, CalibrationActivity::class.java)) }
+        addView(LinearLayout(this@MainActivity).apply {
+            gravity = Gravity.CENTER
+            buildIcon(this)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(64)))
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(11), 0, dp(4), 0)
+            addView(LinearLayout(this@MainActivity).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(label(title, 15.5f, if (locked) Color.rgb(137, 151, 174) else Color.WHITE, true),
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                if (locked) addView(statusChip("未解锁", Color.rgb(112, 110, 132), Color.rgb(233, 233, 238)), chipParams())
+            })
+            // 做法说明默认两行；整行点击是进校准页，这里单独给说明文字挂点击弹出完整说明
+            //（子 View 会消费掉点击，不会冒泡到整行的跳转）。
+            val sub = label(description, 12f, if (locked) Color.rgb(128, 145, 171) else Color.rgb(197, 206, 226), false).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+                setOnClickListener { showGestureGuide(title, description, actionText) }
+            }
+            addView(sub)
+            if (actionText != null) {
+                // 动作标签实时读取当前映射，换绑后由 refreshActionLabels() 统一刷新；
+                // 刷新文本也要带小图标前缀，否则 onResume 后图标会被纯动作名覆盖。
+                val icon = if (feature in appShortcutFeatures) "⚡" else "⚙"
+                val tagText = { "$icon ${actionText()}" }
+                val tag = actionTag(feature, tagText(), locked)
+                actionLabelViews += tag to tagText
+                // 外层横向容器给出宽度上限，动作名过长时标签内省略号生效，不会挤压右侧开关。
+                addView(LinearLayout(this@MainActivity).apply {
+                    addView(tag, LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ))
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(5) })
+            }
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (showSwitch) addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(42)))
+    }
+
+    /**
+     * 动作标签：保留设计稿的小图标（⚙ 系统控制 / ⚡ 应用快捷）在前面，后面接该手势当前绑定的
+     * 具体动作（点击、返回、控制光标…），白字 + 设计稿胶囊底色（系统控制蓝 / 应用快捷紫）。
+     */
+    private fun actionTag(feature: String, text: String, locked: Boolean): TextView {
+        val app = feature in appShortcutFeatures
+        return label("${if (app) "⚡" else "⚙"} $text", 10.5f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(7), dp(2), dp(7), dp(2))
+            background = rounded(
+                when {
+                    locked -> Color.argb(150, 92, 102, 124)
+                    app -> Color.argb(235, 116, 62, 236)
+                    else -> Color.argb(235, 33, 92, 226)
+                },
+                99
+            )
+        }
+    }
+
+    /** 归入「应用快捷」的功能开关，其余均为系统控制。 */
+    private val appShortcutFeatures = setOf("screenshot", "selfie", "like", "thumbs_up", "ok")
+
+    private fun gestureCard(
+        image: Int, title: String, actionText: () -> String, description: String,
+        feature: String, enabled: Boolean, secondImage: Int? = null, showSwitch: Boolean = true,
+        locked: Boolean = false
+    ): View = guideRow(
+        title = title,
+        description = description,
+        actionText = actionText,
+        feature = feature,
+        enabled = enabled,
+        showSwitch = showSwitch,
+        locked = locked
+    ) { host ->
+        if (secondImage == null) {
+            host.addView(ImageView(this@MainActivity).apply {
+                setImageResource(image)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                if (locked) colorFilter = GRAYSCALE_FILTER
+            }, LinearLayout.LayoutParams(dp(56), dp(56)))
+        } else {
+            host.addView(LinearLayout(this@MainActivity).apply {
+                gravity = Gravity.CENTER
                 addView(ImageView(this@MainActivity).apply {
                     setImageResource(image)
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
-                    setPadding(dp(5), dp(5), dp(5), dp(5))
                     if (locked) colorFilter = GRAYSCALE_FILTER
-                }, FrameLayout.LayoutParams(dp(88), dp(88), Gravity.CENTER))
-            } else {
-                addView(LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
+                }, LinearLayout.LayoutParams(dp(27), dp(56)))
+                addView(label("›", 14f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
                     gravity = Gravity.CENTER
-                    addView(ImageView(this@MainActivity).apply {
-                        setImageResource(image)
-                        scaleType = ImageView.ScaleType.CENTER_INSIDE
-                        if (locked) colorFilter = GRAYSCALE_FILTER
-                    }, LinearLayout.LayoutParams(dp(51), dp(82)))
-                    addView(label("→", 16f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
-                        gravity = Gravity.CENTER
-                    }, LinearLayout.LayoutParams(dp(18), dp(82)))
-                    addView(ImageView(this@MainActivity).apply {
-                        setImageResource(secondImage)
-                        scaleType = ImageView.ScaleType.CENTER_INSIDE
-                        if (locked) colorFilter = GRAYSCALE_FILTER
-                    }, LinearLayout.LayoutParams(dp(51), dp(82)))
-                }, FrameLayout.LayoutParams(dp(124), dp(88), Gravity.CENTER))
-            }
-            addView(label(badge, 18f, Color.WHITE, true).apply {
-                gravity = Gravity.CENTER
-                background = rounded(if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), 99)
-            }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END))
-        }, LinearLayout.LayoutParams(dp(imageWidth), dp(96)))
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), 0, 0, 0)
-            addView(LinearLayout(this@MainActivity).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(label(title, 17f, if (locked) Color.rgb(96, 94, 112) else Color.rgb(38, 37, 59), true),
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                if (locked) addView(statusChip("未解锁", Color.rgb(112, 110, 132), Color.rgb(233, 233, 238)), chipParams())
-                if (showSwitch) addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
+                }, LinearLayout.LayoutParams(dp(12), dp(56)))
+                addView(ImageView(this@MainActivity).apply {
+                    setImageResource(secondImage)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    if (locked) colorFilter = GRAYSCALE_FILTER
+                }, LinearLayout.LayoutParams(dp(27), dp(56)))
             })
-            val actionView = label(actionText(), 13f, if (locked) Color.rgb(120, 118, 140) else Color.rgb(91, 87, 218), !locked).apply {
-                setPadding(0, dp(3), 0, 0)
-            }
-            actionLabelViews += actionView to actionText
-            addView(actionView)
-            addView(label(description, 12.5f, Color.rgb(105, 103, 124), false).apply {
-                setPadding(0, dp(6), 0, 0)
-                setLineSpacing(0f, 1.1f)
-            })
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
     }
 
     /** 标题行里的状态标签：与右侧开关之间留出间距。 */
@@ -432,57 +756,35 @@ class MainActivity : Activity() {
     ).apply { marginEnd = dp(6) }
 
     /**
-     * 每日签到卡片：必须主动点击，一天最多一次，断签不清零，7 次签到后 G01–G35 全部拥有。
+     * 每日签到按钮：设计稿霓虹横幅切片，点击即签到，一天最多一次，断签不清零，7 次签到后 G01–G35 全部拥有。
      * 权益只保存在本机，不联网、无账号、无付费入口。
      */
-    private fun checkInCard(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(15), dp(16), dp(15))
-        background = rounded(Color.rgb(239, 240, 255), 20, Color.rgb(203, 213, 225))
-        elevation = dp(2).toFloat()
-        addView(label("每日签到解锁", 17f, Color.rgb(38, 37, 59), true))
-        checkInSummary = label("", 13f, Color.rgb(91, 89, 113), false).apply {
-            setPadding(0, dp(7), 0, dp(3))
-            setLineSpacing(0f, 1.15f)
-        }
-        addView(checkInSummary)
-        checkInNext = label("", 13f, Color.rgb(91, 87, 218), true).apply { setLineSpacing(0f, 1.15f) }
-        addView(checkInNext)
-        checkInButton = actionButton("今日签到", Color.WHITE, Color.rgb(83, 80, 214), Color.rgb(232, 230, 255), Color.rgb(204, 201, 239)) {
-            performCheckIn()
-        }
-        addView(checkInButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
-            topMargin = dp(11)
+    private fun checkInCard(): View = FrameLayout(this).apply {
+        addView(ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.banner_signin)
+            adjustViewBounds = true
+            contentDescription = "连续签到，解锁更多功能和手势"
         })
-        addView(label("解锁记录只保存在本机，卸载或清除数据可能丢失。", 11.5f, Color.rgb(119, 116, 145), false).apply {
-            setPadding(0, dp(9), 0, 0)
+        // 进度文字叠在横幅内的空白区（左侧日历图标与右侧「去签到」按钮之间、副标题上方）：
+        // 位置按产品标注图红框实测——距横幅左 78dp、上 12dp，无背景无边框。
+        checkInSummary = label("", 13.5f, Color.WHITE, true)
+        addView(checkInSummary, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.START
+        ).apply {
+            marginStart = dp(78)
+            topMargin = dp(12)
         })
+        setOnClickListener { performCheckIn() }
         refreshCheckInCard()
     }
 
     private fun refreshCheckInCard() {
-        if (!::checkInSummary.isInitialized || !::checkInNext.isInitialized || !::checkInButton.isInitialized) return
-        val store = GestureUnlockStore(this)
-        val state = store.state()
+        if (!::checkInSummary.isInitialized) return
+        val state = GestureUnlockStore(this).state()
         val total = GestureUnlockPlan.TOTAL_CHECK_INS
-        val complete = GestureUnlockPlan.isComplete(state.checkInCount)
-        // 开箱当天只开放开箱即用的手势，第 1 次签到留给明天。
-        val openingDay = GestureUnlockMachine.isOpeningDay(state, store.todayEpochDay())
-        checkInSummary.text = when {
-            complete -> "已完成 $total 次签到，G01–G35 全部解锁。"
-            openingDay -> "已签到 ${state.checkInCount} / $total 次 · 今天是开箱第一天，先熟悉开箱即用的手势，明天起可每天签到一次。"
-            else -> "已签到 ${state.checkInCount} / $total 次 · 每天主动签到一次，断签不清零，已解锁的功能永久保留。"
-        }
-        val next = GestureUnlockPlan.nextPackageLabel(state.checkInCount)
-        checkInNext.text = if (next != null) "下一次解锁：$next" else "全部手势已解锁，可在校准页为每个手势指定动作。"
-        val canCheckIn = !complete && store.canCheckInToday()
-        checkInButton.text = when {
-            complete -> "已全部解锁"
-            openingDay -> "明天可开始第 1 次签到"
-            canCheckIn -> "今日签到"
-            else -> "今日已签到"
-        }
-        checkInButton.isEnabled = canCheckIn
+        checkInSummary.text = "每日签到 ${state.checkInCount}/$total 次"
     }
 
     private fun performCheckIn() {
@@ -502,29 +804,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun permissionCard(step: String, title: String, description: String, hint: String, button: Button): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(15), dp(15), dp(15), dp(15))
-        background = rounded(Color.WHITE, 18, Color.rgb(229, 227, 246))
-        elevation = dp(2).toFloat()
-        addView(LinearLayout(this@MainActivity).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(label(step, 16f, Color.WHITE, true).apply {
-                gravity = Gravity.CENTER
-                background = rounded(Color.rgb(91, 87, 218), 99)
-            }, LinearLayout.LayoutParams(dp(34), dp(34)))
-            addView(label(title, 17f, Color.rgb(38, 37, 59), true).apply {
-                setPadding(dp(11), 0, 0, 0)
-            })
-        })
-        addView(label(description, 12.5f, Color.rgb(91, 89, 113), false).apply {
-            setPadding(0, dp(10), 0, dp(7))
-            setLineSpacing(0f, 1.12f)
-        })
-        addView(label("提示：$hint", 11.5f, Color.rgb(119, 116, 145), false).apply {
-            setPadding(0, 0, 0, dp(10))
-        })
-        addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)))
+    /** 设计稿中的授权入口卡：标题 + 用途说明 + 真实授权按钮，按钮状态由 refreshSetupGuide 维护。 */
+    /**
+     * 授权区图片按钮：整张设计稿切片即按钮，未授权显示灰色切片、已授权显示亮色切片。
+     * 两套切片比例不同（亮色 2.5:1、灰色 2.64:1），因此用固定高度 + FIT_CENTER，
+     * 否则按 `adjustViewBounds` 自适应会让状态切换时行高跳动约 3dp。
+     */
+    private fun permissionImageButton(
+        enabledRes: Int,
+        disabledRes: Int,
+        description: String,
+        action: () -> Unit
+    ) = ImageView(this).apply {
+        setImageResource(disabledRes)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        // 两张切片都挂在 tag 上，供状态刷新时按授权情况互换。
+        tag = intArrayOf(enabledRes, disabledRes)
+        contentDescription = description
+        setOnClickListener { action() }
     }
 
     /**
@@ -632,7 +929,7 @@ class MainActivity : Activity() {
         return if (card.steps != null) {
             sequenceCard(card.steps, card.title, actionText, card.description, card.feature, switchOn, locked)
         } else {
-            gestureCard(card.image, card.title, actionText, card.description, card.badge, card.feature, switchOn, card.secondImage, card.showSwitch, locked)
+            gestureCard(card.image, card.title, actionText, card.description, card.feature, switchOn, card.secondImage, card.showSwitch, locked)
         }
     }
 
@@ -647,7 +944,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             addView(label(
                 GestureUnlockPlan.stageTitle(stage), 15.5f,
-                if (locked) Color.rgb(112, 110, 132) else Color.rgb(66, 63, 160), true
+                if (locked) Color.rgb(128, 145, 171) else Color.WHITE, true
             ), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             if (stage > GestureUnlockPlan.BASE_STAGE) {
                 addView(statusChip(
@@ -658,7 +955,7 @@ class MainActivity : Activity() {
             }
         })
         if (locked) {
-            addView(label("继续每日签到即可解锁本组手势。", 12f, Color.rgb(134, 132, 155), false).apply {
+            addView(label("继续每日签到即可解锁本组手势。", 12f, TEXT_MUTED, false).apply {
                 setPadding(0, dp(3), 0, 0)
             })
         }
@@ -671,8 +968,8 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Sequence gestures (G13, G16-G19) put the step illustrations on top, then the title row,
-     * the live action label and the description — the same layout the screenshot card uses.
+     * Sequence gestures (G13, G16-G19) use the same compact row as single gestures,
+     * with the step illustrations shrunk into the 64dp icon slot (arrows in between).
      * [actionText] is null when the gesture has a fixed action.
      */
     private fun sequenceCard(
@@ -683,47 +980,29 @@ class MainActivity : Activity() {
         feature: String,
         enabled: Boolean,
         locked: Boolean = false
-    ): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(14), dp(14), dp(15))
-        background = rounded(if (locked) Color.rgb(244, 244, 247) else Color.WHITE, 20)
-        elevation = if (locked) 0f else dp(2).toFloat()
-        if (locked) alpha = LOCKED_CARD_ALPHA
-        // Three-step sequences need narrower frames so the whole row still fits a phone.
-        val frameWidth = if (steps.size >= 3) dp(60) else dp(78)
-        val arrowWidth = if (steps.size >= 3) dp(26) else dp(38)
-        addView(LinearLayout(this@MainActivity).apply {
+    ): View = guideRow(
+        title = title,
+        description = description,
+        actionText = actionText,
+        feature = feature,
+        enabled = enabled,
+        showSwitch = true,
+        locked = locked
+    ) { host ->
+        host.addView(LinearLayout(this@MainActivity).apply {
             gravity = Gravity.CENTER
             steps.forEachIndexed { index, image ->
                 if (index > 0) {
-                    addView(label("→", 18f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
+                    addView(label("›", 13f, if (locked) Color.rgb(156, 163, 175) else Color.rgb(91, 87, 218), true).apply {
                         gravity = Gravity.CENTER
-                    }, LinearLayout.LayoutParams(arrowWidth, dp(76)))
+                    }, LinearLayout.LayoutParams(dp(10), dp(56)))
                 }
                 addView(ImageView(this@MainActivity).apply {
                     setImageResource(image)
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                     if (locked) colorFilter = GRAYSCALE_FILTER
-                }, LinearLayout.LayoutParams(frameWidth, dp(80)))
+                }, LinearLayout.LayoutParams(dp(24), dp(56)))
             }
-        })
-        addView(LinearLayout(this@MainActivity).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(label(title, 17f, if (locked) Color.rgb(96, 94, 112) else Color.rgb(38, 37, 59), true),
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            if (locked) addView(statusChip("未解锁", Color.rgb(112, 110, 132), Color.rgb(233, 233, 238)), chipParams())
-            addView(featureToggle(feature, enabled, title), LinearLayout.LayoutParams(dp(56), dp(48)))
-        })
-        if (actionText != null) {
-            val actionView = label(actionText(), 13f, if (locked) Color.rgb(120, 118, 140) else Color.rgb(91, 87, 218), !locked).apply {
-                setPadding(0, dp(4), 0, 0)
-            }
-            actionLabelViews += actionView to actionText
-            addView(actionView)
-        }
-        addView(label(description, 12.5f, Color.rgb(105, 103, 124), false).apply {
-            setPadding(0, dp(7), 0, 0)
-            setLineSpacing(0f, 1.1f)
         })
     }
 
@@ -846,14 +1125,89 @@ class MainActivity : Activity() {
     private fun refreshControlButton() {
         if (!::startControlButton.isInitialized) return
         val running = CameraProbeService.isControlRunning
-        startControlButton.text = if (running) "✓  手势控制运行中" else "✦  启动手势控制"
-        startControlButton.setTextColor(if (running) Color.WHITE else Color.rgb(83, 80, 214))
-        startControlButton.background = if (running) {
-            pressable(Color.rgb(83, 80, 214), Color.rgb(55, 52, 178), 16)
-        } else {
-            pressable(Color.WHITE, Color.rgb(232, 230, 255), 16, Color.rgb(204, 201, 239))
+        val permissionsReady = Settings.canDrawOverlays(this) && isAccessibilityServiceEnabled()
+        when {
+            CameraProbeService.recognitionLocked -> {
+                startControlButton.text = controlButtonLabel("◇", "解除锁定")
+                setHeroControlIcon(null)
+            }
+            running -> {
+                // 设计稿：运行态 = 深绿圆徽 + 白色圆角方块 + 加粗「运行中」，
+                // 副标题「点击停止手势控制」由下方状态行显示。
+                startControlButton.text = "运行中"
+                setHeroControlIcon(stopIcon(50), 50)
+            }
+            pendingControl -> {
+                startControlButton.text = controlButtonLabel("…", "正在启动")
+                setHeroControlIcon(null)
+            }
+            !permissionsReady -> {
+                // 设计稿：未授权时中央按钮改用 warning.png 警示图标，文字只留标题。
+                startControlButton.text = "去完成授权"
+                setHeroControlIcon(resources.getDrawable(R.drawable.warning, theme), 68, spacingDp = 0)
+            }
+            else -> {
+                // 设计稿：就绪态 = 白色播放三角 + 加粗「开始使用」，副标题「一键启动手势控制」
+                // 由下方状态行显示，整体留在内圈圆环里。
+                startControlButton.text = "开始使用"
+                setHeroControlIcon(playIcon(), 32)
+            }
         }
+        startControlButton.setTextColor(Color.WHITE)
+        startControlButton.background = ovalPressable(Color.TRANSPARENT, Color.argb(75, 67, 51, 190))
+        applyHeroState(running, permissionsReady)
         refreshStatusText()
+    }
+
+    /**
+     * 按设计稿让中央状态环随真实控制状态变色：
+     * 未授权红橙、启动中蓝、运行中绿、识别锁定琥珀、就绪蓝紫。
+     * 只改颜色，不改尺寸与层级，避免布局跳动。
+     */
+    private fun applyHeroState(running: Boolean, permissionsReady: Boolean) {
+        if (!::heroColorRing.isInitialized || !::heroGlowRing.isInitialized || !::heroOuterRing.isInitialized) return
+        val glow: Int
+        val rim: Int
+        val ring: IntArray
+        when {
+            CameraProbeService.recognitionLocked -> {
+                glow = Color.argb(120, 255, 184, 40)
+                rim = Color.argb(200, 255, 184, 40)
+                ring = intArrayOf(Color.rgb(255, 205, 90), Color.rgb(255, 150, 40), Color.rgb(255, 95, 60), Color.rgb(255, 205, 90))
+            }
+            running -> {
+                glow = Color.argb(120, 60, 255, 190)
+                rim = Color.argb(200, 60, 255, 190)
+                ring = intArrayOf(Color.rgb(110, 255, 210), Color.rgb(30, 220, 160), Color.rgb(8, 160, 120), Color.rgb(110, 255, 210))
+            }
+            pendingControl -> {
+                glow = Color.argb(120, 60, 170, 255)
+                rim = Color.argb(200, 60, 170, 255)
+                ring = intArrayOf(Color.rgb(90, 190, 255), Color.rgb(40, 120, 255), Color.rgb(120, 90, 255), Color.rgb(90, 190, 255))
+            }
+            !permissionsReady -> {
+                glow = Color.argb(130, 255, 90, 70)
+                rim = Color.argb(210, 255, 90, 70)
+                // 警告态渐变环：按设计稿从顶部橙经粉、品红到红的过渡（取自设计图环带采样；
+                // SweepGradient 起始角有固定偏移，色序整体前移一档使顶部落在橙色、右侧落在粉色）。
+                ring = intArrayOf(
+                    Color.rgb(252, 97, 162),
+                    Color.rgb(244, 25, 93),
+                    Color.rgb(251, 75, 59),
+                    Color.rgb(254, 124, 48),
+                    Color.rgb(254, 163, 42),
+                    Color.rgb(252, 97, 162)
+                )
+            }
+            else -> {
+                glow = Color.argb(190, 17, 199, 255)
+                rim = Color.argb(135, 37, 137, 255)
+                ring = HERO_RING_READY
+            }
+        }
+        (heroOuterRing.background as GradientDrawable).setStroke(dp(1), rim)
+        (heroGlowRing.background as GradientDrawable).setStroke(dp(1), glow)
+        heroColorRing.background = ovalGradient(ring)
     }
 
     /**
@@ -867,10 +1221,31 @@ class MainActivity : Activity() {
         val stale = current.contains("准备就绪") || current.contains("启动中") || current.contains("已请求停止")
         // 锁状态变化是用户必须立刻看到的信息，此时无条件覆盖；其余场景只清理陈旧文案。
         if (!force && !stale) return
-        status.text = when {
-            CameraProbeService.recognitionLocked -> "●  识别已锁定，仅 Love 手势可以解锁"
-            CameraProbeService.isControlRunning -> "●  手势识别与悬浮控制正在运行"
-            else -> "●  准备就绪，等待启动"
+        status.text = heroStatusText()
+    }
+
+    /** 中央状态环副标题：始终由真实控制与授权状态推导。 */
+    private fun heroStatusText(): String = when {
+        CameraProbeService.recognitionLocked -> "识别已锁定，仅 Love 手势可以解锁"
+        CameraProbeService.isControlRunning -> "点击停止手势控制"
+        !Settings.canDrawOverlays(this) || !isAccessibilityServiceEnabled() -> "需要完成必要授权\n才能使用手势控制"
+        else -> "一键启动手势控制"
+    }
+
+    /**
+     * 授权门控：两项授权没做完时，只保留授权入口，中间的快捷菜单（手势校准/手势映射/保持授权/收藏位置）
+     * 与每日签到卡都隐藏；两项授权齐全后授权按钮区隐藏、菜单与签到卡恢复显示。
+     */
+    private fun applyPermissionGating() {
+        val ready = Settings.canDrawOverlays(this) && isAccessibilityServiceEnabled()
+        if (::setupGuideContainer.isInitialized) {
+            setupGuideContainer.visibility = if (ready) View.GONE else View.VISIBLE
+        }
+        if (::quickAccessRow.isInitialized) {
+            quickAccessRow.visibility = if (ready) View.VISIBLE else View.GONE
+        }
+        if (::checkInCardView.isInitialized) {
+            checkInCardView.visibility = if (ready) View.VISIBLE else View.GONE
         }
     }
 
@@ -878,32 +1253,18 @@ class MainActivity : Activity() {
         if (!::overlayPermissionButton.isInitialized || !::accessibilityPermissionButton.isInitialized) return
         val overlayReady = Settings.canDrawOverlays(this)
         val accessibilityReady = isAccessibilityServiceEnabled()
-        if (::setupGuideContainer.isInitialized) {
-            setupGuideContainer.visibility = if (overlayReady && accessibilityReady) View.GONE else View.VISIBLE
-        }
-        updatePermissionButton(overlayPermissionButton, overlayReady, "悬浮窗权限")
-        updatePermissionButton(accessibilityPermissionButton, accessibilityReady, "无障碍服务")
-        if (::setupStatusText.isInitialized) {
-            if (overlayReady && accessibilityReady) {
-                setupStatusText.text = "✓ 设置已完成\n现在可以启动手势控制，启动成功后 App 会自动隐藏并返回桌面。"
-                setupStatusText.setTextColor(Color.rgb(35, 115, 78))
-                setupStatusText.background = rounded(Color.rgb(232, 249, 240), 14, Color.rgb(177, 226, 199))
-            } else {
-                setupStatusText.text = "请先完成以上两项设置，再启动手势控制。"
-                setupStatusText.setTextColor(Color.rgb(157, 92, 20))
-                setupStatusText.background = rounded(Color.rgb(255, 247, 226), 14, Color.rgb(244, 216, 157))
-            }
-        }
+        applyPermissionGating()
+        updatePermissionButton(overlayPermissionButton, overlayReady, "悬浮窗")
+        updatePermissionButton(accessibilityPermissionButton, accessibilityReady, "无障碍")
     }
 
-    private fun updatePermissionButton(button: Button, ready: Boolean, name: String) {
-        button.text = if (ready) "✓ $name 已开启" else "去开启$name"
-        button.setTextColor(if (ready) Color.rgb(35, 115, 78) else Color.rgb(83, 80, 214))
-        button.background = if (ready) {
-            pressable(Color.rgb(232, 249, 240), Color.rgb(216, 240, 227), 16, Color.rgb(177, 226, 199))
-        } else {
-            pressable(Color.WHITE, Color.rgb(232, 230, 255), 16, Color.rgb(204, 201, 239))
+    /** 未授权显示灰色切片，已授权显示亮色切片；不再用透明度弱化。 */
+    private fun updatePermissionButton(button: View, ready: Boolean, name: String) {
+        val ids = button.tag as? IntArray
+        if (ids != null && button is ImageView) {
+            button.setImageResource(if (ready) ids[0] else ids[1])
         }
+        button.contentDescription = if (ready) "$name 已开启" else "去开启$name"
     }
 
     private fun label(value: String, size: Float, color: Int, bold: Boolean) = TextView(this).apply {
@@ -918,6 +1279,117 @@ class MainActivity : Activity() {
         setColor(fill)
         cornerRadius = dp(radiusDp).toFloat()
         if (stroke != null) setStroke(dp(1), stroke)
+    }
+
+    private fun neonPanel(radiusDp: Int) = rounded(COLOR_SURFACE, radiusDp, COLOR_BORDER)
+
+    /** 纯色圆形徽标底（授权横幅警示符等简单线性图标使用）。 */
+    private fun circleBadge(fill: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fill)
+    }
+
+    private fun oval(fill: Int, stroke: Int, strokeWidthDp: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fill)
+        setStroke(dp(strokeWidthDp), stroke)
+    }
+
+    private fun ovalGradient(colors: IntArray) = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+        shape = GradientDrawable.OVAL
+        gradientType = GradientDrawable.SWEEP_GRADIENT
+    }
+
+    private fun ovalPressable(fill: Int, pressedFill: Int) = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(pressedFill)
+        })
+        addState(intArrayOf(), GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(fill)
+        })
+    }
+
+    private fun controlButtonLabel(icon: String, title: String): CharSequence = SpannableString("$icon\n$title").apply {
+        setSpan(RelativeSizeSpan(1.72f), 0, icon.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** 设计稿主按钮的白色播放三角（就绪态），按 dp 绘制，铺满给定尺寸。 */
+    private fun playIcon(sizeDp: Int = 32): Drawable {
+        val size = dp(sizeDp).toFloat()
+        val path = Path().apply {
+            moveTo(size * 0.10f, size * 0.06f)
+            lineTo(size * 0.94f, size * 0.50f)
+            lineTo(size * 0.10f, size * 0.94f)
+            close()
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        return object : Drawable() {
+            override fun draw(canvas: Canvas) = canvas.drawPath(path, paint)
+            override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+            override fun setColorFilter(colorFilter: ColorFilter?) { paint.colorFilter = colorFilter }
+            // 必须上报固有尺寸，否则 TextView 按 -1 计算复合 drawable 的排版，图标与文字的相对位置会错。
+            override fun getIntrinsicWidth(): Int = dp(sizeDp)
+            override fun getIntrinsicHeight(): Int = dp(sizeDp)
+            @Deprecated("Deprecated in Java")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }.apply { setBounds(0, 0, dp(sizeDp), dp(sizeDp)) }
+    }
+
+    /** 设计稿运行态按钮：深绿圆徽底 + 白色圆角方块（停止符）。 */
+    private fun stopIcon(badgeDp: Int = 52): Drawable {
+        val size = dp(badgeDp).toFloat()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        return object : Drawable() {
+            override fun draw(canvas: Canvas) {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.argb(235, 12, 74, 56)
+                canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+                val side = size * 0.40f
+                paint.color = Color.WHITE
+                canvas.drawRoundRect(
+                    size / 2f - side / 2f, size / 2f - side / 2f,
+                    size / 2f + side / 2f, size / 2f + side / 2f,
+                    side * 0.28f, side * 0.28f, paint
+                )
+            }
+            override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+            override fun setColorFilter(colorFilter: ColorFilter?) { paint.colorFilter = colorFilter }
+            // 必须上报固有尺寸，否则 TextView 按 -1 计算复合 drawable 的排版，图标与文字的相对位置会错。
+            override fun getIntrinsicWidth(): Int = dp(badgeDp)
+            override fun getIntrinsicHeight(): Int = dp(badgeDp)
+            @Deprecated("Deprecated in Java")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }.apply { setBounds(0, 0, dp(badgeDp), dp(badgeDp)) }
+    }
+
+    /**
+     * 未授权时给中央按钮挂上设计稿的 warning.png（原图 1278x1230，必须按 dp 显式缩放，
+     * 否则会按原始像素尺寸撑爆按钮）。
+     */
+    /**
+     * 中央按钮上方的状态图标：就绪=白色播放三角，运行=深绿圆徽停止符，
+     * 未授权=warning.png（原图 1278x1230，由 ImageView 按 dp 缩放，不必再手动 setBounds）。
+     * 图标与标题的间距由它在竖向容器里的 bottomMargin 统一控制（10dp）。
+     */
+    private fun setHeroControlIcon(drawable: Drawable?, sizeDp: Int = 0, spacingDp: Int = 8) {
+        if (!::heroControlIcon.isInitialized) return
+        if (drawable == null) {
+            heroControlIcon.visibility = View.GONE
+            return
+        }
+        heroControlIcon.visibility = View.VISIBLE
+        heroControlIcon.setImageDrawable(drawable)
+        val params = heroControlIcon.layoutParams
+        params.width = dp(sizeDp)
+        params.height = dp(sizeDp)
+        // 图标行与标题的间距按状态给：警示图标画面本身留白大，用 0 让视觉间距与其他状态一致。
+        (params as LinearLayout.LayoutParams).bottomMargin = dp(spacingDp)
+        heroControlIcon.layoutParams = params
     }
 
     private fun margins(bottom: Int = 0, height: Int = LinearLayout.LayoutParams.WRAP_CONTENT) = LinearLayout.LayoutParams(
@@ -1027,6 +1499,28 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             status.text = "●  启动失败：${e.javaClass.simpleName}: ${e.message}"
         }
+    }
+
+    /** 手势做法较长，列表里只放两行，点说明文字弹出完整内容。 */
+    private fun showGestureGuide(title: String, description: String, actionText: (() -> String)?) {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+            if (actionText != null) {
+                addView(label("当前动作：${actionText()}", 13f, COLOR_ACTION, true).apply {
+                    setPadding(0, 0, 0, dp(8))
+                })
+            }
+            // 弹窗是浅色主题（白底），说明文字用深色，不能用深色页面上的浅色文字。
+            addView(label(description, 14f, Color.rgb(55, 63, 81), false).apply {
+                setLineSpacing(dp(3).toFloat(), 1f)
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(panel)
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     private fun showAccessibilityDisclosure() {
