@@ -8,6 +8,12 @@
 
 ## 0. 当前交接摘要（2026-10-05）
 
+> 2026-10-10 设置页拆分阶段（已提交并推送 `V1.0.0`，提交见 §0.4）：
+> - **新增 `GestureMappingActivity`（手势动作映射）**：换绑动作从校准页整块拆出，含按签到批次分组、解锁淡化、动作选择器、“打开应用”选择器（带搜索）。首页主菜单“手势映射”与手势卡整行点击均指向此页。
+> - **新增 `FavoriteLocationActivity`（收藏按钮位置）**：查看/删除已标定的收藏按钮位置，行内显示系统应用图标、横竖屏状态与真实保存时间（`FavoriteButtonProfile.updatedAt`），删除后原地重建列表。
+> - **校准页 `CalibrationActivity` 深色霓虹改造**：背景改用 `ui/切片/bg2.png`（841×1870，已复制为 `drawable-nodpi/calibration_bg2.png`）；开关改为自绘 `NeonSwitch`（原生 `Switch` 会把滑块纵向拉伸成椭圆，已修复）；灵敏度三档、反转左右、识别反馈、冷却（−/滑杆/+）全部点击即生效；映射、收藏位置、功能开关列表（与首页重复）、“保存设置并返回”按钮均已删除；反转左右方向改为点击即写入（`GesturePreferences.saveReverseHorizontal`），说明注明“重新开启手势控制后生效”。
+> - **验证**：`testDebugUnitTest` + `assembleDebug` 通过；真机（ALP-AN00）已验收三个页面的进入路径、开关形状、删除弹窗与反转持久化。待补：收藏位置说明卡的“星星齿轮”光效图标切片（当前为自绘心形占位）、设计稿“6/6”计数口径未确认。
+
 ### 0.1 环境与 Git
 
 - 工程路径：`E:\2026\MagicGesture-v0.9`；Windows / PowerShell；JDK 17、Android SDK 36、Gradle Wrapper 9.3.0。
