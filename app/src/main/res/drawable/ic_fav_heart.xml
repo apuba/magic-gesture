@@ -1,0 +1,10 @@
+<!-- 收藏位置说明卡图标：心形（简单线性图标，按 UI 规范用矢量实现）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,20.3C12,20.3 3.9,15.4 3.9,10A4.6,4.6 0 0,1 12,7.2A4.6,4.6 0 0,1 20.1,10C20.1,15.4 12,20.3 12,20.3Z"
+        android:fillColor="#CA42FF" />
+</vector>
