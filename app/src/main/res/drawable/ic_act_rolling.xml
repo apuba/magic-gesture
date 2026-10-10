@@ -1,0 +1,11 @@
+<!-- 动作：滚动长截图（长条 + 向下箭头）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M8,3.8h8v16.4H8z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.8"
+        android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M12,7.4v7.6M9.6,12.6L12,15l2.4,-2.4"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>

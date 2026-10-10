@@ -1,0 +1,10 @@
+<!-- 动作：自拍（相机）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M4,8.2h3.2L8.8,6h6.4l1.6,2.2H20a1.2,1.2 0 0,1 1.2,1.2v8.2A1.2,1.2 0 0,1 20,19.8H4a1.2,1.2 0 0,1 -1.2,-1.2V9.4A1.2,1.2 0 0,1 4,8.2z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M12,10.6a3.4,3.4 0 1,1 0,6.8a3.4,3.4 0 1,1 0,-6.8"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6" android:fillColor="#00000000" />
+</vector>

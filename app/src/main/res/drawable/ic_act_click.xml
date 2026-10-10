@@ -1,0 +1,9 @@
+<!-- 动作：点击（圆环 + 中心点）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,5.6a6.4,6.4 0 1,1 0,12.8a6.4,6.4 0 1,1 0,-12.8"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.8" android:fillColor="#00000000" />
+    <path android:pathData="M12,10.4a1.6,1.6 0 1,1 0,3.2a1.6,1.6 0 1,1 0,-3.2"
+        android:fillColor="#18D7FF" />
+</vector>

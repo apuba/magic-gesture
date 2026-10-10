@@ -1,0 +1,8 @@
+<!-- 动作：收藏当前内容（五角星）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M12,2.8L14.23,8.93L20.75,9.16L15.61,13.17L17.41,19.44L12,15.8L6.59,19.44L8.39,13.17L3.25,9.16L9.77,8.93Z"
+        android:fillColor="#18D7FF" />
+</vector>

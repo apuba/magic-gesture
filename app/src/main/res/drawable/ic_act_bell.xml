@@ -1,0 +1,10 @@
+<!-- 动作：通知（铃铛）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,4.2a5.2,5.2 0 0,0 -5.2,5.2v4.4L5,16.4h14l-1.8,-2.6V9.4A5.2,5.2 0 0,0 12,4.2z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M10,19a2.2,2.2 0 0,0 4,0"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>

@@ -1,0 +1,8 @@
+<!-- 动作：拖动（四向箭头）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,4.4v15.2M4.4,12h15.2M9.4,7.2L12,4.4l2.6,2.8M9.4,16.8L12,19.6l2.6,-2.8M7.2,9.4L4.4,12l2.8,2.6M16.8,9.4L19.6,12l-2.8,2.6"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>

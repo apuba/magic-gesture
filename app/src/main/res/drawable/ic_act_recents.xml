@@ -1,0 +1,11 @@
+<!-- 动作：最近任务（两个叠放方块）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M10,4.4h9.4v9.4H10z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M4.6,10.2H14v9.4H4.6z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.6"
+        android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>

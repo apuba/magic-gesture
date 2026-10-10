@@ -1,0 +1,9 @@
+<!-- 动作：锁屏（挂锁）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M8.2,11V8.6a3.8,3.8 0 0,1 7.6,0V11"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M6,11h12v8.6H6z"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.8" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>

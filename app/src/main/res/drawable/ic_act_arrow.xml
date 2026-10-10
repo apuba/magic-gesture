@@ -1,0 +1,8 @@
+<!-- 动作：方向基础箭头（向上，其它方向通过旋转复用）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,19.5V5.5M6.6,11L12,5.5L17.4,11"
+        android:strokeColor="#18D7FF" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
