@@ -1,0 +1,20 @@
+<!-- 保持授权说明卡图标：盾牌 + 对勾（简单线性图标，按 UI 规范用矢量实现）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,3.4l7.2,2.9v5.3c0,4.3 -2.9,7.5 -7.2,9.1 -4.3,-1.6 -7.2,-4.8 -7.2,-9.1V6.3z"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M8.8,11.9l2.4,2.4l4.2,-4.6"
+        android:strokeColor="#18D7FF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>
