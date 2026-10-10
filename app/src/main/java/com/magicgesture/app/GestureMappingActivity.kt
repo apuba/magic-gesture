@@ -302,11 +302,22 @@ class GestureMappingActivity : Activity() {
         val defaultLabel = GestureMappingManager.defaultActionOf(code)?.displayLabel() ?: "无动作"
         val current = GesturePreferences.actionOverrides(this)[code]
         val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // 选项最多 27 条，必须放进可滚动容器并限高，否则弹窗会超出屏幕、底部选项点不到。
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(ScrollView(this@GestureMappingActivity).apply { addView(list) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(360)))
+        }
         lateinit var dialog: AlertDialog
         options.forEachIndexed { index, action ->
-            body.addView(
-                dialogRow(action?.displayLabel() ?: "默认（$defaultLabel）", index == checked) {
+            list.addView(
+                dialogRow(
+                    action?.displayLabel() ?: "默认（$defaultLabel）",
+                    index == checked,
+                    actionIcon(action ?: GestureMappingManager.defaultActionOf(code)),
+                    actionRotation(action)
+                ) {
                     dialog.dismiss()
                     val selected = options[index]
                     val effective = selected ?: GestureMappingManager.defaultActionOf(code)
@@ -413,11 +424,54 @@ class GestureMappingActivity : Activity() {
         }
     }
 
-    /** 弹窗内的一行选项：选中项显示青色文字与 ✓。 */
-    private fun dialogRow(label: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
+    /** 每个动作对应的线性图标；全部为自绘矢量，随卡片/弹窗同一套青色。 */
+    private fun actionIcon(action: GestureAction?): Int = when (action) {
+        GestureAction.NONE -> R.drawable.ic_act_none
+        GestureAction.CLICK -> R.drawable.ic_act_click
+        GestureAction.SCROLL_UP, GestureAction.SCROLL_DOWN,
+        GestureAction.SCROLL_LEFT, GestureAction.SCROLL_RIGHT -> R.drawable.ic_act_arrow
+        GestureAction.BACK -> R.drawable.ic_act_back
+        GestureAction.HOME -> R.drawable.ic_act_home
+        GestureAction.RECENTS -> R.drawable.ic_act_recents
+        GestureAction.SCREENSHOT -> R.drawable.ic_act_screenshot
+        GestureAction.ROLLING_SCREENSHOT -> R.drawable.ic_act_rolling
+        GestureAction.DRAG -> R.drawable.ic_act_drag
+        GestureAction.OPEN_APP, GestureAction.OPEN_APP_1, GestureAction.OPEN_APP_2,
+        GestureAction.OPEN_APP_3, GestureAction.OPEN_APP_4 -> R.drawable.ic_act_open_app
+        GestureAction.FAVORITE_CURRENT -> R.drawable.ic_act_heart
+        GestureAction.SELFIE -> R.drawable.ic_act_camera
+        GestureAction.LIKE -> R.drawable.ic_act_thumb
+        GestureAction.CONFIRM -> R.drawable.ic_act_check
+        GestureAction.PLAY_PAUSE -> R.drawable.ic_act_play_pause
+        GestureAction.NOTIFICATIONS -> R.drawable.ic_act_bell
+        GestureAction.LOCK_SCREEN -> R.drawable.ic_act_lock
+        GestureAction.VOICE_ASSISTANT -> R.drawable.ic_act_mic
+        GestureAction.VOLUME_UP -> R.drawable.ic_act_volume_up
+        GestureAction.VOLUME_DOWN -> R.drawable.ic_act_volume_down
+        GestureAction.TOGGLE_MUTE -> R.drawable.ic_act_mute
+        GestureAction.MEDIA_NEXT, GestureAction.MEDIA_PREVIOUS -> R.drawable.ic_act_media_next
+        else -> R.drawable.ic_act_none
+    }
+
+    /** 方向性动作复用同一个箭头/三角图标，靠旋转区分。 */
+    private fun actionRotation(action: GestureAction?): Float = when (action) {
+        GestureAction.SCROLL_DOWN -> 180f
+        GestureAction.SCROLL_LEFT -> -90f
+        GestureAction.SCROLL_RIGHT -> 90f
+        GestureAction.MEDIA_PREVIOUS -> 180f
+        else -> 0f
+    }
+
+    /** 弹窗内的一行选项：左侧动作图标，选中项显示青色文字与 ✓。 */
+    private fun dialogRow(label: String, selected: Boolean, iconRes: Int, iconRotation: Float, onClick: () -> Unit) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(13), dp(10), dp(13), dp(10))
+        setPadding(dp(13), dp(9), dp(13), dp(9))
+        addView(ImageView(this@GestureMappingActivity).apply {
+            setImageResource(iconRes)
+            rotation = iconRotation
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(12) })
         background = pressable(
             rounded(if (selected) Color.argb(110, 24, 116, 220) else Color.argb(120, 10, 28, 58), 12, if (selected) COLOR_CYAN else COLOR_BORDER),
             rounded(Color.argb(190, 24, 62, 110), 12, COLOR_BORDER), 12
