@@ -380,6 +380,10 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(dp(54), dp(57)).apply { marginEnd = dp(7) })
         addView(headerImageAction(R.drawable.header_setting, "设置") {
             startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
+        }.apply {
+            // 产品要求暂时隐藏“设置”入口：校准页入口改由“手势校准”快捷菜单承担。
+            // 需要恢复时删掉下面这行即可。
+            visibility = View.GONE
         }, LinearLayout.LayoutParams(dp(54), dp(57)))
     }
 
