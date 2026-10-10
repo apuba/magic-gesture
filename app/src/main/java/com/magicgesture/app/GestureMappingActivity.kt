@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
@@ -11,13 +12,11 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -57,6 +56,15 @@ class GestureMappingActivity : Activity() {
     )
 
     private val mappingButtons = mutableMapOf<GestureCode, Button>()
+    /** 应用图标解码线程与缓存：图标数量多，不能在主线程取。 */
+    private val iconLoader = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val iconCache = mutableMapOf<String, android.graphics.drawable.Drawable?>()
+
+    override fun onDestroy() {
+        super.onDestroy()
+        iconLoader.shutdownNow()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,6 +226,7 @@ class GestureMappingActivity : Activity() {
      * Selects the target immediately after OPEN_APP is chosen, then saves both as one binding.
      * A search box filters by app label or package name — launchable lists on a real phone run
      * into the hundreds, and the plain single-choice list was unusable there.
+     * 面板与列表全部按深色霓虹风格自绘，取代系统浅色 AlertDialog。
      */
     private fun showAppPicker(code: GestureCode, actionOverride: GestureAction?) {
         val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null)
@@ -225,29 +234,46 @@ class GestureMappingActivity : Activity() {
         val apps = packageManager.queryIntentActivities(intent, 0)
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         val current = GesturePreferences.openAppPackage(this, code)
-        val list = ListView(this).apply { choiceMode = ListView.CHOICE_MODE_SINGLE }
-        var shown = apps
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(rows) }
+        lateinit var dialog: AlertDialog
         fun render(query: String) {
+            rows.removeAllViews()
             val q = query.trim().lowercase()
-            shown = if (q.isEmpty()) apps else apps.filter {
+            val shown = if (q.isEmpty()) apps else apps.filter {
                 it.loadLabel(packageManager).toString().lowercase().contains(q) ||
                     it.activityInfo.packageName.lowercase().contains(q)
             }
-            list.adapter = ArrayAdapter(
-                this,
-                android.R.layout.simple_list_item_single_choice,
-                shown.map { it.loadLabel(packageManager).toString() }
-            )
-            val index = shown.indexOfFirst { it.activityInfo.packageName == current }
-            if (index >= 0) {
-                list.setItemChecked(index, true)
-                list.setSelection(index)
+            if (shown.isEmpty()) {
+                rows.addView(TextView(this@GestureMappingActivity).apply {
+                    text = "没有匹配的应用"
+                    textSize = 13f
+                    setTextColor(TEXT_MUTED)
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(20), 0, dp(20))
+                })
+                return
+            }
+            shown.forEach { resolved ->
+                rows.addView(
+                    appRow(resolved.activityInfo.packageName, resolved.loadLabel(packageManager).toString(), resolved.activityInfo.packageName == current) {
+                        dialog.dismiss()
+                        GesturePreferences.saveOpenAppPackage(this, code, resolved.activityInfo.packageName)
+                        GesturePreferences.setActionOverride(this, code, actionOverride)
+                        mappingButtons[code]?.text = currentActionLabel(code)
+                        Toast.makeText(this, "已绑定：${resolved.loadLabel(packageManager)}", Toast.LENGTH_SHORT).show()
+                    },
+                    rowMargins()
+                )
             }
         }
-        render("")
         val search = EditText(this).apply {
             hint = "搜索应用名称或包名"
             setSingleLine(true)
+            setTextColor(TEXT_PRIMARY)
+            setHintTextColor(TEXT_MUTED)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(Color.argb(120, 10, 28, 58), 12, COLOR_BORDER)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -256,34 +282,15 @@ class GestureMappingActivity : Activity() {
                 override fun afterTextChanged(s: Editable?) = Unit
             })
         }
-        val empty = TextView(this).apply {
-            text = "没有匹配的应用"
-            gravity = Gravity.CENTER
-            setPadding(0, dp(20), 0, dp(20))
-            visibility = View.GONE
-        }
-        val container = LinearLayout(this).apply {
+        val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(4))
+            setPadding(0, dp(12), 0, 0)
             addView(search)
-            addView(list, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(320)))
-            addView(empty)
+            addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(320)).apply { topMargin = dp(10) })
         }
-        list.emptyView = empty
-        lateinit var dialog: AlertDialog
-        list.setOnItemClickListener { _, _, position, _ ->
-            val resolved = shown[position]
-            GesturePreferences.saveOpenAppPackage(this, code, resolved.activityInfo.packageName)
-            GesturePreferences.setActionOverride(this, code, actionOverride)
-            mappingButtons[code]?.text = currentActionLabel(code)
-            Toast.makeText(this, "已绑定：${resolved.loadLabel(packageManager)}", Toast.LENGTH_SHORT).show()
-            dialog.dismiss()
-        }
-        dialog = AlertDialog.Builder(this)
-            .setTitle("${gestureNames.getValue(code)} · 选择要打开的应用")
-            .setView(container)
-            .setNegativeButton("取消", null)
-            .show()
+        dialog = neonDialog("${gestureNames.getValue(code)} · 选择要打开的应用", body)
+        render("")
+        dialog.show()
     }
 
     private fun showActionPicker(code: GestureCode) {
@@ -293,26 +300,145 @@ class GestureMappingActivity : Activity() {
         val selectable = if (code == GestureCode.G26) selectableActions else selectableActions - GestureAction.DRAG
         val options = listOf<GestureAction?>(null) + selectable
         val defaultLabel = GestureMappingManager.defaultActionOf(code)?.displayLabel() ?: "无动作"
-        val labels = options.map { it?.displayLabel() ?: "默认（$defaultLabel）" }.toTypedArray()
         val current = GesturePreferences.actionOverrides(this)[code]
         val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
-        AlertDialog.Builder(this)
-            .setTitle("${gestureNames.getValue(code)} · 选择动作")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                val selected = options[which]
-                val effective = selected ?: GestureMappingManager.defaultActionOf(code)
-                if (effective == GestureAction.OPEN_APP) {
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        lateinit var dialog: AlertDialog
+        options.forEachIndexed { index, action ->
+            body.addView(
+                dialogRow(action?.displayLabel() ?: "默认（$defaultLabel）", index == checked) {
                     dialog.dismiss()
-                    showAppPicker(code, selected)
-                    return@setSingleChoiceItems
-                }
-                GesturePreferences.setActionOverride(this, code, selected)
-                mappingButtons[code]?.text = currentActionLabel(code)
-                Toast.makeText(this, "映射已更新，运行中即时生效", Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
+                    val selected = options[index]
+                    val effective = selected ?: GestureMappingManager.defaultActionOf(code)
+                    if (effective == GestureAction.OPEN_APP) {
+                        showAppPicker(code, selected)
+                        return@dialogRow
+                    }
+                    GesturePreferences.setActionOverride(this, code, selected)
+                    mappingButtons[code]?.text = currentActionLabel(code)
+                    Toast.makeText(this, "映射已更新，运行中即时生效", Toast.LENGTH_SHORT).show()
+                },
+                rowMargins()
+            )
+        }
+        dialog = neonDialog("${gestureNames.getValue(code)} · 选择动作", body)
+        dialog.show()
+    }
+
+    /** 深色霓虹弹窗：自绘面板 + 透明系统背景，取消按钮为描边款。 */
+    private fun neonDialog(titleText: String, body: View): AlertDialog {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+            background = rounded(Color.rgb(8, 28, 58), 20, COLOR_BORDER)
+        }
+        panel.addView(TextView(this).apply {
+            text = titleText
+            textSize = 16f
+            setTextColor(TEXT_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        panel.addView(body)
+        val cancel = TextView(this).apply {
+            text = "取消"
+            textSize = 14.5f
+            setTextColor(COLOR_CYAN)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, dp(11), 0, dp(11))
+            background = pressable(Color.argb(130, 10, 32, 66), Color.argb(190, 24, 62, 110), 12, COLOR_BORDER)
+        }
+        panel.addView(cancel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) })
+        val dialog = AlertDialog.Builder(this).setView(panel).create()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        cancel.setOnClickListener { dialog.dismiss() }
+        dialog.setOnShowListener {
+            dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        return dialog
+    }
+
+    /** 应用选择行：左侧应用图标 + 名称，选中项显示青色文字与 ✓。 */
+    private fun appRow(packageName: String, label: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(9), dp(13), dp(9))
+        background = pressable(
+            rounded(if (selected) Color.argb(110, 24, 116, 220) else Color.argb(120, 10, 28, 58), 12, if (selected) COLOR_CYAN else COLOR_BORDER),
+            rounded(Color.argb(190, 24, 62, 110), 12, COLOR_BORDER), 12
+        )
+        val icon = ImageView(this@GestureMappingActivity).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(Color.argb(120, 13, 42, 86), 10)
+            clipToOutline = true
+            tag = packageName
+        }
+        addView(icon, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(12) })
+        loadAppIcon(packageName, icon)
+        addView(TextView(this@GestureMappingActivity).apply {
+            text = label
+            textSize = 14.5f
+            setTextColor(if (selected) COLOR_CYAN else TEXT_PRIMARY)
+            if (selected) typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (selected) addView(TextView(this@GestureMappingActivity).apply {
+            text = "✓"
+            textSize = 13f
+            setTextColor(COLOR_CYAN)
+            typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
+        setOnClickListener { onClick() }
+    }
+
+    /**
+     * 应用图标在后台线程解码并缓存，避免几百个应用一次性加载卡住主线程；
+     * 取不到图标时保留中性色块占位。
+     */
+    private fun loadAppIcon(packageName: String, target: ImageView) {
+        if (iconCache.containsKey(packageName)) {
+            target.setImageDrawable(iconCache[packageName])
+            return
+        }
+        iconLoader.execute {
+            val drawable = try {
+                packageManager.getApplicationIcon(packageName)
+            } catch (_: Exception) {
+                null
             }
-            .setNegativeButton("取消", null)
-            .show()
+            iconCache[packageName] = drawable
+            mainHandler.post {
+                // 行在搜索重建时会被替换，用 tag 确认仍是同一个应用再设置。
+                if (target.tag == packageName) target.setImageDrawable(drawable)
+            }
+        }
+    }
+
+    /** 弹窗内的一行选项：选中项显示青色文字与 ✓。 */
+    private fun dialogRow(label: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(13), dp(10), dp(13), dp(10))
+        background = pressable(
+            rounded(if (selected) Color.argb(110, 24, 116, 220) else Color.argb(120, 10, 28, 58), 12, if (selected) COLOR_CYAN else COLOR_BORDER),
+            rounded(Color.argb(190, 24, 62, 110), 12, COLOR_BORDER), 12
+        )
+        addView(TextView(this@GestureMappingActivity).apply {
+            text = label
+            textSize = 14.5f
+            setTextColor(if (selected) COLOR_CYAN else TEXT_PRIMARY)
+            if (selected) typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (selected) addView(TextView(this@GestureMappingActivity).apply {
+            text = "✓"
+            textSize = 13f
+            setTextColor(COLOR_CYAN)
+            typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
+        setOnClickListener { onClick() }
+    }
+
+    private fun rowMargins() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        bottomMargin = dp(6)
     }
 
     private fun title(value: String) = TextView(this).apply {
