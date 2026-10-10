@@ -124,9 +124,9 @@ class FavoriteLocationActivity : Activity() {
         addView(FrameLayout(this@FavoriteLocationActivity).apply {
             background = rounded(Color.argb(120, 24, 8, 48), 99)
             addView(ImageView(this@FavoriteLocationActivity).apply {
-                setImageResource(R.drawable.ic_fav_heart)
+                setImageResource(R.drawable.favorite)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(9), dp(9), dp(9), dp(9))
+                setPadding(dp(6), dp(6), dp(6), dp(6))
             }, FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER))
         }, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(12) })
         addView(LinearLayout(this@FavoriteLocationActivity).apply {
