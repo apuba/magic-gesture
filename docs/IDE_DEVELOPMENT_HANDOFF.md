@@ -137,12 +137,12 @@
 
 ### 0.6 产物
 
-> Release 产物已于 2026-10-06 重建，包含首启隐私政策同意门与 G35 拇指判定收紧；Debug 仍为 G35 修复后的产物。下列为当前最新产物。
+> Release APK 与 AAB 已于 **2026-10-10** 由 HEAD `16d04a8` 重建（1.0.0/10），包含设置页拆分、首页/校准页/保持授权页深色霓虹改版、手势动作图标矢量集合等改动；Debug 仍为 G35 修复后的产物。下列为当前最新产物。
 
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，51,501,461 字节，SHA-256 `C5B3D40E8BEE86FD60D7C7BDA4924D4D198024589233E87DF2A1D270D68028DE`；2026-10-06 已覆盖安装到荣耀 ALP-AN00，包含 G35 真机通过版本、签到页面修复及隐私页面在线按钮移除。
-- Release APK：`app/build/outputs/apk/release/app-release.apk`，**49,313,594 字节**，SHA-256 `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339`，正式 Release 签名（`CN=Magic Gesture`），16KB 对齐通过，权限仅 `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`。
-- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，**37,329,746 字节**，SHA-256 `1AD1E2C4811F52B87F6B713122541218CA09BB52723DEAEAF0AF908B8643E8E5`，正式 Release 签名。
-- 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；Release APK/AAB 于 2026-10-06 重建，**尚未安装到真机，未提交应用市场**。
+- Release APK：`app/build/outputs/apk/release/app-release.apk`，**56,975,586 字节（1.0.0/10）**，SHA-256 `2C2E03E2C057A74BB8E088512D1C953CC53EF893DD81932F7A3322F44D386092`，2026-10-10 14:42 由 HEAD `16d04a8` 重建；正式 Release 签名（`CN=Magic Gesture`，证书 SHA-256 `98efd9db…`），v2 签名有效、16KB 对齐通过，权限仅 `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`（另有无障碍服务绑定）。**这是当前各渠道上架要提交的包**（荣耀即将提交，华为为 0.9.0(9) 升级目标）。
+- Release AAB：`app/build/outputs/bundle/release/app-release.aab`，**44,977,957 字节**，SHA-256 `BB0A456E8F91AC9412512E719966CF23A789D0E3564C0861FA31618CEF17BBD`，2026-10-10 14:47 由 HEAD `16d04a8` 重建，正式 Release 签名。
+- 三个产物均只含 `arm64-v8a` 与 `armeabi-v7a`；当前 Release APK **尚未安装到真机**，也未提交荣耀/小米/腾讯渠道（华为线上为更早的 0.9.0(9)）。
 - 已失效的旧产物，不要再引用：Debug `668ADC6D…`（72,794,792 字节，含 x86）、Debug `CBC2AF7E…`（72,794,706 字节）、Release `A39BA70F…`（70,607,192 字节，含 x86）、Release `26A1393F…`（49,313,418 字节，签到改造前）、AAB `D2443784…`（45,882,341 字节，含 x86）、AAB `9B85B202…`（37,327,422 字节，签到改造前）、Release `BDAFB9C1…`（49,313,418 字节）、AAB `8E23A279…`（37,327,720 字节，均不含首启隐私政策同意门与 G35 修复）。
 - 注意：Debug APK 体积从 72,794,706 字节降到 51,271,022 字节，与 Release 减少幅度一致，说明此前那次 Debug 打包并未真正应用 `x86` 排除规则；以当前产物为准。
 
@@ -160,7 +160,8 @@
 - ~~Release APK 尚未装机复验~~ **已于 2026-10-06 完成**：卸载 Debug 后安装 `0408B95E…`，首启同意门、正式包解锁状态、识别链路与签到解锁均由产品负责人验收通过。AAB 不做装机（Google Play 由 AAB 分发，已在构建与静态校验层面通过）。当前设备装的是 Release 正式包，若需回到全开权益的调试环境，须卸载后重安装最新 Debug APK 并重新授权。
 - 公开主体没有显示个人法定姓名。Google Play 方向可使用公开开发者名称和隐私联系渠道；国内市场若要求公开个人信息处理者实名，须按目标市场审核反馈处理。
 - 继续逐家确认 Google Play、华为、小米、OPPO、vivo 对无障碍、后台前置摄像头和悬浮窗的准入与材料要求。
-- **华为渠道（2026-10-06）**：新增 `docs/huawei-appgallery-submission-checklist.md`，包含后台逐页填写稿、素材清单、驳回应对与包体自查；Release APK 已实测（签名 v2 有效 `CN=Magic Gesture`、权限 5 项无网络权限、ABI `arm64-v8a`+`armeabi-v7a`、16KB 对齐通过、SHA-256 `0408B95E…`），`docs/huawei-permission-statement.md` 追加 §7 包体自查表。仍阻塞：开发者实名、APP 备案、软著，以及后台上传与提交动作必须由账号主体完成；华为横幅尺寸未核对，审核视频 578×1280 低于 720p 可能被要求重录。
+- **华为渠道（2026-10-06）**：新增 `docs/huawei-appgallery-submission-checklist.md`，包含后台逐页填写稿、素材清单、驳回应对与包体自查；Release APK 已实测（签名 v2 有效 `CN=Magic Gesture`、权限 5 项无网络权限、ABI `arm64-v8a`+`armeabi-v7a`、16KB 对齐通过、SHA-256 `0408B95E…`），`docs/huawei-permission-statement.md` 追加 §7 包体自查表。仍阻塞：开发者实名、APP 备案、软著，以及后台上传与提交动作必须由账号主体完成；华为横幅尺寸未核对，审核视频 578×1280 低于 720p 可能被要求重录。**后续：2026-10-07 提交、2026-10-08 审核通过并上架（0.9.0(9)）**，详见 `docs/huawei-appgallery-submission-checklist.md` §5.1。
+- **各渠道版本刷新与荣耀进度（2026-10-10）**：Release APK/AAB 已用 HEAD `16d04a8` 重建为 **1.0.0（versionCode 10）**，APK 56,975,586 字节 / SHA-256 `2C2E03E2…`、AAB 44,977,957 字节 / SHA-256 `BB0A456E…`，签名证书与指纹不变（`CN=Magic Gesture`）。荣耀、华为、小米、腾讯四份上架清单的包体事实与版本更新说明已同步，统一文案见 `docs/store-listing-form-answers.md` §0.5。**荣耀开发者账号已于 2026-10-10 审核通过，下一个提交渠道是荣耀应用市场**（清单见 `docs/honor-store-submission-checklist.md`）。华为线上仍为 0.9.0(9)，需按华为清单 §5.1 走 1.0.0 升级。**UI 已改版（设置页拆分为映射/收藏位置/校准三页、首页与校准页深色霓虹），`9x16/` 现有 7 张商店截图全部过期，上架前必须用荣耀 ALP-AN00 真机重截。**
 - ~~ABI 与 Google Play 64 位配对要求~~ **已处理**：`x86` 已移除，产物仅含 `arm64-v8a` 与 `armeabi-v7a`；详见 §0.5.1。保留 `armeabi-v7a` 是决策取舍而非疏漏，若以后决定只上 64 位 ARM 另需产品确认。
 - ~~商店截图与应用图标~~ **已于 2026-10-06 全部产出**：7 张 1080×1920 截图（含自拍倒计时悬浮反馈）、4 个尺寸图标、Google Play 特色图 1024×500 正式稿已就位，清单见 `docs/APP_STORE_REVIEW_GUIDE.md` §7.1；素材目录在工作区之外 `E:\2026\MagicGesture-store-screens\`，不随 Git 提交。截图仍须按隐私要求逐张复核后才能上传。**审核演示视频已录制并复核通过，决定按原片直接上传**（82 秒、578×1280、音轨静音，内容覆盖同意弹窗拒绝路径、披露、系统授权、跨 App 操作与停止收尾）。中文特色图 master（霓虹风格）已更新并重新导出 1024×500；英文版横幅仅留作以后海外渠道使用。**适龄分级、各市场权限声明尚未完成**；国内渠道横幅尺寸未核对。**2026-10-08 截图逐张隐私复核完成：仅 `07-selfie-countdown.jpg` 合格，其余 6 张因状态栏个人信息（05 另含第三方 App 图标、06 另含第三方网站与标签数）须按 `docs/APP_STORE_REVIEW_GUIDE.md` §7.2 重截后上传。**
 
@@ -545,7 +546,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 ### 6.1 P0：发布前剩余验收与材料
 
 1. **高质量自拍剩余性能与失败回退验收**：主要功能已于 2026-10-04 在荣耀真机通过（证据见 `GESTURE_REALTIME_ACCEPTANCE.md` §6.5）；仍需记录保存耗时、内存峰值和连续连拍表现，并在真机触发“高质量捕获失败 → 自动保存预览帧”的降级路径。目前该降级只有代码与 JVM 覆盖。
-2. **补齐不同品牌的授权引导**：荣耀／华为已真机实测；**小米／Redmi 已于 2026-10-07 补充**（`KeepAuthorizationActivity.detectScheme()` 依据 MIUI/澎湃OS 公开设置路径整理并注明未经真机验证）；OPPO、vivo 的悬浮窗、无障碍、通知及后台运行引导仍待补充并真机核对。注意：小米方案改动后**未重建 Release 产物**，华为审核中的仍是 `0408B95E…` 版 APK，小米提交前须用当前代码重建。
+2. **补齐不同品牌的授权引导**：荣耀／华为已真机实测；**小米／Redmi 已于 2026-10-07 补充**（`KeepAuthorizationActivity.detectScheme()` 依据 MIUI/澎湃OS 公开设置路径整理并注明未经真机验证）；OPPO、vivo 的悬浮窗、无障碍、通知及后台运行引导仍待补充并真机核对。注意：~~小米方案改动后未重建 Release 产物，华为审核中的仍是 `0408B95E…` 版 APK~~ **已于 2026-10-10 解决**：Release APK/AAB 已用 HEAD `16d04a8` 重建为 1.0.0(10)（APK 56,975,586 字节 / SHA-256 `2C2E03E2…`），各渠道清单均已刷新。
 3. **建立真机录制样本回放**：现有回放主要使用程序合成关键点；后续阈值调整应补充真机录制样本，保留误触现场并形成可重复回归，不能用合成样本替代真机验收。
 
 ### 6.2 P1：当前待开发安全优化
@@ -587,7 +588,7 @@ D:\Android\Sdk\platform-tools\adb.exe devices    # adb 不在 PATH，用完整�
 D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-最近一次发布产物（2026-10-06 重建，含首启隐私政策同意门与 G35 拇指判定收紧）：`app\build\outputs\apk\release\app-release.apk`（49,313,594 字节，SHA-256 `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339`）与 `app\build\outputs\bundle\release\app-release.aab`（37,329,746 字节，SHA-256 `1AD1E2C4811F52B87F6B713122541218CA09BB52723DEAEAF0AF908B8643E8E5`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不含 32 位 `x86`（详见 §0.5.1）；权限仅相机、前台服务、通知与悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；正式 Release 签名有效（`CN=Magic Gesture`），`zipalign -c -P 16 4` 16KB 对齐通过。两个产物均**尚未安装到真机**，也未提交应用市场。
+最近一次发布产物（**2026-10-10 由 HEAD `16d04a8` 重建**，1.0.0/versionCode 10，含设置页拆分与深色霓虹 UI 改版）：`app\build\outputs\apk\release\app-release.apk`（**56,975,586 字节**，SHA-256 `2C2E03E2C057A74BB8E088512D1C953CC53EF893DD81932F7A3322F44D386092`）与 `app\build\outputs\bundle\release\app-release.aab`（**44,977,957 字节**，SHA-256 `BB0A456E8F91AC9412512E719966CF23A789D0E3564C0861FA31618CEF17BBD`）。原生库只含 `arm64-v8a` 与 `armeabi-v7a`，不含 32 位 `x86`（详见 §0.5.1）；权限仅相机、前台服务、通知与悬浮窗，不含 `INTERNET`/`ACCESS_NETWORK_STATE`；正式 Release 签名有效（`CN=Magic Gesture`，证书 SHA-256 `98efd9db…`），v2 签名有效，`zipalign -c -P 16 4` 16KB 对齐通过。APK **尚未安装到真机**；华为线上是更早的 0.9.0(9)，1.0.0(10) 待作为升级提交，荣耀/小米/腾讯渠道尚未提交。
 
 最新 Debug APK（51,271,022 字节，SHA-256 `FEB2F339472F5BB745C8D989CF0635BCA53623A1677D0E13E36E1B25919651B8`）已构建但**设备离线，尚未安装**；设备恢复连接后需要重新装机验证签到反馈，并另行安装 Release APK 做正式包复验。
 

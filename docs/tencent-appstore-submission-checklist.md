@@ -1,13 +1,13 @@
-# 腾讯应用宝上架执行清单（V0.9）
+# 腾讯应用宝上架执行清单（V1.0 / versionCode 10）
 
-> 应用宝是国内第三方应用商店中月活最高的渠道（艾媒 2022 年度应用分发类 APP 榜单第 2，仅次于苹果 App Store，位列所有手机厂商商店之前）。本渠道复用华为已上架的同一 APK、签名、备案号与文案。
+> 应用宝是国内第三方应用商店中月活最高的渠道（艾媒 2022 年度应用分发类 APP 榜单第 2，仅次于苹果 App Store，位列所有手机厂商商店之前）。本渠道复用华为同一签名、备案号与文案，提交**当前最新 1.0.0(10) 包**（华为线上为更早的 0.9.0(9)）。
 > 后台规范以后台当页为准；通用事实卡见 `docs/store-listing-form-answers.md`，敏感权限文案见 `docs/huawei-permission-statement.md`。
 
 ## 1. 已具备的材料
 
 | 材料 | 内容 |
 |---|---|
-| APK | `app\build\outputs\apk\release\app-release.apk`（49,313,594 字节，0.9.0/9，签名 v2） |
+| APK | `app\build\outputs\apk\release\app-release.apk`（56,975,586 字节，1.0.0/10，签名 v2） |
 | 签名指纹 | MD5 `e26b95ecd7c5711b5753f2082279159b`、SHA‑1 `a5a0e143…`、SHA‑256 `98efd9db…`、公钥 1024 位十六进制 |
 | 隐私政策 | `https://magicgesture.mt4000.com/privacy-policy.html` |
 | APP 备案 | 腾讯云办理（侯兴章，个人），备案号全国通用 |
@@ -37,7 +37,7 @@
 | 关键词 | 隔空手势、手势控制、免触控、悬浮窗控制、无障碍、隔空截图、隔空自拍、媒体控制 |
 | 图标/截图 | 按后台当页规格上传（已备 512/1024 图标与 1080×1920 截图） |
 
-文案复用 `docs/APP_STORE_REVIEW_GUIDE.md` §7.5 的完整描述与首版更新说明。
+文案复用 `docs/APP_STORE_REVIEW_GUIDE.md` §7.5 的完整描述；**版本更新说明改用 `docs/store-listing-form-answers.md` §0.5 的文案 A**（1.0.0 首发版本，旧的首版 0.9.0 文案已过期）。
 
 ## 4. 权限说明
 

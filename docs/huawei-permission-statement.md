@@ -106,8 +106,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 上传文件 | `app/build/outputs/apk/release/app-release.apk`，49,313,594 字节 |
-| 文件 SHA-256 | `0408B95E7357F6D570F2D406295E91B4DE17E4CAC962556A691AE97DEA043339` |
+| 上传文件 | `app/build/outputs/apk/release/app-release.apk`，56,975,586 字节（2026-10-10 由 HEAD `16d04a8` 重建，1.0.0/10） |
+| 文件 SHA-256 | `2C2E03E2C057A74BB8E088512D1C953CC53EF893DD81932F7A3322F44D386092` |
 | 签名证书 | `CN=Magic Gesture, OU=Mobile, O=Magic Gesture, L=Shanghai, ST=Shanghai, C=CN` |
 | 证书 SHA-256 | `98efd9dbe4586388fb81a4e6187a37e7d1dda5db01c219f5f0163f76cb61348e` |
 | 签名方案 | v2 通过；v1 为 false（minSdk 26 不需要） |

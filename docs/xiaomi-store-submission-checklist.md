@@ -8,7 +8,7 @@
 
 | 材料 | 来源 | 是否可直接用 |
 |---|---|---|
-| 正式签名 APK | `app\build\outputs\apk\release\app-release.apk`（大小待重新构建后更新，1.0.0/10） | ✅ 同一包，签名 v2 |
+| 正式签名 APK | `app\build\outputs\apk\release\app-release.apk`（56,975,586 字节，1.0.0/10，2026-10-10 由 HEAD `16d04a8` 重建，签名 v2） | ✅ 同一包，签名 v2 |
 | 签名指纹 | MD5 `e26b95ecd7c5711b5753f2082279159b`、SHA‑1 `a5a0e143…`、SHA‑256 `98efd9db…`、公钥 1024 位十六进制 | ✅ |
 | 隐私政策 | `https://magicgesture.mt4000.com/privacy-policy.html` | ✅ |
 | 个人信息/SDK 清单 | `docs/store-listing-form-answers.md` §2.1 §2.2 | ✅ 口径一致 |
@@ -51,7 +51,7 @@
 ### 4.2 文案
 
 - 一句话简介：用前置摄像头在本机识别手势，隔空完成光标、点击、滑动、返回、截图与媒体控制。
-- 完整描述、版本更新说明：直接复用 `docs/APP_STORE_REVIEW_GUIDE.md` §7.5 的完整描述草案与首版更新说明（含无障碍能力说明段落，小米同样要求描述与实际一致）。
+- 完整描述：复用 `docs/APP_STORE_REVIEW_GUIDE.md` §7.5 的完整描述草案（含无障碍能力说明段落，小米同样要求描述与实际一致）；**版本更新说明改用 `docs/store-listing-form-answers.md` §0.5 的文案 A**（1.0.0 首发版本，旧的首版 0.9.0 文案已过期）。
 
 ### 4.3 关键词（≤8 个，小米特有）
 
