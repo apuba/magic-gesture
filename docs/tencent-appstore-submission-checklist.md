@@ -21,7 +21,7 @@
 | 1 | 腾讯开放平台账号 | 用 **QQ 登录**（应用宝走 QQ 体系，不是微信） |
 | 2 | 个人实名认证 | ✅ **个人开发者受支持**：身份证 + **人脸校验** + **本人手持身份证照片** |
 | 3 | APP 备案号 | 已办理，直接填 |
-| 4 | 软著 | 视后台要求 |
+| 4 | 软著 | 材料已备（2026-10-11）：个人主体，源程序 60 页 + 用户手册 19 页 PDF 已生成，填写稿与流程见 `docs/software-copyright.md`；**待本人完成实名、在线填报并提交**，下证后回填本后台 |
 
 入口：`https://open.tencent.com/`，开发者中心 `https://open.tencent.com/developer/center`
 （备用域名：`https://app.open.qq.com/`、`https://open.qq.com/app_plus`）
