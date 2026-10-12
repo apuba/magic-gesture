@@ -44,7 +44,7 @@
 | 签名方案 | v2 通过；v1 为 false（minSdk 26 不需要）、v3/v3.1/v4 为 false |
 | 包名 / 版本 | `com.magicgesture.app` / `versionCode=10` / `versionName=1.0.0` |
 | minSdk / targetSdk | 26 / 36（compileSdk 36） |
-| 权限 | `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`（另有无障碍服务绑定） |
+| 权限 | `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`、`MODIFY_AUDIO_SETTINGS`（另有无障碍服务绑定） |
 | 网络权限 | **无** `INTERNET`、**无** `ACCESS_NETWORK_STATE` |
 | ABI | `arm64-v8a`、`armeabi-v7a`（32/64 位配对完整，无 `x86`） |
 | 16KB 对齐 | `zipalign -c -P 16 4` 通过 |

@@ -107,7 +107,8 @@
 
 - `testDebugUnitTest assembleDebug assembleRelease bundleRelease lintRelease --rerun-tasks`：成功，124/124 JVM 测试通过。
 - 入口改为首页最下方文字链接后再次执行 `testDebugUnitTest assembleDebug`：成功，124/124 JVM 测试通过；`git diff --check` 通过，仅有 Windows LF→CRLF 提示。
-- Release APK 最终权限：仅 `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`；不含 `INTERNET` 或 `ACCESS_NETWORK_STATE`。
+- Release APK 最终权限：仅 `CAMERA`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CAMERA`、`POST_NOTIFICATIONS`、`SYSTEM_ALERT_WINDOW`；不含 `INTERNET` 或 `ACCESS_NETWORK_STATE`。（**2026-10-10 起新增 `MODIFY_AUDIO_SETTINGS`**，见 §0.5.2；上一句描述的是 HEAD `16d04a8` 产物，含媒体动作修复的新包必须重建后再引用此行结论。）
+- **vivo Y35 媒体动作修复（2026-10-10，代码完成、`testDebugUnitTest` 与 `assembleDebug` 通过，真机未验收）**：补声明 `MODIFY_AUDIO_SETTINGS`；静音改为音量归零/恢复；音量写入回读校验 + 单步兜底；播放/暂停校验改为“按键前后状态是否变化”，并给唤起音乐应用加 10 秒节流。详见 `docs/REQUIREMENTS_CHANGELOG.md` 2026-10-10 条目。
 - Release APK：v2 签名验证通过；16KB 页面兼容对齐检查通过。
 - `git diff --check`：通过，仅有 Windows LF→CRLF 提示。
 - 已核对 Debug/Release Manifest 包含未导出的 `PrivacyPolicyActivity`，两种构建均包含 `privacy_policy` 原始资源。
@@ -135,6 +136,20 @@
 - **保留 `armeabi-v7a` 的原因**：仍有一定量的老旧 32 位 ARM 设备，保留它不影响 64 位合规，只是体积代价。若后续决定极致瘦身，可再评估是否只保留 `arm64-v8a`。
 - 本轮未改 Manifest 与依赖，Release APK 权限集合保持不变（相机、前台服务、通知、悬浮窗）。
 
+### 0.5.2 媒体动作执行层修复（vivo Y35 真机反馈，2026-10-10）
+
+真机现象：小指静音报“动作执行失败”；播放/暂停每次都表现为播放；音量手势无效。三处都在执行层（`CameraProbeService`），判定层与绑定未动。
+
+| 现象 | 原实现 | 现在 |
+|---|---|---|
+| 静音失败 | `isStreamMute()` + `ADJUST_MUTE/UNMUTE`，厂商音频服务接受调用但不发布 mute 位 | 静音＝媒体音量置 0 并记住原值；取消静音＝恢复原值（原本为 0 时恢复到约 40% 量程）；结果以读回音量为准 |
+| 音量不动 | `setStreamVolume` 后直接报成功，写入被设备忽略时无从发现 | 写后回读，未生效则 `adjustStreamVolume` 单步兜底，仍不动才按键兜底并如实报失败；持续音量会话写入失败立即结束并报失败 |
+| 只会播放 | 只判断“按完之后有没有声音”，暂停成功也会被当成播放失败并唤起音乐 App 补播 | 比较按键前后可听状态（是否播放 + 系统活跃播放数），状态变化即认为按键已送达；仅“前后都没变化且之前没在播放”才唤起音乐 App，且 10 秒内最多一次 |
+
+另补声明 `MODIFY_AUDIO_SETTINGS`（normal 级）：写系统音量/静音需要它，厂商 AudioService 可能校验，缺失时写入被静默忽略。权限文案已同步到 `huawei-permission-statement.md` §3、`PRIVACY_POLICY.md`、`APP_STORE_REVIEW_GUIDE.md`、`store-listing-form-answers.md` 与荣耀/华为清单。
+
+验证层级：`testDebugUnitTest` 与 `assembleDebug` 通过；**vivo Y35 真机尚未验收**。若“音量不动”是识别层（G31/G32 未触发）而非执行层，logcat 中应看不到 `volume hold up/down start` 与 `setStreamVolume:` 两行，此时需回到 `GestureEngine` 的两指机器排查。
+
 ### 0.6 产物
 
 > Release APK 与 AAB 已于 **2026-10-10** 由 HEAD `16d04a8` 重建（1.0.0/10），包含设置页拆分、首页/校准页/保持授权页深色霓虹改版、手势动作图标矢量集合等改动；Debug 仍为 G35 修复后的产物。下列为当前最新产物。
@@ -161,7 +176,7 @@
 - 公开主体没有显示个人法定姓名。Google Play 方向可使用公开开发者名称和隐私联系渠道；国内市场若要求公开个人信息处理者实名，须按目标市场审核反馈处理。
 - 继续逐家确认 Google Play、华为、小米、OPPO、vivo 对无障碍、后台前置摄像头和悬浮窗的准入与材料要求。
 - **华为渠道（2026-10-06）**：新增 `docs/huawei-appgallery-submission-checklist.md`，包含后台逐页填写稿、素材清单、驳回应对与包体自查；Release APK 已实测（签名 v2 有效 `CN=Magic Gesture`、权限 5 项无网络权限、ABI `arm64-v8a`+`armeabi-v7a`、16KB 对齐通过、SHA-256 `0408B95E…`），`docs/huawei-permission-statement.md` 追加 §7 包体自查表。仍阻塞：开发者实名、APP 备案、软著，以及后台上传与提交动作必须由账号主体完成；华为横幅尺寸未核对，审核视频 578×1280 低于 720p 可能被要求重录。**后续：2026-10-07 提交、2026-10-08 审核通过并上架（0.9.0(9)）**，详见 `docs/huawei-appgallery-submission-checklist.md` §5.1。
-- **各渠道版本刷新与荣耀进度（2026-10-10）**：Release APK/AAB 已用 HEAD `16d04a8` 重建为 **1.0.0（versionCode 10）**，APK 56,975,586 字节 / SHA-256 `2C2E03E2…`、AAB 44,977,957 字节 / SHA-256 `BB0A456E…`，签名证书与指纹不变（`CN=Magic Gesture`）。荣耀、华为、小米、腾讯四份上架清单的包体事实与版本更新说明已同步，统一文案见 `docs/store-listing-form-answers.md` §0.5。**荣耀开发者账号已于 2026-10-10 审核通过，下一个提交渠道是荣耀应用市场**（清单见 `docs/honor-store-submission-checklist.md`）。华为线上仍为 0.9.0(9)，需按华为清单 §5.1 走 1.0.0 升级。**UI 已改版（设置页拆分为映射/收藏位置/校准三页、首页与校准页深色霓虹），`9x16/` 现有 7 张商店截图全部过期，上架前必须用荣耀 ALP-AN00 真机重截。**
+- **各渠道版本刷新与荣耀进度（2026-10-10）**：Release APK/AAB 已用 HEAD `16d04a8` 重建为 **1.0.0（versionCode 10）**，APK 56,975,586 字节 / SHA-256 `2C2E03E2…`、AAB 44,977,957 字节 / SHA-256 `BB0A456E…`，签名证书与指纹不变（`CN=Magic Gesture`）。荣耀、华为、小米、腾讯四份上架清单的包体事实与版本更新说明已同步，统一文案见 `docs/store-listing-form-answers.md` §0.5。**荣耀开发者账号已于 2026-10-10 审核通过，下一个提交渠道是荣耀应用市场**（清单见 `docs/honor-store-submission-checklist.md`）。**软著材料（2026-10-11）**：个人主体，源程序 60 页与用户手册 19 页 PDF 已生成于 `E:\2026\MagicGesture-store-screens\软著材料\`（生成脚本同目录），申请表逐字段填写稿见 `docs/software-copyright.md`；仍需本人完成实名认证、在线填报与提交，下证后方可用于应用宝等渠道。华为线上仍为 0.9.0(9)，需按华为清单 §5.1 走 1.0.0 升级。**UI 已改版（设置页拆分为映射/收藏位置/校准三页、首页与校准页深色霓虹），`9x16/` 现有 7 张商店截图全部过期，上架前必须用荣耀 ALP-AN00 真机重截。**
 - ~~ABI 与 Google Play 64 位配对要求~~ **已处理**：`x86` 已移除，产物仅含 `arm64-v8a` 与 `armeabi-v7a`；详见 §0.5.1。保留 `armeabi-v7a` 是决策取舍而非疏漏，若以后决定只上 64 位 ARM 另需产品确认。
 - ~~商店截图与应用图标~~ **已于 2026-10-06 全部产出**：7 张 1080×1920 截图（含自拍倒计时悬浮反馈）、4 个尺寸图标、Google Play 特色图 1024×500 正式稿已就位，清单见 `docs/APP_STORE_REVIEW_GUIDE.md` §7.1；素材目录在工作区之外 `E:\2026\MagicGesture-store-screens\`，不随 Git 提交。截图仍须按隐私要求逐张复核后才能上传。**审核演示视频已录制并复核通过，决定按原片直接上传**（82 秒、578×1280、音轨静音，内容覆盖同意弹窗拒绝路径、披露、系统授权、跨 App 操作与停止收尾）。中文特色图 master（霓虹风格）已更新并重新导出 1024×500；英文版横幅仅留作以后海外渠道使用。**适龄分级、各市场权限声明尚未完成**；国内渠道横幅尺寸未核对。**2026-10-08 截图逐张隐私复核完成：仅 `07-selfie-countdown.jpg` 合格，其余 6 张因状态栏个人信息（05 另含第三方 App 图标、06 另含第三方网站与标签数）须按 `docs/APP_STORE_REVIEW_GUIDE.md` §7.2 重截后上传。**
 
