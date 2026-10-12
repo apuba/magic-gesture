@@ -26,6 +26,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
+import android.annotation.SuppressLint
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -1483,7 +1484,14 @@ class MainActivity : Activity() {
         registerRecognitionLockReceiver()
     }
 
-    /** 只在本应用内接收锁状态广播；Android 13+ 必须显式声明不导出。 */
+    /**
+     * 只在本应用内接收锁状态广播；Android 13+ 必须显式声明不导出。
+     *
+     * Lint 的 UnspecifiedRegisterReceiverFlag 无法识别 SDK_INT 分支，会去检查 API 32 及以下才用到的
+     * 三参数重载并报 Error 阻断 Release 构建。低版本上该重载本来就不需要 flag，运行时行为是对的，
+     * 因此就地抑制，不为了 lint 引入 androidx.core 依赖。
+     */
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerRecognitionLockReceiver() {
         if (recognitionLockReceiverRegistered) return
         val filter = IntentFilter(CameraProbeService.ACTION_RECOGNITION_LOCK_CHANGED)
