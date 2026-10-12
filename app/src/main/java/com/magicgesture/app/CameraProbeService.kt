@@ -623,10 +623,14 @@ class CameraProbeService : Service() {
     }
     /**
      * 结束自拍冻结：恢复识别并清空引擎状态，倒计时期间的任何手部动作都不会在恢复后被补触发。
+     *
+     * 必须用 resumeExclusive() 而不是 resetTracking()：只有前者解除 recognitionPaused 闸门。
+     * 自拍失败不会进入冷却，也就走不到冷却结束时的 resume()；闸门一旦留下就会永久生效，
+     * 之后所有手势（包括解锁用的 Love 手势）都会失效，只能重启服务。
      */
     private fun endSelfieFreeze() {
         selfieInProgress = false
-        pipeline?.resetTracking()
+        pipeline?.resumeExclusive()
     }
 
     private fun captureSelfie(callback: (Boolean) -> Unit) {
@@ -645,7 +649,9 @@ class CameraProbeService : Service() {
         mainHandler.postDelayed({
             val activePipeline = pipeline
             if (stopped || activePipeline == null) {
-                selfieInProgress = false
+                // Same cleanup path as a finished capture: the countdown already froze recognition,
+                // and the frozen state must not survive an abandoned selfie.
+                endSelfieFreeze()
                 callback(false)
                 return@postDelayed
             }

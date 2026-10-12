@@ -98,6 +98,26 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
         recognitionPaused.set(true)
         engine.stop()
     }
+    /**
+     * Ends an exclusive freeze started by [pause] and hands recognition back.
+     *
+     * [resetTracking] deliberately keeps [recognitionPaused] set: it is also called on a display
+     * rotation, which may happen while a cooldown or a rolling screenshot owns the freeze, and
+     * lifting the gate there would let gestures through in the middle of an exclusive operation.
+     * A selfie is different. It owns the freeze from the countdown to the saved file, and a failed
+     * capture never reaches the cooldown path that would otherwise resume the pipeline — leaving
+     * this gate set would silently kill every gesture for the rest of the service's life.
+     *
+     * The hand selector is still reset because a selfie lasts seconds and the hand in front of the
+     * camera when recognition returns is not the hand that asked for the photo.
+     */
+    @Synchronized fun resumeExclusive() {
+        activeHandSelector.reset()
+        engine.stop()
+        engine.resume()
+        lastResultAt = SystemClock.uptimeMillis()
+        recognitionPaused.set(false)
+    }
     /** Routes per-frame engine diagnostics to a sink (logcat) so thresholds can be tuned on device. */
     fun setDiag(sink: ((String) -> Unit)?) { engine.diag = sink }
     @Synchronized fun resetTracking() { activeHandSelector.reset(); engine.stop(); engine.resume() }
