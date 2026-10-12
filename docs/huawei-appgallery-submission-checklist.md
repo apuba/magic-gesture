@@ -30,15 +30,15 @@
 - 审核演示视频为 578×1280，低于 720p；若后台校验分辨率或码率，需按 `docs/review-video-script.md` 重录。
 - 公开隐私政策未显示个人法定姓名，仅使用「魔法手势开发者（个人开发者）」与联系邮箱 `3603317@qq.com`；若华为要求公开个人信息处理者实名，须按审核反馈处理。
 
-## 2. 包体自查（2026-10-10 实测，产物对应当前 HEAD `16d04a8`）
+## 2. 包体自查（2026-10-12 实测重建，产物对应 HEAD `f95a5ef` 之后的媒体动作修复提交）
 
 > 华为线上当前为 0.9.0(9)；本节是**下一次升级要提交的 1.0.0(10)** 包体事实。升级走 AGC「版本升级」，沿用同一 keystore 与已完成的 pepk 签名登记，不需要重新上传密钥。
 
 | 项目 | 实测值 |
 |---|---|
 | 上传文件 | `app/build/outputs/apk/release/app-release.apk`（**华为渠道传这个 APK**） |
-| 大小 | 56,975,586 字节（约 54.3 MB；较 0.9.0(9) 增加约 7.6 MB，来自新增手势动作图标矢量集合与 UI 切片） |
-| 文件 SHA-256 | `2C2E03E2C057A74BB8E088512D1C953CC53EF893DD81932F7A3322F44D386092` |
+| 大小 | 56,975,618 字节（约 54.3 MB；较 0.9.0(9) 增加约 7.6 MB，来自新增手势动作图标矢量集合与 UI 切片） |
+| 文件 SHA-256 | `3ED17B4AAB2AE953B67D7D5BFFF46A2EF7065DBC80EAF225A3E61863E9C625CF` |
 | 签名证书 | `CN=Magic Gesture, OU=Mobile, O=Magic Gesture, L=Shanghai, ST=Shanghai, C=CN` |
 | 证书 SHA-256 | `98efd9dbe4586388fb81a4e6187a37e7d1dda5db01c219f5f0163f76cb61348e` |
 | 签名方案 | v2 通过；v1 为 false（minSdk 26 不需要）、v3/v3.1/v4 为 false |
@@ -48,7 +48,7 @@
 | 网络权限 | **无** `INTERNET`、**无** `ACCESS_NETWORK_STATE` |
 | ABI | `arm64-v8a`、`armeabi-v7a`（32/64 位配对完整，无 `x86`） |
 | 16KB 对齐 | `zipalign -c -P 16 4` 通过 |
-| AAB（备用） | `app/build/outputs/bundle/release/app-release.aab`，44,977,957 字节，SHA-256 `BB0A456E8F91AC9412512E719966CF23A789D0E3564C0861FA31618CEF17BBD`（2026-10-10 同代码重建） |
+| AAB（备用） | `app/build/outputs/bundle/release/app-release.aab`，44,979,505 字节，SHA-256 `114F310C9D6700B19EA5A7F158F61A6110C4E22C8A61E8352496CC0278CD9A68`（2026-10-12 同代码重建） |
 
 校验命令（已实际执行）：
 

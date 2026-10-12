@@ -97,6 +97,16 @@
 - 32 位 x86 设备与 x86 模拟器镜像将无法安装；后续若要用模拟器验证，必须使用 arm64 系统镜像。
 - 仅调整打包规则，未改 Manifest、依赖、权限与任何手势功能；移除 x86 后的产物尚未完成真机冒烟。
 
+## 媒体动作执行层修复（2026-10-12，vivo Y35 真机反馈）
+
+- 真机现象：小指静音提示「动作执行失败」；双指上下拉调音量时浮层显示进度但音量不动；握拳播放/暂停每次都表现为播放，还会换歌。
+- 补声明 `android.permission.MODIFY_AUDIO_SETTINGS`（normal 级，安装即授予、无运行时弹窗）：写入系统媒体音量与静音需要它，厂商定制的音频服务校验缺失时写入会被静默忽略。
+- 静音不再依赖 `isStreamMute()` 与 `ADJUST_MUTE/ADJUST_UNMUTE`（厂商音频服务常不维护该 mute 位），改为把媒体音量置 0 并记住原值，取消静音时恢复原值；结果以读回的音量为准，不再把系统没承认的切换当成成功。
+- 音量写入后回读校验：被设备忽略时退回 `adjustStreamVolume` 单步调节（硬件音量键同一路径），仍无效才走按键兜底并如实报失败；持续音量会话写入失败会结束会话并提示，不再空转。
+- 播放/暂停校验改为比较按键前后的可听状态（是否播放 + 系统活跃播放数），状态发生变化即认定按键已送达，播放与暂停都不再被误判为失败；只有「按键前没在播放、按键后依然无声」才唤起默认音乐应用，且 10 秒内最多一次，暂停请求永不打开音乐应用。
+- 新增日志便于真机定位：`setStreamVolume: media volume x -> y (max z)`、被忽略时的 `setStreamVolume ignored by device …`、持续音量会话开始、播放/暂停校验前后状态。
+- 未改动任何手势编号、默认绑定、功能开关与签到批次；`testDebugUnitTest`、`assembleDebug`、`assembleRelease`、`lintRelease`、`bundleRelease` 均通过。真机验收尚未完成（vivo Y35 上三项是否恢复待复测）。
+
 ## 构建说明
 
 已在 JDK 17、Android SDK 36 与 Gradle 9.3.0 环境完成 Debug/Release Lint、APK 和 AAB 构建；Release APK/AAB 已通过本地签名验证。
