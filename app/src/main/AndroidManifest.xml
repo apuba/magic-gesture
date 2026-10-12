@@ -17,6 +17,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 媒体音量与静音要写系统音频设置（setStreamVolume / adjustStreamVolume）。
+         该权限为 normal 级，安装即授予、不弹运行时对话框；部分厂商定制的 AudioService
+         会校验它，缺失时写入被静默忽略，表现为“手势成功但音量不动”“静音执行失败”。
+         2026-10-10 vivo Y35 真机反馈后补上。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- MediaPipe tasks-core transitively declares these through DataTransport.
          Current release performs local inference only, so keep them out of the merged APK. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />

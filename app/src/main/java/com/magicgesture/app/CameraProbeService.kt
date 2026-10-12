@@ -57,6 +57,10 @@ class CameraProbeService : Service() {
         private const val PLAYBACK_RECHECK_DELAY_MS = 700L
         private const val MUSIC_APP_SESSION_DELAY_MS = 1_200L
         private const val PLAYBACK_FINAL_CHECK_DELAY_MS = 2_000L
+        // A play/pause key nobody received must not reopen the music app on every following
+        // gesture: on devices where isMusicActive() never reports playback that turns the toggle
+        // into "always play". One wake-up attempt per this window is enough.
+        private const val MUSIC_WAKE_COOLDOWN_MS = 10_000L
         private const val SELFIE_JPEG_OUTPUT_QUALITY = 95
     }
 
@@ -126,6 +130,10 @@ class CameraProbeService : Service() {
      * toggle reports its own direction and that wording is what stays on screen.
      */
     private var lastMuteMessage: String? = null
+    /** Media volume at the moment a gesture muted the stream; restored by the next toggle. */
+    private var mutedVolume: Int? = null
+    /** Last time the play fallback tried to wake a music app; see MUSIC_WAKE_COOLDOWN_MS. */
+    private var lastMusicWakeAt = 0L
     private val favoriteController by lazy {
         FavoriteButtonController(
             context = this,
@@ -479,6 +487,7 @@ class CameraProbeService : Service() {
                 volumeHoldActive = true
                 volumeHoldRaise = raise
                 volumeHoldChanged = false
+                Log.d("CameraProbe", "gesture ${mapped.mapping.code} -> volume hold ${if (raise) "up" else "down"} start")
                 adjustHeldVolume(raise)
             }
             GestureEvent.VolumeHoldPhase.TICK -> if (volumeHoldActive && volumeHoldRaise == raise) {
@@ -793,9 +802,8 @@ class CameraProbeService : Service() {
      * Dispatches a media/volume key through AudioManager; works without the accessibility
      * service. A dispatched key only reaches an app that owns an active MediaSession, so when
      * nothing is playing and no session exists the system drops it silently — that is why the
-     * same gesture sometimes starts the music app and sometimes does nothing. For a play
-     * request we therefore verify that audio really started and, if it did not, open the
-     * default music app and repeat the key once its session is up.
+     * same gesture sometimes starts the music app and sometimes does nothing. A play/pause
+     * request is verified afterwards; see [verifyPlayback].
      */
     private fun dispatchMediaKey(keyCode: Int, callback: (Boolean) -> Unit) {
         val audio = runCatching { getSystemService(AudioManager::class.java) }.getOrNull()
@@ -803,17 +811,18 @@ class CameraProbeService : Service() {
             callback(false)
             return
         }
-        // Remember whether audio was already playing: only a "play" request may wake a music
+        // Remember the audible state before the key: only a "play" request may wake a music
         // app, a "pause" request must never open one.
         val musicActiveBefore = isMusicActive(audio)
+        val playersBefore = activePlaybackCount(audio)
         if (!sendMediaKey(audio, keyCode)) {
             callback(false)
             return
         }
         callback(true)
-        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE && !musicActiveBefore) {
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
             mainHandler.postDelayed({
-                verifyPlaybackStarted(audio, secondCheck = false)
+                verifyPlayback(audio, musicActiveBefore, playersBefore, secondCheck = false)
             }, PLAYBACK_VERIFY_DELAY_MS)
         }
     }
@@ -831,20 +840,57 @@ class CameraProbeService : Service() {
         runCatching { audio.isMusicActive() }.getOrDefault(false)
 
     /**
-     * Confirms a play request actually produced audio. A cold player can take almost a second
-     * before it is audible, so the silent case is confirmed twice before the music app is
-     * launched, and once more after the repeated play key so the feedback never claims success
-     * the user cannot hear.
+     * How many playbacks the platform currently reports. `isMusicActive()` alone is unreliable on
+     * several vendor audio services; trusting it alone reports a successful pause as a failed
+     * play and wakes the music app again, which on vivo Y35 (2026-10-10) made every play/pause
+     * gesture end up playing.
      */
-    private fun verifyPlaybackStarted(audio: AudioManager, secondCheck: Boolean) {
-        if (isMusicActive(audio)) return
+    private fun activePlaybackCount(audio: AudioManager): Int = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audio.activePlaybackConfigurations.size
+        } else 0
+    }.getOrDefault(0)
+
+    /**
+     * Confirms a play/pause key really reached a player. A key that arrived always flips the
+     * audible state, whichever way it went — playing to silent or silent to playing — so only a
+     * key nobody received leaves both readings untouched. A cold player can take almost a second
+     * before it is audible, so the unchanged case is confirmed twice first.
+     */
+    private fun verifyPlayback(
+        audio: AudioManager,
+        musicActiveBefore: Boolean,
+        playersBefore: Int,
+        secondCheck: Boolean
+    ) {
+        val musicActiveAfter = isMusicActive(audio)
+        val playersAfter = activePlaybackCount(audio)
+        Log.d(
+            "CameraProbe",
+            "play/pause verify: music $musicActiveBefore->$musicActiveAfter players $playersBefore->$playersAfter"
+        )
+        if (musicActiveAfter != musicActiveBefore || playersAfter != playersBefore) return
         if (!secondCheck) {
             mainHandler.postDelayed(
-                { verifyPlaybackStarted(audio, secondCheck = true) },
+                { verifyPlayback(audio, musicActiveBefore, playersBefore, secondCheck = true) },
                 PLAYBACK_RECHECK_DELAY_MS
             )
             return
         }
+        // A player was there and the key did nothing: the pause simply never arrived. Opening a
+        // music app on a pause request is what made the toggle "always play".
+        if (musicActiveBefore || playersBefore > 0) return
+        wakeDefaultMusicApp()
+    }
+
+    /** Opens the default music app and repeats the play key once its session should be up. */
+    private fun wakeDefaultMusicApp() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastMusicWakeAt < MUSIC_WAKE_COOLDOWN_MS) {
+            Log.d("CameraProbe", "music wake skipped: attempted ${now - lastMusicWakeAt}ms ago")
+            return
+        }
+        lastMusicWakeAt = now
         if (!launchDefaultMusicApp()) {
             overlayIndicator.showFeedback("没有找到音乐应用，请先打开音乐 App 再试")
             return
@@ -885,52 +931,106 @@ class CameraProbeService : Service() {
      * so each gesture moves ~10% of the full range instead.
      */
     private fun adjustVolume(raise: Boolean, callback: (Boolean) -> Unit) {
-        try {
-            val audio = getSystemService(AudioManager::class.java)
-            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val step = maxOf(1, max / 10)
-            val target = (current + if (raise) step else -step).coerceIn(0, max)
-            Log.d("CameraProbe", "volume $current -> $target (max $max)")
-            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
-            callback(true)
-        } catch (e: Exception) {
-            Log.e("CameraProbe", "volume adjust failed", e)
+        val audio = runCatching { getSystemService(AudioManager::class.java) }.getOrNull()
+        val max = mediaVolumeMax(audio)
+        if (audio == null || max <= 0) {
+            // No writable media stream (fixed-volume device or a vendor service that hides it):
+            // fall back to the key the hardware volume buttons themselves produce.
+            Log.w("CameraProbe", "media volume stream unavailable (max=$max); using key fallback")
             dispatchMediaKey(
                 if (raise) KeyEvent.KEYCODE_VOLUME_UP else KeyEvent.KEYCODE_VOLUME_DOWN,
                 callback
             )
+            return
         }
+        val current = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(0)
+        val step = maxOf(1, max / 10)
+        val target = (current + if (raise) step else -step).coerceIn(0, max)
+        if (applyMediaVolume(audio, target)) {
+            callback(true)
+            return
+        }
+        Log.w("CameraProbe", "direct volume write ignored by device; using key fallback")
+        dispatchMediaKey(
+            if (raise) KeyEvent.KEYCODE_VOLUME_UP else KeyEvent.KEYCODE_VOLUME_DOWN,
+            callback
+        )
     }
 
+    /**
+     * Mute means media volume zero and unmute restores the volume the gesture took away.
+     *
+     * The previous implementation asked the platform to flip the STREAM_MUSIC mute bit
+     * (`isStreamMute` + `ADJUST_MUTE`/`ADJUST_UNMUTE`). Vendor audio services — vivo Y35 among
+     * them (2026-10-10) — accept the call, never publish the bit, and the toggle then reported
+     * failure even though the gesture had fired. Moving the volume itself is observable on every
+     * device and can be verified by reading it back.
+     */
     private fun toggleMute(callback: (Boolean) -> Unit) {
-        try {
-            val audio = getSystemService(AudioManager::class.java)
-            val wasMuted = audio.isStreamMute(AudioManager.STREAM_MUSIC)
-            audio.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                if (wasMuted) AudioManager.ADJUST_UNMUTE else AudioManager.ADJUST_MUTE,
-                AudioManager.FLAG_SHOW_UI
-            )
-            val message = if (wasMuted) "已恢复媒体声音" else "媒体已静音"
-            lastMuteMessage = message
-            overlayIndicator.showFeedback(message)
-            // Some vendor audio services publish the mute bit a few frames after accepting
-            // ADJUST_MUTE/UNMUTE. Verify shortly afterward instead of reporting a false failure.
-            mainHandler.postDelayed({
-                callback(runCatching { audio.isStreamMute(AudioManager.STREAM_MUSIC) != wasMuted }.getOrDefault(false))
-            }, 120L)
-        } catch (e: Exception) {
-            Log.e("CameraProbe", "toggle mute failed", e)
+        val audio = runCatching { getSystemService(AudioManager::class.java) }.getOrNull()
+        val max = mediaVolumeMax(audio)
+        if (audio == null || max <= 0) {
+            Log.w("CameraProbe", "mute unavailable: media volume stream max=$max")
             callback(false)
+            return
         }
+        val current = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(0)
+        val mutedNow = current == 0
+        // Restore what this app muted; if the stream was already silent when the user asked to
+        // unmute, come back at a moderate level instead of staying silent.
+        val restore = (mutedVolume?.takeIf { it > 0 } ?: ((max * 2) / 5).coerceAtLeast(1)).coerceAtMost(max)
+        val target = if (mutedNow) restore else 0
+        if (!mutedNow) mutedVolume = current
+        val message = if (mutedNow) "已恢复媒体声音" else "媒体已静音"
+        lastMuteMessage = message
+        overlayIndicator.showFeedback(message)
+        if (target == current) {
+            // Already where the gesture wants it: say so instead of claiming a toggle happened.
+            callback(false)
+            return
+        }
+        callback(applyMediaVolume(audio, target))
+    }
+
+    private fun mediaVolumeMax(audio: AudioManager?): Int =
+        runCatching { audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0 }.getOrDefault(0)
+
+    /**
+     * Writes the media stream volume and reports whether the device really accepted it.
+     *
+     * A vendor audio service can swallow `setStreamVolume` silently — the call returns normally
+     * and the index never moves — which is how a gesture used to report success while the volume
+     * stayed put. The value is therefore read back, and one native step through
+     * `adjustStreamVolume` (the path the hardware keys use) is tried before reporting failure.
+     */
+    private fun applyMediaVolume(audio: AudioManager, target: Int): Boolean {
+        val max = mediaVolumeMax(audio)
+        val clamped = target.coerceIn(0, max.coerceAtLeast(0))
+        val before = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(-1)
+        Log.d("CameraProbe", "setStreamVolume: media volume $before -> $clamped (max $max)")
+        runCatching {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, clamped, AudioManager.FLAG_SHOW_UI)
+        }.onFailure { Log.w("CameraProbe", "setStreamVolume failed", it) }
+        val after = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(before)
+        if (after == clamped) return true
+        val direction = if (clamped > after) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        runCatching {
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
+        }.onFailure { Log.w("CameraProbe", "adjustStreamVolume failed", it) }
+        val stepped = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(after)
+        val fixed = runCatching { audio.isVolumeFixed }.getOrDefault(false)
+        Log.w(
+            "CameraProbe",
+            "setStreamVolume ignored by device: $before -> $after -> $stepped (max $max, volumeFixed=$fixed)"
+        )
+        return stepped != after
     }
     /** One tick of the exclusive two-finger volume session (about 5% of the media range). */
     private fun adjustHeldVolume(raise: Boolean) {
         if (!volumeHoldActive) return
         try {
             val audio = getSystemService(AudioManager::class.java)
-            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val max = mediaVolumeMax(audio).coerceAtLeast(1)
             val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
             val atBoundary = if (raise) current >= max else current <= 0
             if (atBoundary) {
@@ -942,7 +1042,12 @@ class CameraProbeService : Service() {
             }
             val step = maxOf(1, (max + 19) / 20)
             val target = (current + if (raise) step else -step).coerceIn(0, max)
-            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
+            if (!applyMediaVolume(audio, target)) {
+                // Nothing moved: stop the session with an honest failure instead of counting
+                // ticks that never reached the audio service.
+                finishVolumeHold(atBoundary = false, message = null, failed = true)
+                return
+            }
             volumeHoldChanged = true
             val percent = ((target * 100f) / max).toInt().coerceIn(0, 100)
             overlayIndicator.showFeedback("正在${if (raise) "增加" else "降低"}媒体音量：$percent%")
@@ -959,18 +1064,18 @@ class CameraProbeService : Service() {
             finishAction(false, "", "持续调节音量失败")
         }
     }
-    private fun finishVolumeHold(atBoundary: Boolean, message: String? = null) {
+    private fun finishVolumeHold(atBoundary: Boolean, message: String? = null, failed: Boolean = false) {
         if (!volumeHoldActive) return
         volumeHoldActive = false
         pipeline?.finishVolumeSession(waitForRelease = atBoundary)
         val finalMessage = message ?: run {
             val audio = getSystemService(AudioManager::class.java)
-            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val max = mediaVolumeMax(audio).coerceAtLeast(1)
             val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
             val percent = ((current * 100f) / max).toInt().coerceIn(0, 100)
             "音量调节结束：$percent%"
         }
-        finishAction(volumeHoldChanged || atBoundary, finalMessage, "音量未发生变化")
+        finishAction(!failed && (volumeHoldChanged || atBoundary), finalMessage, "音量未发生变化")
         volumeHoldChanged = false
     }
     private fun saveSelfie(bitmap: Bitmap): Boolean {
