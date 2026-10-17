@@ -3,9 +3,65 @@ package com.magicgesture.app
 import kotlin.math.hypot
 import kotlin.math.atan2
 import kotlin.math.acos
+import kotlin.math.abs
 
 /** Pure logic. Coordinates are normalized to [0,1], timestamps are monotonic milliseconds. */
 data class Point(val x: Float, val y: Float)
+
+/** Low-speed precision keeps the original damping; larger jumps catch up without removing filtering. */
+internal fun cursorTrackingAlpha(travel: Float): Float =
+    (.35f + travel.coerceAtLeast(0f) * 3f).coerceIn(.35f, .88f)
+
+/** Ignore per-axis landmark noise; the front camera produces noticeably more horizontal jitter. */
+internal fun smoothCursor(old: Point, target: Point): Point {
+    val rawDx = target.x - old.x
+    val rawDy = target.y - old.y
+    val dx = if (abs(rawDx) <= .012f) 0f else rawDx
+    val dy = if (abs(rawDy) <= .006f) 0f else rawDy
+    val travel = hypot(dx, dy)
+    if (travel == 0f) return old
+    val alpha = cursorTrackingAlpha(travel)
+    return Point(old.x + alpha * dx, old.y + alpha * dy)
+}
+
+/** Reject a fingertip jump that is not accompanied by the same whole-palm translation. */
+internal fun stableCursorTarget(
+    previousTarget: Point?,
+    previousPalm: Point?,
+    target: Point,
+    palm: Point
+): Point {
+    if (previousTarget == null || previousPalm == null) return target
+    val unexplainedDx = (target.x - previousTarget.x) - (palm.x - previousPalm.x) / .70f
+    val unexplainedDy = (target.y - previousTarget.y) - (palm.y - previousPalm.y) / .70f
+    return if (hypot(unexplainedDx, unexplainedDy) > .22f) previousTarget else target
+}
+
+internal data class CursorPrediction(val target: Point, val motion: Point)
+
+/**
+ * Compensates part of inference latency only after two consecutive samples agree on direction.
+ * Direction changes, stopping and the first moving sample stay unpredicted; the lead is capped so
+ * a noisy landmark cannot send the cursor across the screen.
+ */
+internal fun predictCursorTarget(previous: Point?, previousMotion: Point?, target: Point): CursorPrediction {
+    if (previous == null) return CursorPrediction(target, Point(0f, 0f))
+    val motion = Point(target.x - previous.x, target.y - previous.y)
+    val travel = hypot(motion.x, motion.y)
+    val previousTravel = previousMotion?.let { hypot(it.x, it.y) } ?: 0f
+    if (travel <= .02f || previousTravel <= .02f) return CursorPrediction(target, motion)
+    val directionAgreement = (motion.x * previousMotion!!.x + motion.y * previousMotion.y) /
+        (travel * previousTravel).coerceAtLeast(.000001f)
+    if (directionAgreement < .65f) return CursorPrediction(target, motion)
+    val lead = (travel * .55f).coerceAtMost(.08f)
+    return CursorPrediction(
+        Point(
+            (target.x + motion.x / travel * lead).coerceIn(0f, 1f),
+            (target.y + motion.y / travel * lead).coerceIn(0f, 1f)
+        ),
+        motion
+    )
+}
 sealed interface GestureEvent {
     enum class MotionSource { INDEX_FINGER, PALM }
     data class Cursor(val x: Float, val y: Float) : GestureEvent
@@ -107,6 +163,9 @@ class GestureEngine(
     private var openPalmStart: Point? = null
     private var openPalmStartWrist: Point? = null
     private var openPalmAxis = PalmAxis.NONE
+    /** Palm position/direction of the last vertical wave, used to re-arm after its return stroke. */
+    private var palmSwipeReleasePoint: Point? = null
+    private var palmSwipeReleaseDirection = 0
     private var lastOpenPalmAt = 0L
     private var indexScrollStartAngle = 0f
     private var vHoldAt = 0L
@@ -258,6 +317,14 @@ class GestureEngine(
      * every gesture would fire that much later.
      */
     private var shapeSteady = true
+    /** Static/HOLD gestures require both stable finger shape and stable whole-hand translation. */
+    private var cursorMotionSteady = true
+    /** G02 may bend the index tip, but its palm must remain still throughout the click cycle. */
+    private var lastPalmForMotion: Point? = null
+    private var palmMotionSteady = true
+    private var lastAcceptedCursorTarget: Point? = null
+    private var lastAcceptedCursorPalm: Point? = null
+    private var lastCursorMotion = Point(0f, 0f)
 
     @Synchronized fun resume() { paused = false; resetTransient() }
     @Synchronized fun stop() { paused = true; resetTransient(); smoothed = null }
@@ -343,7 +410,7 @@ class GestureEngine(
             return true
         }
         if (lockState == LockState.LOCKED) {
-            if (!lovePose || !shapeSteady) {
+            if (!lovePose || !shapeSteady || !cursorMotionSteady) {
                 lockHoldAt = 0L
                 hintLocked(now, output)
                 return true
@@ -358,7 +425,7 @@ class GestureEngine(
             }
             return true
         }
-        if (!lovePose || !shapeSteady) {
+        if (!lovePose || !shapeSteady || !cursorMotionSteady) {
             lockHoldAt = 0L
             return false
         }
@@ -408,8 +475,31 @@ class GestureEngine(
         val output = mutableListOf<GestureEvent>()
         val tip = points[8]
         val target = Point(((tip.x - .15f) / .70f).coerceIn(0f, 1f), ((tip.y - .15f) / .70f).coerceIn(0f, 1f))
+        val palm = Point(
+            listOf(0, 5, 9, 13, 17).sumOf { points[it].x.toDouble() }.toFloat() / 5,
+            listOf(0, 5, 9, 13, 17).sumOf { points[it].y.toDouble() }.toFloat() / 5
+        )
+        val palmTravel = lastPalmForMotion?.let { dist(it, palm) } ?: 0f
+        lastPalmForMotion = palm
+        palmMotionSteady = palmTravel <= .035f
+        val previousAcceptedTarget = lastAcceptedCursorTarget
+        val stableTarget = stableCursorTarget(previousAcceptedTarget, lastAcceptedCursorPalm, target, palm)
+        var cursorTarget = stableTarget
+        if (stableTarget === target) {
+            val prediction = predictCursorTarget(previousAcceptedTarget, lastCursorMotion, target)
+            cursorTarget = prediction.target
+            lastCursorMotion = prediction.motion
+            lastAcceptedCursorTarget = target
+            lastAcceptedCursorPalm = palm
+        } else {
+            lastCursorMotion = Point(0f, 0f)
+        }
         val old = smoothed
-        val cursor = if (old == null) target else Point(old.x + .35f * (target.x - old.x), old.y + .35f * (target.y - old.y))
+        val cursorTravel = old?.let { dist(it, cursorTarget) } ?: 0f
+        cursorMotionSteady = cursorTravel <= .035f
+        // Keep fine positioning stable, but let a deliberate fast move catch up instead of trailing
+        // behind the finger for several 20 fps frames. The old fixed alpha was always .35.
+        val cursor = if (old == null) cursorTarget else smoothCursor(old, cursorTarget)
         smoothed = cursor
         val handScale = dist(points[5], points[17]).coerceAtLeast(.001f)
         updateShapeStability(points, handScale, now)
@@ -448,10 +538,6 @@ class GestureEngine(
         val fist = listOf(8 to 6, 12 to 10, 16 to 14, 20 to 18).all { (tipIndex, pipIndex) ->
             dist(points[tipIndex], points[0]) < dist(points[pipIndex], points[0]) * 1.08f
         }
-        val palm = Point(
-            listOf(0, 5, 9, 13, 17).sumOf { points[it].x.toDouble() }.toFloat() / 5,
-            listOf(0, 5, 9, 13, 17).sumOf { points[it].y.toDouble() }.toFloat() / 5
-        )
         val indexOpen = dist(points[8], points[0]) > dist(points[6], points[0]) * 1.12f
         val middleOpen = dist(points[12], points[0]) > dist(points[10], points[0]) * 1.12f
         val ringOpen = dist(points[16], points[0]) > dist(points[14], points[0]) * 1.12f
@@ -497,8 +583,7 @@ class GestureEngine(
         // gun poses. The gun below keeps the pre-widening values: loosening its exclusion too would
         // have let a heart-shaped hand veto Back, so those two stay strict on purpose.
         val thumbMeetsIndexTip = dist(points[4], points[8]) / handScale < .46f
-        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .40f ||
-            dist(points[4], points[5]) / handScale < .32f
+        val thumbPressesIndexJoint = dist(points[4], points[6]) / handScale < .40f
         val thumbMeetsIndexTipStrict = dist(points[4], points[8]) / handScale < .40f
         val thumbPressesIndexJointStrict = dist(points[4], points[6]) / handScale < .32f ||
             dist(points[4], points[5]) / handScale < .32f
@@ -519,8 +604,14 @@ class GestureEngine(
         // G25: index vertical, thumb stretched sideways.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
             kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
-        // G28: thumb, index and pinky extended; middle and ring folded ("I love you" sign).
-        val lovePose = thumbOpen && indexOpen && pinkyOpen && middleFolded && ringFolded
+        // G28: thumb, index and pinky deliberately extended; middle and ring folded ("I love you").
+        // Wrist-distance alone can briefly report a sideways/noisy little finger as extended while
+        // steering the cursor with one vertical index. Require both raised fingers to clear their
+        // own MCP vertically, and require the thumb to open on the correct side of the detected hand.
+        val lovePose = thumbOpen && thumbMatchesHandedness(points, handedness, handScale) &&
+            indexOpen && points[8].y < points[5].y - handScale * .18f &&
+            pinkyOpen && points[20].y < points[17].y - handScale * .18f &&
+            middleFolded && ringFolded
         // G23: only the little finger is extended; thumb and the other three fingers stay folded.
         // The thumb test is the loose one on purpose. Measured on device (2026-10-04): raising the
         // pinky makes the thumb drift open on its own, and with the strict 1.05 test the pose fell
@@ -718,7 +809,7 @@ class GestureEngine(
         if (features.six666 && advanceStaticHold(six666Pose, now, GestureEvent.Six666, { six666Hold }, { six666Hold = it }, { six666HoldAt }, { six666HoldAt = it }, output)) return output
         if (features.cShape && advanceStaticHold(cShapePose, now, GestureEvent.CShape, { cShapeHold }, { cShapeHold = it }, { cShapeHoldAt }, { cShapeHoldAt = it }, output)) return output
         // screenshotPalmOpen is the open hand and closedFist the fist: both mean "let go" mid-drag.
-        if (advanceClawDrag(clawPose, screenshotPalmOpen, closedFist, palm, cursor, now, output)) return output
+        if (advanceClawDrag(clawPose && cursorMotionSteady, screenshotPalmOpen, closedFist, palm, cursor, now, output)) return output
         advanceTwoFingerTap(twoFingerTogetherPose, now, output)
         // Bending the two fingers down brings the index tip onto the thumb, which is exactly what
         // the finger heart reads, so G33 used to get claimed by G12 right after the first bend
@@ -732,13 +823,13 @@ class GestureEngine(
         if (twoFingerState == TwoFingerSwipeState.VOLUME_UP || twoFingerState == TwoFingerSwipeState.VOLUME_DOWN) return output
         if (features.click) {
             when (indexClick) {
-                IndexClick.READY -> if (indexOnlyPose) {
+                IndexClick.READY -> if (indexOnlyPose && palmMotionSteady) {
                     indexClick = IndexClick.STABILIZING
                     indexClickAt = now
                     indexClickPoint = cursor
                 }
                 IndexClick.STABILIZING -> when {
-                    !indexOnlyPose -> {
+                    !indexOnlyPose || !palmMotionSteady -> {
                         indexClick = IndexClick.READY
                         indexClickPoint = null
                     }
@@ -746,10 +837,13 @@ class GestureEngine(
                         indexClick = IndexClick.ARMED
                         indexClickAt = now
                         indexClickPoint = cursor
-                        output += GestureEvent.Feedback("食指点击已准备：请弯曲食指")
                     }
                 }
                 IndexClick.ARMED -> when {
+                    !palmMotionSteady -> {
+                        indexClick = IndexClick.READY
+                        indexClickPoint = null
+                    }
                     indexBentPose -> {
                         indexClick = IndexClick.BENT
                         indexClickAt = now
@@ -768,6 +862,10 @@ class GestureEngine(
                     }
                 }
                 IndexClick.BENT -> when {
+                    !palmMotionSteady -> {
+                        indexClick = IndexClick.READY
+                        indexClickPoint = null
+                    }
                     indexOnlyPose && now - indexClickAt <= 1000 -> {
                         val point = indexClickPoint ?: cursor
                         output += GestureEvent.Click(point.x, point.y)
@@ -792,8 +890,7 @@ class GestureEngine(
         // (verified offline: default features produced 0 likes, disabling scroll produced 1).
         // The thresholds match the heart's contact test above, so the two stay a single decision.
         val heartContact = dist(points[4], points[8]) / handScale < .46f ||
-            dist(points[4], points[6]) / handScale < .40f ||
-            dist(points[4], points[5]) / handScale < .32f
+            dist(points[4], points[6]) / handScale < .40f
         // A sequence already running owns the hand, so it is advanced before the static holds: the
         // screenshot cycle's fist stage would otherwise be claimed as a PlayPause hold and the
         // sequence would never complete.
@@ -848,9 +945,14 @@ class GestureEngine(
         // the index is never required to bend here — requiring that filtered every real pose out before.
         // Only a fully closed hand is rejected: it pulls the index tip back onto its own MCP.
         val indexCurledIntoFist = dist(points[8], points[5]) / handScale < .30f
+        // G12 is a deliberate static hold. Whole-hand translation cancels out of shapeSteady,
+        // so fast cursor steering could otherwise accumulate a false heart for 600ms even while
+        // every landmark was moving across the camera. Require the fingertip target to settle;
+        // a real heart still fires normally once the hand stops.
         val fingerHeartPose = (thumbMeetsIndexTip || thumbPressesIndexJoint) &&
             middleFolded && ringFolded && pinkyFolded &&
-            !indexCurledIntoFist && !gunPose && !threeFingersExtended && !okOwnsHand
+            !indexCurledIntoFist && !gunPose && !threeFingersExtended && !okOwnsHand &&
+            cursorMotionSteady
         // The heart may contact the index tip, PIP, or MCP. It is released only after the thumb
         // leaves all three zones; using tip distance alone cancels every joint-contact heart.
         val fingersClearlyReleased = ratio > .58f &&
@@ -864,6 +966,11 @@ class GestureEngine(
             }
             Pinch.CANDIDATE -> when {
                 okOwnsHand || threeFingersExtended -> {
+                    pinch = Pinch.READY
+                    candidateAt = 0L
+                    releaseAt = 0L
+                }
+                !cursorMotionSteady -> {
                     pinch = Pinch.READY
                     candidateAt = 0L
                     releaseAt = 0L
@@ -911,7 +1018,7 @@ class GestureEngine(
         releaseGraceMs: Long = 0L
     ): Boolean {
         when (state()) {
-            StaticHold.READY -> if (pose && shapeSteady) {
+            StaticHold.READY -> if (pose && shapeSteady && cursorMotionSteady) {
                 setState(StaticHold.CANDIDATE)
                 setStartedAt(now)
                 return true
@@ -920,7 +1027,7 @@ class GestureEngine(
                 if (!pose) {
                     setState(StaticHold.READY)
                     setStartedAt(0L)
-                } else if (!shapeSteady) {
+                } else if (!shapeSteady || !cursorMotionSteady) {
                     // The shape is still mid-flight, so this is a pose passing through rather than
                     // one being held: keep waiting instead of banking time towards a confirmation
                     // the user never asked for (acceptance issue 6).
@@ -1327,7 +1434,7 @@ class GestureEngine(
         }
         when (appSequence) {
             AppSequence.IDLE -> {
-                if (palmOpen && now >= appCooldownUntil) {
+                if (palmOpen && palmMotionSteady && now >= appCooldownUntil) {
                     appSequence = AppSequence.ARMED
                     appStageAt = now
                     appOpenPalmAt = now
@@ -1339,6 +1446,11 @@ class GestureEngine(
                 return false
             }
             AppSequence.ARMED -> {
+                if (!palmMotionSteady) {
+                    appSequence = AppSequence.WAIT_RELEASE
+                    appHoldAt = now
+                    return false
+                }
                 if (palmOpen) {
                     appOpenPalmAt = now
                     if (now - appStageAt > 5000) appSequence = AppSequence.WAIT_RELEASE
@@ -1361,6 +1473,11 @@ class GestureEngine(
                 return false
             }
             AppSequence.HOLDING -> {
+                if (!palmMotionSteady) {
+                    appSequence = AppSequence.WAIT_RELEASE
+                    appHoldAt = now
+                    return true
+                }
                 // A slot locked before the hand finished closing into OK must be dropped the moment
                 // OK is recognisable, not after the 500ms cancel grace: that grace runs while the
                 // user is already holding OK still, which is exactly when the slot timer completes.
@@ -1524,12 +1641,16 @@ class GestureEngine(
                     if (openPalmAxis == PalmAxis.VERTICAL && features.palmVerticalScroll && dy <= -.065f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = true, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                        palmSwipeReleasePoint = palm
+                        palmSwipeReleaseDirection = -1
                         openPalmStart = null
                         return true
                     }
                     if (openPalmAxis == PalmAxis.VERTICAL && features.palmVerticalScroll && dy >= .055f * movementScale && elapsed <= 5000) {
                         output += GestureEvent.Swipe(up = false, source = GestureEvent.MotionSource.PALM)
                         screenshotSequence = ScreenshotSequence.WAIT_RELEASE
+                        palmSwipeReleasePoint = palm
+                        palmSwipeReleaseDirection = 1
                         openPalmStart = null
                         return true
                     }
@@ -1668,7 +1789,30 @@ class GestureEngine(
                 return true
             }
             ScreenshotSequence.WAIT_RELEASE -> {
-                if (!directionOpen && !screenshotOpen && !indexOnly && !fist) screenshotSequence = ScreenshotSequence.IDLE
+                if (!directionOpen && !screenshotOpen && !indexOnly && !fist) {
+                    screenshotSequence = ScreenshotSequence.IDLE
+                    palmSwipeReleasePoint = null
+                    palmSwipeReleaseDirection = 0
+                } else {
+                    val releasePoint = palmSwipeReleasePoint
+                    if (directionOpen && releasePoint != null) {
+                        val returnDy = palm.y - releasePoint.y
+                        val returned = (palmSwipeReleaseDirection < 0 && returnDy >= .04f * movementScale) ||
+                            (palmSwipeReleaseDirection > 0 && returnDy <= -.04f * movementScale)
+                        if (returned) {
+                            // The return stroke only releases the previous action. Re-arm from its
+                            // current position so it cannot fire the opposite scroll on the way back.
+                            screenshotSequence = ScreenshotSequence.OPEN_CANDIDATE
+                            screenshotStageAt = now
+                            openPalmStart = palm
+                            openPalmStartWrist = wrist
+                            openPalmAxis = PalmAxis.NONE
+                            lastOpenPalmAt = now
+                            palmSwipeReleasePoint = null
+                            palmSwipeReleaseDirection = 0
+                        }
+                    }
+                }
                 return true
             }
             ScreenshotSequence.WAIT_SCREENSHOT_RELEASE -> {
@@ -1684,6 +1828,12 @@ class GestureEngine(
         lastShapeAt = 0L
         lastShapeChangeAt = 0L
         shapeSteady = true
+        cursorMotionSteady = true
+        lastPalmForMotion = null
+        palmMotionSteady = true
+        lastAcceptedCursorTarget = null
+        lastAcceptedCursorPalm = null
+        lastCursorMotion = Point(0f, 0f)
         pinch = Pinch.READY
         indexClick = IndexClick.READY
         indexClickAt = 0
@@ -1697,6 +1847,8 @@ class GestureEngine(
         openPalmStart = null
         openPalmStartWrist = null
         openPalmAxis = PalmAxis.NONE
+        palmSwipeReleasePoint = null
+        palmSwipeReleaseDirection = 0
         lastOpenPalmAt = 0
         indexScrollStartAngle = 0f
         vHoldAt = 0
