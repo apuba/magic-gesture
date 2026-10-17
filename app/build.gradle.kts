@@ -13,6 +13,9 @@ android {
     defaultConfig { applicationId = "com.magicgesture.app"; minSdk = 26; targetSdk = 36; versionCode = 10; versionName = "1.0.0" }
     // BuildConfig.DEBUG is used to keep the internal "unlock everything" test switch out of release.
     buildFeatures { buildConfig = true }
+    // MediaPipe opens the bundled model by asset path. Keeping .task assets uncompressed avoids
+    // inflating/copying the 7.8 MB hand model whenever a fresh recognition pipeline starts.
+    androidResources { noCompress += "task" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     signingConfigs {

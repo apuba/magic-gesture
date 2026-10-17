@@ -9,11 +9,16 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 
-/** A simple, deliberately unoptimized YUV-to-RGB bridge for the first device run. */
-class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit) : AutoCloseable {
+/** Camera-frame preprocessing and MediaPipe hand-landmark inference. */
+class HandPipeline(
+    context: Context,
+    private val onEvent: (GestureEvent) -> Unit,
+    private val onFirstResult: () -> Unit = {}
+) : AutoCloseable {
     private val engine: GestureEngine
     private val activeHandSelector = ActiveHandSelector()
     private val reverseHorizontal: Boolean
@@ -29,16 +34,26 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     private val recognitionPaused = AtomicBoolean(false)
     @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
     @Volatile private var firstDetectionLogged = false
+    private val firstResultDelivered = AtomicBoolean(false)
+    /** Prevent expensive conversion/submission from outrunning the asynchronous graph. */
+    private val inferenceInFlight = AtomicBoolean(false)
     init {
         engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.effectiveFeatures(context))
         reverseHorizontal = GesturePreferences.reverseHorizontal(context)
         context.assets.open("hand_landmarker.task").close() // fail clearly if the model isn't installed
-        val options = HandLandmarker.HandLandmarkerOptions.builder()
-            .setBaseOptions(BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build())
+        fun options(delegate: Delegate) = HandLandmarker.HandLandmarkerOptions.builder()
+            .setBaseOptions(
+                BaseOptions.builder()
+                    .setModelAssetPath("hand_landmarker.task")
+                    .setDelegate(delegate)
+                    .build()
+            )
             .setNumHands(2)
             .setRunningMode(RunningMode.LIVE_STREAM)
             .setResultListener { result, _ ->
+                inferenceInFlight.set(false)
                 if (closed.get() || recognitionPaused.get()) return@setResultListener
+                if (firstResultDelivered.compareAndSet(false, true)) onFirstResult()
                 val now = SystemClock.uptimeMillis()
                 if (now - lastResultAt > 300) engine.lost(now).forEach(onEvent)
                 lastResultAt = now
@@ -67,9 +82,21 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
                     engine.consume(selected.points, now, selected.handedness).forEach(onEvent)
                 }
             }
-            .setErrorListener { error -> Log.e("HandPipeline", "inference failed", error) }
+            .setErrorListener { error ->
+                inferenceInFlight.set(false)
+                Log.e("HandPipeline", "inference failed", error)
+            }
             .build()
-        landmarker = HandLandmarker.createFromOptions(context, options)
+        landmarker = try {
+            HandLandmarker.createFromOptions(context, options(Delegate.GPU)).also {
+                Log.d("HandPipeline", "MediaPipe delegate=GPU")
+            }
+        } catch (gpuError: Throwable) {
+            Log.w("HandPipeline", "GPU delegate unavailable; falling back to CPU", gpuError)
+            HandLandmarker.createFromOptions(context, options(Delegate.CPU)).also {
+                Log.d("HandPipeline", "MediaPipe delegate=CPU")
+            }
+        }
     }
 
     private fun oppositeHandedness(handedness: String?): String? = when (handedness?.lowercase()) {
@@ -131,29 +158,39 @@ class HandPipeline(context: Context, private val onEvent: (GestureEvent) -> Unit
     @Synchronized fun updateSensitivity(movementScale: Float) = engine.updateMovementScale(movementScale)
     fun captureNextFrame(callback: (Bitmap) -> Unit) { pendingFrameCapture = callback }
     fun submit(image: Image, frameRotation: Int) {
-        if (closed.get()) return
+        if (closed.get()) { image.close(); return }
         val now = SystemClock.uptimeMillis()
-        if (now - lastSentAt < 50) return // cap expensive conversion at ~20 fps
-        lastSentAt = now
-        val bitmap = yuvToBitmap(image)
-        val matrix = Matrix().apply { postRotate(frameRotation.toFloat()); postScale(-1f, 1f) }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        if (rotated !== bitmap) bitmap.recycle()
+        if (now - lastSentAt < 50) { image.close(); return } // cap inference at ~20 fps
         pendingFrameCapture?.let { capture ->
             pendingFrameCapture = null
-            capture(rotated.copy(Bitmap.Config.ARGB_8888, false))
-        }
-        if (recognitionPaused.get()) {
-            rotated.recycle()
+            lastSentAt = now
+            val bitmap = try { yuvToBitmap(image) } finally { image.close() }
+            val matrix = Matrix().apply { postRotate(frameRotation.toFloat()); postScale(-1f, 1f) }
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated !== bitmap) bitmap.recycle()
+            try { capture(rotated.copy(Bitmap.Config.ARGB_8888, false)) } finally { rotated.recycle() }
             return
         }
-        val mpImage = BitmapImageBuilder(rotated).build()
+        if (recognitionPaused.get() || !inferenceInFlight.compareAndSet(false, true)) {
+            image.close()
+            return
+        }
         try {
-            landmarker.detectAsync(mpImage, now)
-        } finally {
-            // detectAsync acquires its own reference while the graph uses the frame.
-            // Release the caller reference now so completed/dropped frames can be recycled.
-            mpImage.close()
+            lastSentAt = now
+            val bitmap = try { yuvToBitmap(image) } finally { image.close() }
+            val matrix = Matrix().apply { postRotate(frameRotation.toFloat()); postScale(-1f, 1f) }
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated !== bitmap) bitmap.recycle()
+            val mpImage = BitmapImageBuilder(rotated).build()
+            try {
+                landmarker.detectAsync(mpImage, now)
+            } finally {
+                // detectAsync retains the MPImage until the asynchronous graph has consumed it.
+                mpImage.close()
+            }
+        } catch (error: Throwable) {
+            inferenceInFlight.set(false)
+            throw error
         }
     }
     override fun close() { if (closed.compareAndSet(false, true)) { activeHandSelector.reset(); engine.stop(); landmarker.close() } }
