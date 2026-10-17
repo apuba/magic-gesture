@@ -138,10 +138,11 @@ class FavoriteButtonController(
         replaceOverlay(fullScreenRoot().apply {
             addView(card().apply {
                 addView(heading("当前应用尚未定义收藏位置"))
-                addView(body("“$targetLabel”需要先标记收藏按钮。定义过程会停留在当前页面。"))
+                // 可能是首次使用，也可能是用户在“收藏位置”页删除了原配置；两种来源的下一步操作相同。
+                addView(body("“$targetLabel”目前没有收藏按钮位置。点击「重新定义」在当前页面重新标记收藏按钮。"))
                 addView(buttonRow(
-                    button("暂不定义") { finish(false) },
-                    button("现在定义", primary = true) { showCalibration() }
+                    button("确认") { finish(false) },
+                    button("重新定义", primary = true) { showCalibration() }
                 ))
             }, centeredCardParams())
         })
