@@ -388,6 +388,38 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.filterIsInstance<GestureEvent.Click>().size)
     }
 
+    @Test fun holdingTheCursorPoseDoesNotShowClickPreparationFeedback() {
+        val r = Replay()
+        r.feed(120, ::pointingIndex)
+        assertTrue(
+            r.events.filterIsInstance<GestureEvent.Feedback>()
+                .none { it.message.contains("点击") || it.message.contains("弯曲食指") }
+        )
+        assertEquals(0, r.events.countOf<GestureEvent.Click>())
+    }
+
+    @Test fun aPlainVerticalIndexNeverBecomesFingerHeart() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        r.feed(30, ::foldedIndexOnly)
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+    }
+
+    @Test fun movingPalmWithIndexShapeNoiseNeverClicks() {
+        val r = Replay()
+        repeat(16) { frame ->
+            val offset = if (frame % 2 == 0) -.04f else .04f
+            val pose = if (frame % 3 == 1) bentIndex() else pointingIndex()
+            r.feedPoses(listOf(pose.map { Point(it.x + offset, it.y) }))
+        }
+        assertEquals(0, r.events.countOf<GestureEvent.Click>())
+
+        // The movement guard must not disable a deliberate click once the palm settles again.
+        r.feed(6, ::pointingIndex)
+        r.feed(3, ::bentIndex)
+        r.feed(1, ::pointingIndex)
+        assertEquals(1, r.events.countOf<GestureEvent.Click>())
+    }
+
     @Test fun thumbsUpHoldFiresOnceAndRequiresRelease() {
         val r = Replay()
         r.feed(14, ::thumbsUpPose)                // 700ms hold -> ThumbsUp at 600ms
@@ -666,6 +698,19 @@ class GestureEngineReplayTest {
         assertEquals(1, r.events.countOf<GestureEvent.Like>())
     }
 
+    /** Moving the cursor must not turn transient thumb/index overlap into repeated likes. */
+    @Test fun movingFingerHeartDoesNotFireUntilTheHandSettles() {
+        val r = Replay(GestureFeatureConfig(scroll = false))
+        repeat(16) { frame ->
+            val offset = if (frame % 2 == 0) -.04f else .04f
+            r.feedPoses(listOf(fingerHeartPose().map { Point(it.x + offset, it.y) }))
+        }
+        assertEquals(0, r.events.countOf<GestureEvent.Like>())
+
+        r.feed(18, ::fingerHeartPose)
+        assertEquals(1, r.events.countOf<GestureEvent.Like>())
+    }
+
     /** The pinky keeps 666 clear of the thumbs-up; the curled index keeps it clear of the love pose. */
     @Test fun six666HoldFiresOnceWithoutTriggeringThumbUpOrLove() {
         val r = Replay()
@@ -686,6 +731,10 @@ class GestureEngineReplayTest {
         ring = FingerPose.FOLDED, pinky = FingerPose.EXTENDED, thumb = thumbOut
     )
 
+    /** A tracking wobble can stretch the little finger sideways without forming a Love sign. */
+    private fun verticalIndexWithSidewaysPinkyNoise(): List<Point> = lovePose()
+        .withLandmark(20, Point(.80f, .60f))
+
     /** 不足 1 秒的 Love 姿势不得切换锁定状态。 */
     @Test fun lovePoseShorterThanOneSecondDoesNotLockRecognition() {
         val r = Replay()
@@ -694,6 +743,33 @@ class GestureEngineReplayTest {
         r.feed(2, ::lovePose)                        // 1.05s: 已满 1 秒，锁定
         assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
         assertTrue(r.isLocked())
+    }
+
+    /** Cursor steering through a noisy Love-like shape must not show progress or lock recognition. */
+    @Test fun movingLovePoseDoesNotStartTheRecognitionLock() {
+        val r = Replay()
+        repeat(24) { frame ->
+            val offset = if (frame % 2 == 0) -.04f else .04f
+            r.feedPoses(listOf(lovePose().map { Point(it.x + offset, it.y) }))
+        }
+        assertEquals(0, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(r.events.filterIsInstance<GestureEvent.Feedback>().none { it.message.startsWith("Love 手势") })
+
+        r.feed(25, ::lovePose)
+        assertEquals(1, r.events.countOf<GestureEvent.RecognitionLock>())
+    }
+
+    @Test fun verticalIndexWithSidewaysPinkyNoiseDoesNotLockRecognition() {
+        val r = Replay()
+        r.feed(30, ::verticalIndexWithSidewaysPinkyNoise)
+        assertEquals(0, r.events.countOf<GestureEvent.RecognitionLock>())
+        assertTrue(r.events.filterIsInstance<GestureEvent.Feedback>().none { it.message.startsWith("Love 手势") })
+    }
+
+    @Test fun loveThumbOnTheWrongSideForTheDetectedHandDoesNotLockRecognition() {
+        val r = Replay(handedness = "Right")
+        r.feed(30, ::lovePose)
+        assertEquals(0, r.events.countOf<GestureEvent.RecognitionLock>())
     }
 
     /** 持续保持同一个姿势不能反向切换：锁上以后继续举着不会马上又解锁。 */
@@ -872,12 +948,12 @@ class GestureEngineReplayTest {
     }
 
     /**
-     * The gate reads the shape relative to the wrist, so carrying the same pose across the frame —
-     * what every real hand does while being tracked — must not cost a settle window.
+     * Normal tracking drift must not cost a settle window. Deliberate whole-hand movement is tested
+     * separately and now cancels static/HOLD gestures so it cannot pass through another gesture.
      */
     @Test fun carryingAPoseAcrossTheFrameStillFiresIt() {
         val r = Replay()
-        val drifting = (0 until 25).map { i -> pinkyOnlyPose().map { p -> Point(p.x + i * .012f, p.y) } }
+        val drifting = (0 until 25).map { i -> pinkyOnlyPose().map { p -> Point(p.x + i * .004f, p.y) } }
         r.feedPoses(drifting)
         assertEquals(1, r.events.countOf<GestureEvent.PinkyMute>())
     }
@@ -919,6 +995,16 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
     }
 
+    @Test fun movingPalmCancelsAnArmedOpenAppSequence() {
+        val r = Replay()
+        r.feed(10, ::spreadPalm)
+        repeat(20) { frame ->
+            val offset = if (frame % 2 == 0) -.04f else .04f
+            r.feedPoses(listOf(foldedIndexOnly().map { Point(it.x + offset, it.y) }))
+        }
+        assertEquals(0, r.events.countOf<GestureEvent.OpenApp>())
+    }
+
     /**
      * Folding to three fingers naturally crosses another slot first (the thumb folds while
      * the four fingers are still extended -> slot 4). The sequence must follow the latest
@@ -956,6 +1042,19 @@ class GestureEngineReplayTest {
         var dyBack = dy
         r.feed(6) { dyBack -= .03f; closedPalm(offsetY = dyBack) }
         assertEquals(1, r.events.filterIsInstance<GestureEvent.Swipe>().size)
+    }
+
+    @Test fun repeatedPalmWaveUpKeepsWorkingWithoutChangingTheHandShape() {
+        val r = Replay()
+        repeat(30) {
+            r.feed(4) { closedPalm() }
+            var dy = 0f
+            r.feed(5) { dy -= .03f; closedPalm(offsetY = dy) }
+            r.feed(5) { dy += .03f; closedPalm(offsetY = dy) }
+        }
+        val swipes = r.events.filterIsInstance<GestureEvent.Swipe>()
+        assertEquals(30, swipes.count { it.up && it.source == GestureEvent.MotionSource.PALM })
+        assertEquals(0, swipes.count { !it.up })
     }
 
     /** 张掌静止 6 秒后再向下挥：同样只重置基准，动作照常触发。 */
@@ -1228,6 +1327,22 @@ class GestureEngineReplayTest {
         r.feed(8, ::spreadPalm)
         r.feed(17, ::cShapePose)
         assertEquals(1, r.events.countOf<GestureEvent.CShape>())
+    }
+
+    /** A moving cursor may cross claw geometry, but only a settled claw may press the screen. */
+    @Test fun movingClawDoesNotStartDragUntilItSettles() {
+        val r = Replay(GestureFeatureConfig(scroll = false, clawDrag = true))
+        repeat(18) { frame ->
+            val offset = if (frame % 2 == 0) -.04f else .04f
+            r.feedPoses(listOf(clawPoseShiftedBy(offset, 0f)))
+        }
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.ClawDrag>().size)
+
+        r.feed(18, ::clawPose)
+        assertEquals(
+            listOf(GestureEvent.DragPhase.START),
+            r.events.filterIsInstance<GestureEvent.ClawDrag>().map { it.phase }
+        )
     }
 
     /**
