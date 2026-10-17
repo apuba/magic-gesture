@@ -62,6 +62,9 @@ class MainActivity : Activity() {
     private lateinit var checkInSummary: TextView
     private val requestCamera = 100
     private var pendingControl = false
+    /** Service started, but camera + model + first inference have not all become ready yet. */
+    private var awaitingControlReady = false
+    private var controlReadyPolls = 0
     private var waitingForOverlayPermission = false
     private var waitingForAccessibilityPermission = false
     private val featureSwitches = mutableMapOf<String, MutableList<Switch>>()
@@ -432,6 +435,8 @@ class MainActivity : Activity() {
                     stopService(Intent(this@MainActivity, CameraProbeService::class.java))
                     status.text = "已请求停止，摄像头与悬浮控件即将关闭"
                     status.postDelayed({ refreshControlButton() }, 250)
+                } else if (awaitingControlReady) {
+                    status.text = "手势模型仍在启动，请稍候"
                 } else if (!(Settings.canDrawOverlays(this@MainActivity) && isAccessibilityServiceEnabled())) {
                     // 设计稿：未授权时中央按钮把用户带到下方授权区，由授权卡逐项完成授权。
                     status.text = "请先完成下方悬浮窗与无障碍授权"
@@ -1154,7 +1159,7 @@ class MainActivity : Activity() {
                 startControlButton.text = "运行中"
                 setHeroControlIcon(stopIcon(50), 50)
             }
-            pendingControl -> {
+            pendingControl || awaitingControlReady -> {
                 startControlButton.text = controlButtonLabel("…", "正在启动")
                 setHeroControlIcon(null)
             }
@@ -1199,7 +1204,7 @@ class MainActivity : Activity() {
                 rim = Color.argb(200, 60, 255, 190)
                 ring = HERO_RING_READY
             }
-            pendingControl -> {
+            pendingControl || awaitingControlReady -> {
                 glow = Color.argb(120, 60, 170, 255)
                 rim = Color.argb(200, 60, 170, 255)
                 ring = intArrayOf(Color.rgb(90, 190, 255), Color.rgb(40, 120, 255), Color.rgb(120, 90, 255), Color.rgb(90, 190, 255))
@@ -1281,6 +1286,7 @@ class MainActivity : Activity() {
     private fun heroStatusText(): String = when {
         CameraProbeService.recognitionLocked -> "识别已锁定，仅 Love 手势可以解锁"
         CameraProbeService.isControlRunning -> "点击停止手势控制"
+        awaitingControlReady -> "相机、模型与首帧识别启动中"
         !Settings.canDrawOverlays(this) || !isAccessibilityServiceEnabled() -> "需要完成必要授权\n才能使用手势控制"
         else -> "一键启动手势控制"
     }
@@ -1550,23 +1556,40 @@ class MainActivity : Activity() {
             val controlMode = pendingControl
             startForegroundService(Intent(this, CameraProbeService::class.java).putExtra("control", controlMode))
             pendingControl = false
-            status.text = "●  启动中，请等待悬浮圆点与通知出现"
-            // 服务启动成功后不会回调首页，延迟回读真实状态：
-            // 让用户留在首页时也能看到按钮切到「运行中」、圆环开始转。
-            status.postDelayed({ refreshControlButton() }, 1200L)
-            status.postDelayed({ refreshControlButton() }, 2600L)
+            awaitingControlReady = controlMode
+            controlReadyPolls = 0
+            status.text = "●  启动中，请等待相机、模型与首帧识别就绪"
             if (controlMode) {
-                status.postDelayed({
-                    startActivity(Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_HOME)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                    moveTaskToBack(true)
-                }, 350)
+                waitForControlReady()
             }
         } catch (e: Exception) {
             status.text = "●  启动失败：${e.javaClass.simpleName}: ${e.message}"
         }
+    }
+
+    /** Do not leave the user on the desktop while MediaPipe is still loading its first result. */
+    private fun waitForControlReady() {
+        if (!awaitingControlReady || isFinishing) return
+        refreshControlButton()
+        if (CameraProbeService.isControlRunning) {
+            awaitingControlReady = false
+            status.text = "●  手势识别已就绪"
+            startActivity(Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            moveTaskToBack(true)
+            return
+        }
+        controlReadyPolls++
+        if (controlReadyPolls >= 200) {
+            awaitingControlReady = false
+            stopService(Intent(this, CameraProbeService::class.java))
+            status.text = "●  启动超时，请停止后重试并检查相机是否被占用"
+            refreshControlButton()
+            return
+        }
+        status.postDelayed({ waitForControlReady() }, 100L)
     }
 
     /** 手势做法较长，列表里只放两行，点说明文字弹出完整内容。 */

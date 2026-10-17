@@ -23,6 +23,7 @@ import android.provider.MediaStore
 import android.os.*
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Range
 import android.util.Size
 import android.view.Display
 import android.view.Surface
@@ -62,6 +63,7 @@ class CameraProbeService : Service() {
         // into "always play". One wake-up attempt per this window is enough.
         private const val MUSIC_WAKE_COOLDOWN_MS = 10_000L
         private const val SELFIE_JPEG_OUTPUT_QUALITY = 95
+        private const val RECOGNITION_TARGET_FPS = 20
     }
 
     private val channel = "camera_probe"
@@ -78,6 +80,10 @@ class CameraProbeService : Service() {
     private var cameraGeneration = 0
     @Volatile private var stopped = false
     private var firstFrameLogged = false
+    private var cameraSessionReady = false
+    private var firstInferenceReady = false
+    private var startupRequestedAt = 0L
+    private var recognitionFpsRange: Range<Int>? = null
     @Volatile private var pipeline: HandPipeline? = null
     private val modelInitLock = Any()
     private var modelInitGeneration = 0
@@ -249,6 +255,11 @@ class CameraProbeService : Service() {
         }
         isControlRunning = false
         controlMode = intent?.getBooleanExtra("control", false) == true
+        if (controlMode) {
+            cameraSessionReady = session != null
+            if (pipeline == null) firstInferenceReady = false
+            startupRequestedAt = SystemClock.uptimeMillis()
+        }
         val notification = notification("启动摄像头中")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) startForeground(7, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         else startForeground(7, notification)
@@ -278,7 +289,7 @@ class CameraProbeService : Service() {
             var createdPipeline: HandPipeline? = null
             val t0 = SystemClock.uptimeMillis()
             try {
-                val newPipeline = HandPipeline(this) { event ->
+                val newPipeline = HandPipeline(this, onEvent = { event ->
                             val service = ControlAccessibilityService.active
                             // A result may already be queued when G34 starts the exclusive capture.
                             // Drop it at the service boundary as well as pausing MediaPipe below.
@@ -324,7 +335,15 @@ class CameraProbeService : Service() {
                                 GestureEvent.Recents -> service?.inject(event) { finishAction(it, "打开最近任务") }
                                     ?: finishAction(false, "最近任务", "无障碍服务未连接")
                             }
-                }
+                }, onFirstResult = {
+                    handler.post {
+                        if (!stopped && generation == modelInitGeneration) {
+                            firstInferenceReady = true
+                            Log.d("CameraProbe", "startup: first inference result")
+                            maybeMarkControlReady()
+                        }
+                    }
+                })
                 createdPipeline = newPipeline
                 newPipeline.setDiag { Log.d("CameraProbe", "diag: $it") }
                 val accepted = synchronized(modelInitLock) {
@@ -368,10 +387,12 @@ class CameraProbeService : Service() {
             } ?: run { fail("未找到前置摄像头"); return }
             val characteristics = cameraManager.getCameraCharacteristics(id)
             sensorRotation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            recognitionFpsRange = chooseRecognitionFpsRange(characteristics)
             cameraOpening = true
             val generation = ++cameraGeneration
             reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2).apply {
-                setOnImageAvailableListener({ r -> r.acquireLatestImage()?.use { image ->
+                setOnImageAvailableListener({ r -> r.acquireLatestImage()?.let { image ->
+                    var handedToPipeline = false
                     if (!firstFrameLogged) {
                         firstFrameLogged = true
                         Log.d("CameraProbe", "startup: first camera frame received")
@@ -386,8 +407,17 @@ class CameraProbeService : Service() {
                             lastFrameRotation = frameRotation
                             pipeline?.resetTracking()
                         }
-                        pipeline?.submit(image, frameRotation)
-                    } catch (e: Exception) { fail("推理帧失败：${e.javaClass.simpleName}") }
+                        val activePipeline = pipeline
+                        if (activePipeline != null) {
+                            handedToPipeline = true
+                            activePipeline.submit(image, frameRotation)
+                        }
+                        else image.close()
+                    } catch (e: Exception) {
+                        if (!handedToPipeline) image.close()
+                        fail("推理帧失败：${e.javaClass.simpleName}")
+                    }
+                    else image.close()
                 } }, handler)
             }
             selfieJpegSizes = characteristics
@@ -561,11 +591,23 @@ class CameraProbeService : Service() {
                     if (stopped) { s.close(); return }
                     session = s
                     try {
-                        val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(surface) }.build()
+                        val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                            addTarget(surface)
+                            recognitionFpsRange?.let { range ->
+                                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
+                                Log.d("CameraProbe", "recognition camera fps range=${range.lower}-${range.upper}")
+                            }
+                        }.build()
                         s.setRepeatingRequest(request, null, handler)
-                        isControlRunning = controlMode
-                        overlayIndicator.setState(OverlayIndicator.State.RUNNING)
-                        updateNotification(if (controlMode) "手势识别与悬浮控制正在运行" else "摄像头后台运行中")
+                        cameraSessionReady = true
+                        if (controlMode) {
+                            overlayIndicator.setState(OverlayIndicator.State.STARTING)
+                            updateNotification("模型加载与首帧识别中")
+                            maybeMarkControlReady()
+                        } else {
+                            overlayIndicator.setState(OverlayIndicator.State.RUNNING)
+                            updateNotification("摄像头后台运行中")
+                        }
                     } catch (e: Exception) { fail("开始取帧失败：${e.javaClass.simpleName}") }
                 }
                 override fun onConfigureFailed(s: CameraCaptureSession) {
@@ -586,6 +628,29 @@ class CameraProbeService : Service() {
             }, handler)
         } catch (e: CameraAccessException) { recoverCamera("相机会话中断，等待恢复") }
         catch (e: Exception) { fail("配置失败：${e.javaClass.simpleName}") }
+    }
+
+    /** Prefer the lowest camera range that can deliver the pipeline's 20 fps inference budget. */
+    private fun chooseRecognitionFpsRange(characteristics: CameraCharacteristics): Range<Int>? {
+        val ranges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            ?.filter { it.upper >= RECOGNITION_TARGET_FPS }
+            .orEmpty()
+        return ranges.minWithOrNull(
+            compareBy<Range<Int>>(
+                { if (it.contains(RECOGNITION_TARGET_FPS)) 0 else 1 },
+                { it.upper },
+                { it.upper - it.lower }
+            )
+        )
+    }
+
+    /** A configured camera is not ready until MediaPipe has returned its first live-stream result. */
+    private fun maybeMarkControlReady() {
+        if (!controlMode || isControlRunning || !cameraSessionReady || !firstInferenceReady) return
+        isControlRunning = true
+        overlayIndicator.setState(OverlayIndicator.State.RUNNING)
+        updateNotification("手势识别与悬浮控制正在运行")
+        Log.d("CameraProbe", "startup: control ready ${SystemClock.uptimeMillis() - startupRequestedAt} ms after request")
     }
 
     private fun advanceSelfieReader(): Boolean {
@@ -609,6 +674,7 @@ class CameraProbeService : Service() {
     private fun recoverCamera(message: String) {
         if (stopped) return
         isControlRunning = false
+        cameraSessionReady = false
         cameraOpening = false
         Log.w("CameraProbe", message)
         session?.close(); session = null
@@ -1270,6 +1336,8 @@ class CameraProbeService : Service() {
     private fun updateNotification(message: String) { getSystemService(NotificationManager::class.java).notify(7, notification(message)) }
     override fun onDestroy() {
         isControlRunning = false
+        cameraSessionReady = false
+        firstInferenceReady = false
         // 停止全部控制后清除锁状态：下次主动启动控制默认从正常识别开始。
         recognitionLocked = false
         rollingScreenshotInProgress = false
