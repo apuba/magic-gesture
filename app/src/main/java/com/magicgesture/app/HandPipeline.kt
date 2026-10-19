@@ -6,7 +6,9 @@ import android.graphics.Matrix
 import android.media.Image
 import android.os.SystemClock
 import android.util.Log
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
@@ -35,8 +37,27 @@ class HandPipeline(
     @Volatile private var pendingFrameCapture: ((Bitmap) -> Unit)? = null
     @Volatile private var firstDetectionLogged = false
     private val firstResultDelivered = AtomicBoolean(false)
-    /** Prevent expensive conversion/submission from outrunning the asynchronous graph. */
-    private val inferenceInFlight = AtomicBoolean(false)
+    /**
+     * Cap how far conversion may run ahead of the asynchronous graph.
+     *
+     * Two is deliberate: on a low-end SoC one frame costs ~35 ms of CPU conversion plus ~105 ms
+     * of GPU inference, and holding a single frame in flight serialises them into ~145 ms per
+     * result (under 7 fps). Keeping one frame being converted while another is on the GPU turns
+     * the cycle into roughly the inference time alone. More than two would only queue stale
+     * frames the gesture engine has already moved past.
+     */
+    private val MAX_IN_FLIGHT_FRAMES = 2
+    private val inFlightFrames = AtomicInteger(0)
+    /** Wall clock of the oldest frame MediaPipe has not answered for; 0 while none is in flight. */
+    @Volatile private var oldestInFlightAt = 0L
+    /**
+     * The counter above is only ever released by a MediaPipe callback. If a callback is lost —
+     * a GPU graph that stops answering on a throttled or overheating device — every later frame
+     * stays locked out with no error, no log and no recovery, and the app looks like it simply
+     * stopped recognising. Anything unanswered for this long is treated as lost and the gate is
+     * reopened; a callback that still arrives afterwards cannot push the counter below zero.
+     */
+    private val STALE_IN_FLIGHT_MS = 3_000L
     init {
         engine = GestureEngine(GesturePreferences.movementScale(context), GesturePreferences.effectiveFeatures(context))
         reverseHorizontal = GesturePreferences.reverseHorizontal(context)
@@ -51,7 +72,7 @@ class HandPipeline(
             .setNumHands(2)
             .setRunningMode(RunningMode.LIVE_STREAM)
             .setResultListener { result, _ ->
-                inferenceInFlight.set(false)
+                releaseInFlightFrame()
                 if (closed.get() || recognitionPaused.get()) return@setResultListener
                 if (firstResultDelivered.compareAndSet(false, true)) onFirstResult()
                 val now = SystemClock.uptimeMillis()
@@ -83,7 +104,7 @@ class HandPipeline(
                 }
             }
             .setErrorListener { error ->
-                inferenceInFlight.set(false)
+                releaseInFlightFrame()
                 Log.e("HandPipeline", "inference failed", error)
             }
             .build()
@@ -171,10 +192,11 @@ class HandPipeline(
             try { capture(rotated.copy(Bitmap.Config.ARGB_8888, false)) } finally { rotated.recycle() }
             return
         }
-        if (recognitionPaused.get() || !inferenceInFlight.compareAndSet(false, true)) {
-            image.close()
-            return
+        if (recognitionPaused.get()) { image.close(); return }
+        if (inFlightFrames.get() >= MAX_IN_FLIGHT_FRAMES) {
+            if (!reopenStalledGate(now)) { image.close(); return }
         }
+        if (inFlightFrames.getAndIncrement() == 0) oldestInFlightAt = now
         try {
             lastSentAt = now
             val bitmap = try { yuvToBitmap(image) } finally { image.close() }
@@ -189,25 +211,73 @@ class HandPipeline(
                 mpImage.close()
             }
         } catch (error: Throwable) {
-            inferenceInFlight.set(false)
+            releaseInFlightFrame()
             throw error
         }
     }
+    private fun releaseInFlightFrame() {
+        if (inFlightFrames.updateAndGet { count -> if (count > 0) count - 1 else 0 } == 0) oldestInFlightAt = 0L
+    }
+    /** Reopens the gate when MediaPipe has stopped answering; see [STALE_IN_FLIGHT_MS]. */
+    private fun reopenStalledGate(now: Long): Boolean {
+        val oldest = oldestInFlightAt
+        if (oldest == 0L || now - oldest < STALE_IN_FLIGHT_MS) return false
+        Log.w("HandPipeline", "no inference result for ${now - oldest} ms; reopening the frame gate")
+        inFlightFrames.set(0)
+        oldestInFlightAt = 0L
+        return true
+    }
     override fun close() { if (closed.compareAndSet(false, true)) { activeHandSelector.reset(); engine.stop(); landmarker.close() } }
+    /**
+     * Reused scratch buffers. A 640x480 frame is 307200 pixels, and allocating fresh plane and
+     * pixel arrays per frame at 20 fps feeds the allocator hundreds of megabytes per second,
+     * which on a low-end device shows up as multi-hundred-millisecond GC pauses — long enough to
+     * make every hold and sequence look like the hand vanished.
+     */
+    private var pixelScratch: IntArray? = null
+    private val planeScratch = arrayOfNulls<ByteArray>(3)
+    private fun planeBytes(slot: Int, buffer: ByteBuffer): ByteArray {
+        val size = buffer.remaining()
+        var bytes = planeScratch[slot]
+        if (bytes == null || bytes.size < size) { bytes = ByteArray(size); planeScratch[slot] = bytes }
+        buffer.get(bytes, 0, size)
+        return bytes
+    }
+    /**
+     * YUV_420_888 -> ARGB_8888. Same result as the pixel-by-pixel float version, but the planes
+     * are copied in bulk once per frame and the colour math is fixed point: a Kotlin loop over
+     * 307200 pixels with per-byte buffer reads costs ~125 ms per frame on a Dimensity 700, which
+     * alone caps the pipeline at under 4 fps.
+     */
     private fun yuvToBitmap(image: Image): Bitmap {
         val w = image.width; val h = image.height
         val planes = image.planes
-        val out = IntArray(w * h)
-        val y = planes[0].buffer; val u = planes[1].buffer; val v = planes[2].buffer
-        for (row in 0 until h) for (col in 0 until w) {
-            val yy = y.get(row * planes[0].rowStride + col * planes[0].pixelStride).toInt() and 255
-            val uvIndex = (row / 2) * planes[1].rowStride + (col / 2) * planes[1].pixelStride
-            val uu = (u.get(uvIndex).toInt() and 255) - 128
-            val vv = (v.get((row / 2) * planes[2].rowStride + (col / 2) * planes[2].pixelStride).toInt() and 255) - 128
-            val r = (yy + 1.402f * vv).toInt().coerceIn(0, 255)
-            val g = (yy - .344f * uu - .714f * vv).toInt().coerceIn(0, 255)
-            val b = (yy + 1.772f * uu).toInt().coerceIn(0, 255)
-            out[row * w + col] = -0x1000000 or (r shl 16) or (g shl 8) or b
+        val y = planeBytes(0, planes[0].buffer)
+        val u = planeBytes(1, planes[1].buffer)
+        val v = planeBytes(2, planes[2].buffer)
+        val yStride = planes[0].rowStride; val yStep = planes[0].pixelStride
+        val uStride = planes[1].rowStride; val uStep = planes[1].pixelStride
+        val vStride = planes[2].rowStride; val vStep = planes[2].pixelStride
+        var out = pixelScratch
+        if (out == null || out.size < w * h) { out = IntArray(w * h); pixelScratch = out }
+        for (row in 0 until h) {
+            val yRow = row * yStride
+            val uRow = (row shr 1) * uStride
+            val vRow = (row shr 1) * vStride
+            val outRow = row * w
+            for (col in 0 until w) {
+                val yy = y[yRow + col * yStep].toInt() and 255
+                val uvOffset = (col shr 1)
+                val uu = (u[uRow + uvOffset * uStep].toInt() and 255) - 128
+                val vv = (v[vRow + uvOffset * vStep].toInt() and 255) - 128
+                var r = yy + ((91881 * vv) shr 16)
+                var g = yy - ((22554 * uu + 46802 * vv) shr 16)
+                var b = yy + ((116130 * uu) shr 16)
+                if (r < 0) r = 0 else if (r > 255) r = 255
+                if (g < 0) g = 0 else if (g > 255) g = 255
+                if (b < 0) b = 0 else if (b > 255) b = 255
+                out[outRow + col] = -0x1000000 or (r shl 16) or (g shl 8) or b
+            }
         }
         return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
     }
