@@ -82,6 +82,8 @@ sealed interface GestureEvent {
     data object OrchidBack : GestureEvent
     data object LeftLBack : GestureEvent
     data object LShape : GestureEvent
+    /** G36: same single-finger gun as G25 with the index pointing down instead of up. */
+    data object LShapeDown : GestureEvent
     data object CShape : GestureEvent
     data object LoveLock : GestureEvent
     /**
@@ -199,6 +201,8 @@ class GestureEngine(
     private var leftLHoldAt = 0L
     private var lShapeHold = StaticHold.READY
     private var lShapeHoldAt = 0L
+    private var lShapeDownHold = StaticHold.READY
+    private var lShapeDownHoldAt = 0L
     private var cShapeHold = StaticHold.READY
     private var cShapeHoldAt = 0L
     // ---- 识别锁（Love 手势 G28）--------------------------------------------------------------
@@ -601,9 +605,17 @@ class GestureEngine(
             kotlin.math.abs(indexAngleDegrees) <= 35f && thumbUpStrong && points[8].x < points[5].x &&
             thumbIndexAngle in 45f..90f && thumbBehindIndexPip && thumbClearOfIndexJoints &&
             !thumbMeetsIndexTipStrict && !thumbPressesIndexJointStrict
-        // G25: index vertical, thumb stretched sideways.
+        // G25 / G36: index vertical, thumb stretched sideways. The index direction is the only
+        // difference, so the two share every other test and the sign of the angle splits them.
+        // G25 used to accept `abs(angle) >= 60` — both directions — and therefore also claimed the
+        // downward gun. Since 2026-10-21 each direction owns its own code, and the 60° dead band in
+        // between (a roughly horizontal index) still matches neither.
         val lShapePose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
-            kotlin.math.abs(indexAngleDegrees) >= 60f && thumbSideways
+            indexAngleDegrees <= -60f && thumbSideways
+        // G36: the same gun with the index pointing down. Screen y grows downwards, so a tip below
+        // its own MCP is a positive angle.
+        val lShapeDownPose = indexOpen && middleFolded && ringFolded && pinkyFolded &&
+            indexAngleDegrees >= 60f && thumbSideways
         // G28: thumb, index and pinky deliberately extended; middle and ring folded ("I love you").
         // Wrist-distance alone can briefly report a sideways/noisy little finger as extended while
         // steering the cursor with one vertical index. Require both raised fingers to clear their
@@ -783,6 +795,9 @@ class GestureEngine(
         // Nothing is shown during a hold this short (the countdown needs a second or more), so the
         // dedicated progress label went away with the longer time.
         if (features.lShape && advanceStaticHold(lShapePose, now, GestureEvent.LShape, { lShapeHold }, { lShapeHold = it }, { lShapeHoldAt }, { lShapeHoldAt = it }, output)) return output
+        // G36 mirrors G25: same 600ms hold, own switch, and it only ever sees the frames the upward
+        // gun did not claim, because the two poses are mutually exclusive by index direction.
+        if (features.lShapeDown && advanceStaticHold(lShapeDownPose, now, GestureEvent.LShapeDown, { lShapeDownHold }, { lShapeDownHold = it }, { lShapeDownHoldAt }, { lShapeDownHoldAt = it }, output)) return output
         if (pinkyOnlyPose) {
             // Folded thumb/index can resemble a heart pinch. Pinky-only owns this pose and
             // clears partial heart state so landmark wobble cannot fire Like afterward.
@@ -1883,6 +1898,8 @@ class GestureEngine(
         leftLHoldAt = 0L
         lShapeHold = StaticHold.READY
         lShapeHoldAt = 0L
+        lShapeDownHold = StaticHold.READY
+        lShapeDownHoldAt = 0L
         cShapeHold = StaticHold.READY
         cShapeHoldAt = 0L
         six666Hold = StaticHold.READY

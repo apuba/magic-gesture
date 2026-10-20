@@ -40,6 +40,8 @@ data class GestureFeatureConfig(
     val orchidBack: Boolean = true,
     val leftL: Boolean = true,
     val lShape: Boolean = true,
+    /** G36: the single-finger gun with the index pointing down; mirrors G25 with its own switch. */
+    val lShapeDown: Boolean = true,
     val clawDrag: Boolean = CLAW_DRAG_DEFAULT,
     val cShape: Boolean = true,
     val loveLock: Boolean = true,
@@ -275,6 +277,7 @@ object GesturePreferences {
             orchidBack = prefs.getBoolean("feature_orchid_back", true),
             leftL = prefs.getBoolean("feature_left_l", true),
             lShape = prefs.getBoolean("feature_l_shape", true),
+            lShapeDown = prefs.getBoolean("feature_l_shape_down", true),
             clawDrag = prefs.getBoolean("feature_claw_drag", CLAW_DRAG_DEFAULT),
             cShape = prefs.getBoolean("feature_c_shape", true),
             loveLock = prefs.getBoolean("feature_love_lock", true),
@@ -362,6 +365,7 @@ object GesturePreferences {
             .putBoolean("feature_orchid_back", features.orchidBack)
             .putBoolean("feature_left_l", features.leftL)
             .putBoolean("feature_l_shape", features.lShape)
+            .putBoolean("feature_l_shape_down", features.lShapeDown)
             .putBoolean("feature_claw_drag", features.clawDrag)
             .putBoolean("feature_c_shape", features.cShape)
             .putBoolean("feature_love_lock", features.loveLock)

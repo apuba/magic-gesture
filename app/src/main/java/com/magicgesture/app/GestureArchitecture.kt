@@ -7,7 +7,7 @@ import android.view.KeyEvent
 enum class GestureCode {
     G01, G02, G03, G04, G05, G06, G07, G08, G09, G10, G11, G12,
     G13, G14, G15, G16, G17, G18, G19, G20, G21, G22, G23,
-    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34, G35
+    G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34, G35, G36
 }
 
 enum class GestureType { CONTINUOUS, DISCRETE, DYNAMIC, HOLD, SEQUENCE }
@@ -47,7 +47,9 @@ val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G22 to "握拳",
     GestureCode.G23 to "小指手势",
     GestureCode.G24 to "单指枪·横向",
-    GestureCode.G25 to "单指枪·竖向",
+    // G25/G36 are the same gun pointed in opposite vertical directions, so both names carry the
+    // direction: users see them next to each other in the mapping list.
+    GestureCode.G25 to "单指枪·竖向（上）",
     GestureCode.G26 to "抓取手势",
     GestureCode.G27 to "C 手势",
     GestureCode.G28 to "Love 手势",
@@ -57,7 +59,8 @@ val GESTURE_DISPLAY_NAMES: Map<GestureCode, String> = mapOf(
     GestureCode.G31 to "双指上拉",
     GestureCode.G32 to "双指下拉",
     GestureCode.G33 to "双指双点",
-    GestureCode.G35 to "双指枪·竖向"
+    GestureCode.G35 to "双指枪·竖向",
+    GestureCode.G36 to "单指枪·竖向（下）"
 )
 
 enum class GestureAction {
@@ -185,6 +188,7 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureEvent.PinkyMute -> GestureCode.G23
             GestureEvent.LeftLBack -> GestureCode.G24
             GestureEvent.LShape -> GestureCode.G25
+            GestureEvent.LShapeDown -> GestureCode.G36
             is GestureEvent.ClawDrag -> GestureCode.G26
             GestureEvent.CShape -> GestureCode.G27
             GestureEvent.LoveLock -> GestureCode.G28
@@ -399,6 +403,15 @@ class GestureMappingManager(private val overrides: Map<GestureCode, GestureActio
             GestureType.HOLD,
             GestureAction.NOTIFICATIONS,
             CooldownPolicy.GLOBAL_AFTER_SUCCESS
+        ),
+        // G36 is the downward mirror of G25: same gun, index pointing down instead of up, added
+        // 2026-10-21 at the product owner's request. It scrolls down, matching G06's action, and
+        // keeps its own switch so it can be turned off without touching the upward gun.
+        GestureCode.G36 to GestureMapping(
+            GestureCode.G36,
+            GestureType.HOLD,
+            GestureAction.SCROLL_DOWN,
+            CooldownPolicy.GLOBAL_AFTER_SUCCESS
         )
     )
     }
@@ -437,6 +450,7 @@ class GestureFeatureGate {
         GestureCode.G29, GestureCode.G30, GestureCode.G33 -> features.twoFingerTrack
         GestureCode.G31, GestureCode.G32 -> features.twoFingerVolume
         GestureCode.G35 -> features.twoFingerUp
+        GestureCode.G36 -> features.lShapeDown
         else -> false
     }
 }

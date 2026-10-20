@@ -921,8 +921,10 @@ class MainActivity : Activity() {
         GuideCard(listOf(GestureCode.G08), "并掌右挥", "食指、中指、无名指和小指并拢后向右挥，拇指不限。",
             "→", "palm_right_scroll", features.palmRightScroll, R.drawable.gesture_four_fingers_together),
         // 第 10 次签到
-        GuideCard(listOf(GestureCode.G25), "单指枪·竖向", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。",
+        GuideCard(listOf(GestureCode.G25), "单指枪·竖向（上）", "食指向上伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。识别阈值待真机校准。",
             "L", "l_shape", features.lShape, R.drawable.gesture_l_shape),
+        GuideCard(listOf(GestureCode.G36), "单指枪·竖向（下）", "食指向下伸直、大拇指向侧面伸出，其余三指收拢，保持约 0.6 秒。与向上单指枪按食指方向区分，识别阈值待真机校准。",
+            "L", "l_shape_down", features.lShapeDown, R.drawable.gesture_l_shape),
         GuideCard(listOf(GestureCode.G27), "C 手势", "食指、中指、无名指和小指并拢弯曲，与大拇指围成明显 C 形；手掌可适度倾斜，保持约 0.6 秒。",
             "C", "c_shape", features.cShape, R.drawable.gesture_c_shape),
         // 第 11 次签到

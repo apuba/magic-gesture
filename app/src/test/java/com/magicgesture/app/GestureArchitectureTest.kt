@@ -309,6 +309,26 @@ class GestureArchitectureTest {
         assertNull(GestureMappingManager.defaultActionOf(GestureCode.G28))
     }
 
+    /**
+     * G36 (2026-10-21): the downward single-finger gun, added at the product owner's request. It
+     * mirrors G25 — hold type, cooldown policy, remappable — and only the default action differs.
+     */
+    @Test fun downwardVerticalGunResolvesToG36AndDefaultsToScrollDown() {
+        val mapped = requireNotNull(mappings.resolve(GestureEvent.LShapeDown))
+        assertEquals(GestureCode.G36, mapped.mapping.code)
+        assertEquals(GestureType.HOLD, mapped.mapping.type)
+        assertEquals(GestureAction.SCROLL_DOWN, mapped.mapping.action)
+        assertEquals(CooldownPolicy.GLOBAL_AFTER_SUCCESS, mapped.mapping.cooldownPolicy)
+        assertTrue(gate.allows(mapped.mapping, GestureFeatureConfig()))
+        // Each direction owns its own switch, so closing one never disables the other.
+        assertFalse(gate.allows(mapped.mapping, GestureFeatureConfig(lShapeDown = false)))
+        assertTrue(gate.allows(mapped.mapping, GestureFeatureConfig(lShape = false)))
+        val upward = requireNotNull(mappings.resolve(GestureEvent.LShape))
+        assertFalse(gate.allows(upward.mapping, GestureFeatureConfig(lShape = false)))
+        assertTrue(gate.allows(upward.mapping, GestureFeatureConfig(lShapeDown = false)))
+        assertTrue(mappings.isRemappable(GestureCode.G36))
+    }
+
     @Test fun g24ThroughG27EventsResolveWithHoldTypeAndOwnFeatureGates() {
         val cases = listOf(
             GestureEvent.LeftLBack to GestureCode.G24,

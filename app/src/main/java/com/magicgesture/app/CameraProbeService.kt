@@ -320,7 +320,8 @@ class CameraProbeService : Service() {
                                 GestureEvent.ThumbsUp, GestureEvent.Ok, GestureEvent.PlayPause,
                                 GestureEvent.PinkyMute,
                                 GestureEvent.LotusRecents, GestureEvent.OrchidBack,
-                                GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.CShape,
+                                GestureEvent.LeftLBack, GestureEvent.LShape, GestureEvent.LShapeDown,
+                                GestureEvent.CShape,
                                 GestureEvent.LoveLock, is GestureEvent.TwoFingerSwipe,
                                 GestureEvent.TwoFingerDoubleTap, is GestureEvent.TwoFingerVolumeHold,
                                 GestureEvent.TwoFingerUp, is GestureEvent.OpenApp -> Unit // Migrated gestures use the mapping pipeline above.

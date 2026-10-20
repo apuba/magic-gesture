@@ -47,7 +47,9 @@ object GestureUnlockPlan {
         listOf(GestureCode.G12, GestureCode.G20, GestureCode.G21),
         listOf(GestureCode.G16, GestureCode.G17, GestureCode.G18, GestureCode.G19),
         listOf(GestureCode.G14, GestureCode.G15, GestureCode.G07, GestureCode.G08),
-        listOf(GestureCode.G25, GestureCode.G27, GestureCode.G26, GestureCode.G34),
+        // G36 is the downward single-finger gun (2026-10-21): it joins G25 in the same package
+        // because the two are one family and ship with the same scroll action.
+        listOf(GestureCode.G25, GestureCode.G36, GestureCode.G27, GestureCode.G26, GestureCode.G34),
         listOf(
             GestureCode.G13, GestureCode.G35,
             GestureCode.G03, GestureCode.G04, GestureCode.G09, GestureCode.G10
@@ -61,7 +63,7 @@ object GestureUnlockPlan {
         "点赞、拇指赞与 OK 收藏",
         "张掌收指打开常用与更多 App",
         "桌面、最近任务与并掌左右滚动",
-        "单指枪竖向、C 手势、抓取与六六顺",
+        "单指枪竖向（上/下）、C 手势、抓取与六六顺",
         "开合掌、双指枪竖向与轨迹预留"
     )
 
@@ -151,6 +153,8 @@ val GESTURE_CODES_BY_FEATURE: Map<String, List<GestureCode>> = mapOf(
     "orchid_back" to listOf(GestureCode.G15),
     "left_l" to listOf(GestureCode.G24),
     "l_shape" to listOf(GestureCode.G25),
+    // G36 keeps its own switch so the downward gun can be switched off without touching G25.
+    "l_shape_down" to listOf(GestureCode.G36),
     "claw_drag" to listOf(GestureCode.G26),
     "c_shape" to listOf(GestureCode.G27),
     "love_lock" to listOf(GestureCode.G28),
@@ -331,6 +335,7 @@ fun GestureFeatureConfig.restrictedTo(unlocked: Set<GestureCode>): GestureFeatur
     orchidBack = orchidBack && unlocked.hasAny(GestureCode.G15),
     leftL = leftL && unlocked.hasAny(GestureCode.G24),
     lShape = lShape && unlocked.hasAny(GestureCode.G25),
+    lShapeDown = lShapeDown && unlocked.hasAny(GestureCode.G36),
     clawDrag = clawDrag && unlocked.hasAny(GestureCode.G26),
     cShape = cShape && unlocked.hasAny(GestureCode.G27),
     // Love 手势（G28）是系统级识别锁：所有用户一开始就能用，不受签到解锁权益限制，

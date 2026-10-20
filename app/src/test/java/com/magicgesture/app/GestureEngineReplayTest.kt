@@ -636,6 +636,40 @@ class GestureEngineReplayTest {
         assertEquals(2, r.events.countOf<GestureEvent.LShape>())
     }
 
+    /**
+     * G36 (2026-10-21): the same gun with the index pointing down. Rotating the upward gun keeps
+     * every distance ratio intact — only the index direction flips, which is exactly what the two
+     * codes are split on.
+     */
+    private fun downwardGunPose(): List<Point> = verticalGunPose().map { Point(1f - it.x, 1f - it.y) }
+
+    @Test fun downwardVerticalGunFiresG36AndNeverG25() {
+        val r = Replay()
+        r.feed(11, ::downwardGunPose)             // 0.55s elapsed: below the 0.6s hold
+        assertEquals(0, r.events.countOf<GestureEvent.LShapeDown>())
+        r.feed(2, ::downwardGunPose)              // 0.65s elapsed -> fires once
+        assertEquals(1, r.events.countOf<GestureEvent.LShapeDown>())
+        assertEquals(0, r.events.countOf<GestureEvent.LShape>())
+        r.feed(20, ::downwardGunPose)             // still holding: no repeat
+        assertEquals(1, r.events.countOf<GestureEvent.LShapeDown>())
+        r.feed(8, ::restPose)                     // release
+        r.feed(17, ::downwardGunPose)             // re-enter: fires again
+        assertEquals(2, r.events.countOf<GestureEvent.LShapeDown>())
+    }
+
+    @Test fun upwardVerticalGunNeverFiresTheDownwardVariant() {
+        val r = Replay()
+        r.feed(17, ::verticalGunPose)
+        assertEquals(1, r.events.countOf<GestureEvent.LShape>())
+        assertEquals(0, r.events.countOf<GestureEvent.LShapeDown>())
+    }
+
+    @Test fun downwardVerticalGunIsGatedByItsOwnSwitch() {
+        val r = Replay(GestureFeatureConfig(lShapeDown = false))
+        r.feed(17, ::downwardGunPose)
+        assertEquals(0, r.events.countOf<GestureEvent.LShapeDown>())
+    }
+
     @Test fun horizontalFingerHeartNeverFiresGunBack() {
         val r = Replay(GestureFeatureConfig(scroll = false))
         r.feed(14, ::horizontalFingerHeartPose)
