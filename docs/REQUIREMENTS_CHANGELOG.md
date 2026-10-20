@@ -12,7 +12,7 @@
 - G25 展示名改为“单指枪·竖向（上）”，G36 为“单指枪·竖向（下）”，避免映射列表里两个同名项。
 - 开关与解锁：G36 独立开关 `l_shape_down`，与 G25 的 `l_shape` 互不影响；G36 进入第 6 次签到功能包（与 G25/G27/G26/G34 同包），**开箱即用的 5 个编号与 7 次签到总数均未改变**。
 - 代码已完成：新增 `GestureCode.G36`、`GestureEvent.LShapeDown`、默认映射、功能开关、`GestureEngine` 的向下枪姿势与 600ms 保持、首页指南卡片、签到包与权益收敛；`testDebugUnitTest` 与 `assembleDebug` 通过（新增 4 条 JVM 测试：向下枪 600ms 触发且不误发 G25、向上枪不误发 G36、独立开关生效、映射与默认动作正确）。
-- **真机尚未验收**：向下单指枪的阈值、与 G20/G23/G24/G25/G34 的互斥、放下手过程中的误发风险都需要真机复核。
+- **真机首轮已验收（2026-10-21，荣耀 ALP-AN00）**：G36 触发 6 次且动作恒为 `SCROLL_DOWN`，G25 回归 11 次仍为 `SCROLL_UP`，方向互斥成立，持续保持不重复触发；详见 `GESTURE_REALTIME_ACCEPTANCE.md` §7。仍未定向复验：不足 0.6 秒不触发、与 G20/G23/G24/G34 的相邻姿势互斥、放手过程中的误发（本轮日志中这 4 个编号零事件，证据不足）。
 - 同步更新：`GestureArchitecture.kt`、`GestureEngine.kt`、`GesturePreferences.kt`、`GestureUnlock.kt`、`MainActivity.kt`、`CameraProbeService.kt`、`GestureArchitectureTest.kt`、`GestureEngineReplayTest.kt`、`GESTURE_ACTION_MAPPING_CHECKLIST.md`、`AGENTS.md`、`IDE_DEVELOPMENT_HANDOFF.md`。
 
 ## 2026-10-10：媒体动作在 vivo Y35 上失效的修复（静音失败、播放/暂停只会播放、音量不动）

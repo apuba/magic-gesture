@@ -34,7 +34,7 @@
 > - 互斥方式：`indexAngleDegrees ≤ -60°` 判 G25、`≥ +60°` 判 G36，中间 ±60° 死区两个编号都不触发；其余条件（食指伸直、中/无名/小指收拢、拇指向侧面）两者共用。
 > - 开关 `l_shape_down` 独立；G36 进入第 6 次签到功能包（与 G25/G27/G26/G34 同包），开箱即用 5 个编号与 7 次签到总数不变。
 > - 落地位置：`GestureArchitecture.kt`（编号/名称/默认映射/开关）、`GestureEngine.kt`（`LShapeDown` 事件、姿势、600ms 保持、复位）、`GesturePreferences.kt`、`GestureUnlock.kt`（包与权益收敛）、`MainActivity.kt`（指南卡片）、`CameraProbeService.kt`；新增 4 条 JVM 测试。
-> - 待真机：向下枪阈值、与 G20/G23/G24/G25/G34 的互斥、放下手过程中的误发。
+> - **真机首轮已验收（2026-10-21 05:09，荣耀 ALP-AN00，Debug 包 8f45acb）**：logcat 采集 346 条事件，G36 触发 6 次且动作恒为 `SCROLL_DOWN`、G25 触发 11 次仍为 `SCROLL_UP`，两者交替出现无同帧双发，持续保持不重复（相邻间隔最小 1.751s）。详见 `GESTURE_REALTIME_ACCEPTANCE.md` §7。未覆盖：不足 0.6 秒不触发、G20/G23/G24/G34 相邻互斥、放手误发的定向负例（日志中这 4 个编号本轮零事件，证据不足）。
 
 > 2026-10-19 低端机帧率瓶颈定位与优化（代码完成，Redmi Note 11R 真机已量测，尚未在荣耀 ALP-AN00 复测，尚未本地提交）：
 > - 现象：Redmi Note 11R（22095RA98C，Android 12，天玑 700，4GB，前置 5MP）上“开始能识别几次，后面几乎识别不了”。该机通过无线调试连接（`adb pair` + `adb connect`），是目前唯一在测的低端机。
