@@ -29,6 +29,13 @@
 > - 产品负责人手动完成的三次停止/启动，日志记录 READY 分别为 556ms、584ms、595ms（平均约 578ms），模型创建为 97–102ms、相机首帧约 432–462ms、首个推理结果约 513–550ms；三轮均处于同一 App 进程 PID 18793，只证明无背压版本的服务热启动稳定。随后已用 `am force-stop` 补充 App 进程冷启动并复现上述 21.53s 长尾，继而完成背压修复与三轮进程冷启动复测。整机重启后的启动仍未单独验收。
 > - 一次短时 thermal 快照显示 skin 约 39.6°C 且状态 2，但没有优化前同条件基线、稳定运行时长和环境温度，不能据此判断耗电/温升已经改善；仍需做 10 分钟单双手/无人画面对照。
 
+> 2026-10-21 新增 G36 单指枪·竖向（下）（代码完成，JVM 测试与 `assembleDebug` 通过，**真机尚未验收**，尚未本地提交）：
+> - 产品负责人明确重新立项新增 G36：食指向下、拇指向侧面伸出，其余三指收拢，保持约 0.6 秒，默认动作向下滑动（`SCROLL_DOWN`）。同日把 G25 收窄为只认食指向上，因此**向下单指枪不再触发 G25**，两个方向各归各的编号。
+> - 互斥方式：`indexAngleDegrees ≤ -60°` 判 G25、`≥ +60°` 判 G36，中间 ±60° 死区两个编号都不触发；其余条件（食指伸直、中/无名/小指收拢、拇指向侧面）两者共用。
+> - 开关 `l_shape_down` 独立；G36 进入第 6 次签到功能包（与 G25/G27/G26/G34 同包），开箱即用 5 个编号与 7 次签到总数不变。
+> - 落地位置：`GestureArchitecture.kt`（编号/名称/默认映射/开关）、`GestureEngine.kt`（`LShapeDown` 事件、姿势、600ms 保持、复位）、`GesturePreferences.kt`、`GestureUnlock.kt`（包与权益收敛）、`MainActivity.kt`（指南卡片）、`CameraProbeService.kt`；新增 4 条 JVM 测试。
+> - 待真机：向下枪阈值、与 G20/G23/G24/G25/G34 的互斥、放下手过程中的误发。
+
 > 2026-10-19 低端机帧率瓶颈定位与优化（代码完成，Redmi Note 11R 真机已量测，尚未在荣耀 ALP-AN00 复测，尚未本地提交）：
 > - 现象：Redmi Note 11R（22095RA98C，Android 12，天玑 700，4GB，前置 5MP）上“开始能识别几次，后面几乎识别不了”。该机通过无线调试连接（`adb pair` + `adb connect`），是目前唯一在测的低端机。
 > - 定位方法：临时在 `HandPipeline` 与 `CameraProbeService` 加 5 秒周期吞吐埋点（`recv/offered/conv/convAvgMs/res/inferAvgMs/dropThrottle/dropInFlight`），量测完成后已全部移除，最终改动只落在 `HandPipeline.kt`。
