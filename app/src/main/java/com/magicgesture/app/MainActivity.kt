@@ -1092,7 +1092,8 @@ class MainActivity : Activity() {
         "lotus_recents" -> "莲花指最近任务"
         "orchid_back" -> "兰花指最近任务"
         "left_l" -> "单指枪·横向"
-        "l_shape" -> "单指枪·竖向"
+        "l_shape" -> "单指枪·竖向（上）"
+        "l_shape_down" -> "单指枪·竖向（下）"
         "claw_drag" -> "抓取手势"
         "c_shape" -> "C 手势"
         "love_lock" -> "Love 手势"
@@ -1128,6 +1129,7 @@ class MainActivity : Activity() {
             "orchid_back" to features.orchidBack,
             "left_l" to features.leftL,
             "l_shape" to features.lShape,
+            "l_shape_down" to features.lShapeDown,
             "claw_drag" to features.clawDrag,
             "c_shape" to features.cShape,
             "love_lock" to features.loveLock,
