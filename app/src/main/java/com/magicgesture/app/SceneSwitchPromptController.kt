@@ -19,7 +19,7 @@ import android.widget.FrameLayout
 class SceneSwitchPromptController(
     private val context: Context,
     private val onPickScene: (GestureScene) -> Unit,
-    private val onRememberDefault: (GestureScene) -> Unit,
+    private val onRememberScene: (GestureScene) -> Unit,
     private val onMessage: (String) -> Unit
 ) {
     private val main = Handler(Looper.getMainLooper())
@@ -34,7 +34,7 @@ class SceneSwitchPromptController(
 
         override fun onRememberDefault(scene: GestureScene) {
             dismissInternal()
-            onRememberDefault(scene)
+            onRememberScene(scene)
         }
 
         override fun onDismiss() = dismissInternal()

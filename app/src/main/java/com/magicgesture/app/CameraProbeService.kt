@@ -119,7 +119,7 @@ class CameraProbeService : Service() {
         SceneSwitchPromptController(
             context = this,
             onPickScene = { scene -> applyManualScene(scene) },
-            onRememberDefault = { scene -> rememberSceneAsDefault(scene) },
+            onRememberScene = { scene -> rememberSceneAsDefault(scene) },
             onMessage = { overlayIndicator.showFeedback(it) }
         )
     }
