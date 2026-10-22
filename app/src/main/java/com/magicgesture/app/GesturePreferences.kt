@@ -80,6 +80,13 @@ object GesturePreferences {
     private const val REVERSE_HORIZONTAL = "reverse_horizontal"
     const val FEEDBACK = "feedback_enabled"
     const val COOLDOWN_MS = "cooldown_ms"
+    const val SCENE_AUTO_SWITCH = "scene_auto_switch"
+    private const val SCENE_PACKAGES = "scene_packages"
+    private const val SCENE_REMOVED_PREFIX = "scene_removed_"
+    private const val SCENE_ADDED_PREFIX = "scene_added_"
+    private const val SCENE_NOTIFIED = "scene_notified"
+    private const val DOT_POSITION_X = "dot_position_x"
+    private const val DOT_POSITION_Y = "dot_position_y"
     private const val INDEX_DIRECTIONAL_RETIREMENT_MIGRATED = "migration_index_directional_retirement_v1"
 
     /** Post-action lock duration, user-tunable 0.6s..4s via the calibration page slider. */
@@ -138,6 +145,157 @@ object GesturePreferences {
             .putLong(COOLDOWN_MS, value.coerceIn(MIN_COOLDOWN_MS, MAX_COOLDOWN_MS))
             .apply()
     }
+
+    fun sceneAutoSwitchEnabled(context: Context): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getBoolean(SCENE_AUTO_SWITCH, true)
+
+    fun saveSceneAutoSwitchEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(SCENE_AUTO_SWITCH, enabled)
+            .apply()
+    }
+
+    fun sceneAssociation(context: Context, packageName: String): GestureScene? {
+        if (!GestureSceneAssignmentController.isValidPackageName(packageName)) return null
+        val stored = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(sceneKey(packageName), null) ?: return null
+        return runCatching { GestureScene.valueOf(stored) }.getOrNull()
+    }
+
+    fun sceneAssociations(context: Context): Map<String, GestureScene> {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        return prefs.getStringSet(SCENE_PACKAGES, emptySet()).orEmpty()
+            .asSequence()
+            .filter(GestureSceneAssignmentController::isValidPackageName)
+            .mapNotNull { packageName -> sceneAssociation(context, packageName)?.let { packageName to it } }
+            .sortedBy { it.first }
+            .toMap()
+    }
+
+    fun saveSceneAssociation(context: Context, packageName: String, scene: GestureScene) {
+        require(GestureSceneAssignmentController.isValidPackageName(packageName)) { "Invalid app package name" }
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val packages = prefs.getStringSet(SCENE_PACKAGES, emptySet()).orEmpty().toMutableSet().apply {
+            add(packageName)
+        }
+        prefs.edit()
+            .putStringSet(SCENE_PACKAGES, packages)
+            .putString(sceneKey(packageName), scene.name)
+            .apply()
+    }
+
+    fun deleteSceneAssociation(context: Context, packageName: String) {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val packages = prefs.getStringSet(SCENE_PACKAGES, emptySet()).orEmpty().toMutableSet().apply {
+            remove(packageName)
+        }
+        prefs.edit()
+            .putStringSet(SCENE_PACKAGES, packages)
+            .remove(sceneKey(packageName))
+            .apply()
+    }
+
+    /**
+     * Gestures the user removed from a preset scene. Stored as names so unknown or retired codes
+     * are ignored instead of breaking the scene.
+     */
+    fun sceneRemovedCodes(context: Context, scene: GestureScene): Set<GestureCode> =
+        readSceneCodes(context, sceneRemovedKey(scene), scene)
+
+    /** Gestures the user added to a scene from outside its factory preset. */
+    fun sceneAddedCodes(context: Context, scene: GestureScene): Set<GestureCode> =
+        readSceneCodes(context, sceneAddedKey(scene), scene)
+
+    fun saveSceneRemovedCodes(context: Context, scene: GestureScene, codes: Set<GestureCode>) =
+        writeSceneCodes(context, sceneRemovedKey(scene), scene, codes)
+
+    fun saveSceneAddedCodes(context: Context, scene: GestureScene, codes: Set<GestureCode>) =
+        writeSceneCodes(context, sceneAddedKey(scene), scene, codes)
+
+    /** Restores the factory preset: nothing removed, nothing added. */
+    fun clearSceneRemovedCodes(context: Context, scene: GestureScene) = context
+        .getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        .remove(sceneRemovedKey(scene))
+        .apply()
+
+    fun clearSceneAddedCodes(context: Context, scene: GestureScene) = context
+        .getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        .remove(sceneAddedKey(scene))
+        .apply()
+
+    /**
+     * Packages already offered the scene choice. Each app is asked once; after that it silently
+     * keeps using the general scene until the user associates it from the scene page.
+     */
+    fun sceneNotifiedPackages(context: Context): Set<String> {
+        val stored = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getStringSet(SCENE_NOTIFIED, null) ?: return emptySet()
+        return stored.filter(GestureSceneAssignmentController::isValidPackageName).toSet()
+    }
+
+    fun markSceneNotified(context: Context, packageName: String?) {
+        val normalized = packageName
+            ?.takeIf(GestureSceneAssignmentController::isValidPackageName) ?: return
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val updated = (prefs.getStringSet(SCENE_NOTIFIED, null) ?: emptySet()).toMutableSet()
+        if (!updated.add(normalized)) return
+        prefs.edit().putStringSet(SCENE_NOTIFIED, updated).apply()
+    }
+
+    /**
+     * Where the user last dragged the floating dot, or null when it has never been moved.
+     * Persisted so the dot comes back to that spot after the app is closed or the phone restarts.
+     */
+    fun savedDotPosition(context: Context): Pair<Int, Int>? {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (!prefs.contains(DOT_POSITION_X) || !prefs.contains(DOT_POSITION_Y)) return null
+        return prefs.getInt(DOT_POSITION_X, 0) to prefs.getInt(DOT_POSITION_Y, 0)
+    }
+
+    fun saveDotPosition(context: Context, x: Int, y: Int) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(DOT_POSITION_X, x)
+            .putInt(DOT_POSITION_Y, y)
+            .apply()
+    }
+
+    private fun readSceneCodes(
+        context: Context,
+        key: String,
+        scene: GestureScene
+    ): Set<GestureCode> {
+        if (!GestureSceneCatalog.isEditable(scene)) return emptySet()
+        val stored = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getStringSet(key, null) ?: return emptySet()
+        return stored.mapNotNull { code -> runCatching { GestureCode.valueOf(code) }.getOrNull() }.toSet()
+    }
+
+    private fun writeSceneCodes(
+        context: Context,
+        key: String,
+        scene: GestureScene,
+        codes: Set<GestureCode>
+    ) {
+        if (!GestureSceneCatalog.isEditable(scene)) return
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putStringSet(key, codes.map { it.name }.toSet())
+            .apply()
+    }
+
+    fun isScenePreferenceKey(key: String?): Boolean =
+        key == SCENE_AUTO_SWITCH || key == SCENE_PACKAGES ||
+            key?.startsWith("scene_app_") == true ||
+            key?.startsWith(SCENE_REMOVED_PREFIX) == true ||
+            key?.startsWith(SCENE_ADDED_PREFIX) == true ||
+            key == SCENE_NOTIFIED
+
+    private fun sceneKey(packageName: String) = "scene_app_$packageName"
+
+    private fun sceneRemovedKey(scene: GestureScene) = "$SCENE_REMOVED_PREFIX${scene.name}"
+
+    private fun sceneAddedKey(scene: GestureScene) = "$SCENE_ADDED_PREFIX${scene.name}"
 
     /** Package name of the app bound to an open-app slot (1..4); null when unbound. */
     fun openAppPackage(context: Context, slot: Int): String? =

@@ -35,6 +35,8 @@ android {
     // MediaPipe tasks-vision 0.10.21 only ships native libraries for arm64-v8a / armeabi-v7a / x86.
     // Google Play requires a 64-bit counterpart for every 32-bit ABI we ship, and no x86_64 build
     // exists in this dependency, so the 32-bit x86 slice is dropped instead of being paired.
+    // JVM preview tests render real views through Robolectric, which needs the merged resources.
+    testOptions { unitTests.isIncludeAndroidResources = true }
     packaging {
         jniLibs {
             excludes += setOf("**/x86/**")
@@ -47,4 +49,6 @@ dependencies {
     // Reads the orientation tag of captured JPEGs so selfies are stored upright on every device.
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     testImplementation("junit:junit:4.13.2")
+    // Renders real views on the JVM so page layouts can be reviewed as PNGs without a device.
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }

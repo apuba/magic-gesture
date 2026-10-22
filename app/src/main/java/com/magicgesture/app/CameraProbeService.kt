@@ -47,6 +47,9 @@ class CameraProbeService : Service() {
 
         /** 手动解除识别锁：常驻通知与首页按钮的唯一出口，不属于任何手势解锁。 */
         const val ACTION_UNLOCK_RECOGNITION = "UNLOCK_RECOGNITION"
+        const val ACTION_SET_TEMPORARY_SCENE = "SET_TEMPORARY_SCENE"
+        const val EXTRA_SCENE_PACKAGE = "scene_package"
+        const val EXTRA_SCENE_NAME = "scene_name"
 
         /** 识别锁状态变化。首页停留在前台时不会触发 onResume，必须靠这条广播刷新解除入口。 */
         const val ACTION_RECOGNITION_LOCK_CHANGED = "RECOGNITION_LOCK_CHANGED"
@@ -64,6 +67,8 @@ class CameraProbeService : Service() {
         private const val MUSIC_WAKE_COOLDOWN_MS = 10_000L
         private const val SELFIE_JPEG_OUTPUT_QUALITY = 95
         private const val RECOGNITION_TARGET_FPS = 20
+        private const val SCENE_FOREGROUND_STABLE_MS = 500L
+        private const val SCENE_FOREGROUND_POLL_MS = 250L
     }
 
     private val channel = "camera_probe"
@@ -96,16 +101,35 @@ class CameraProbeService : Service() {
     @Volatile private var rollingScreenshotInProgress = false
     private var pendingHighQualitySelfie: ((ByteArray?) -> Unit)? = null
     private val highQualitySelfieTimeout = Runnable { completeHighQualitySelfie(null) }
+    private var baseFeatureConfig = GestureFeatureConfig()
     private var featureConfig = GestureFeatureConfig()
     private var entitlement = GestureEntitlement(GestureUnlockPlan.BASE_CODES.toSet())
     private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var overlayIndicator: OverlayIndicator
+    /** Manual scene switcher opened by a long press on the floating dot. */
+    private val sceneSwitchPrompt by lazy {
+        SceneSwitchPromptController(
+            context = this,
+            onPickScene = { scene -> applyManualScene(scene) },
+            onRememberDefault = { scene -> rememberSceneAsDefault(scene) },
+            onMessage = { overlayIndicator.showFeedback(it) }
+        )
+    }
     private val globalCooldown = GlobalCooldownManager()
     private var volumeHoldActive = false
     private var volumeHoldRaise = false
     private var volumeHoldChanged = false
     @Volatile private var favoriteFlowActive = false
-    private var mappingManager = GestureMappingManager()
+    /** Last observed "MagicGesture's own UI is on top" state, used to emit scene changes only once. */
+    private var lastSelfForeground = false
+    /** Pending flip of that flag and when it started, so brief interleaved window events are ignored. */
+    private var selfCandidate: Boolean? = null
+    private var selfCandidateSince = 0L
+    private var globalActionOverrides: Map<GestureCode, GestureAction> = emptyMap()
+    private lateinit var sceneAssignments: GestureSceneAssignmentController
+    private val sceneController = GestureSceneController()
+    private var sceneDefinition = GestureSceneCatalog.definition(GestureScene.GENERAL)
+    private val foregroundStabilizer = ForegroundPackageStabilizer(SCENE_FOREGROUND_STABLE_MS)
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -140,6 +164,50 @@ class CameraProbeService : Service() {
     private var mutedVolume: Int? = null
     /** Last time the play fallback tried to wake a music app; see MUSIC_WAKE_COOLDOWN_MS. */
     private var lastMusicWakeAt = 0L
+    private val monitorForegroundScene = object : Runnable {
+        override fun run() {
+            if (stopped) return
+            if (controlMode && ::sceneAssignments.isInitialized) {
+                val service = ControlAccessibilityService.active
+                // Our own UI never becomes a foreground package, so it is tracked separately: the
+                // scene must fall back to GENERAL the moment the user opens MagicGesture itself.
+                val now = SystemClock.uptimeMillis()
+                if (service != null) {
+                    // Window events from the previous app and from MagicGesture interleave while our
+                    // own UI is opening, so the flag flips back and forth for a moment. Require the
+                    // same stability window as the foreground package before acting on it.
+                    val self = service.isSelfForeground()
+                    if (self == lastSelfForeground) {
+                        selfCandidate = null
+                    } else {
+                        if (selfCandidate != self) {
+                            selfCandidate = self
+                            selfCandidateSince = now
+                        } else if (now - selfCandidateSince >= SCENE_FOREGROUND_STABLE_MS) {
+                            lastSelfForeground = self
+                            selfCandidate = null
+                            requestScene(sceneAssignments.onSelfForeground(self))
+                        }
+                    }
+                }
+                val foreground = service?.foregroundPackage()
+                if (::scenePromptController.isInitialized) scenePromptController.dismissIfTargetChanged(foreground)
+                foregroundStabilizer.offer(foreground, now)?.let { stable ->
+                    val selection = sceneAssignments.onForegroundApp(stable.packageName)
+                    requestScene(selection)
+                }
+            }
+            handler.postDelayed(this, SCENE_FOREGROUND_POLL_MS)
+        }
+    }
+
+    private fun applyTemporaryScene(packageName: String?, sceneName: String?) {
+        if (!::sceneAssignments.isInitialized || packageName == null || sceneName == null) return
+        if (!GestureSceneAssignmentController.isValidPackageName(packageName)) return
+        val scene = runCatching { GestureScene.valueOf(sceneName) }.getOrNull() ?: return
+        sceneAssignments.onForegroundApp(packageName)
+        requestScene(sceneAssignments.useTemporarily(scene))
+    }
     private val favoriteController by lazy {
         FavoriteButtonController(
             context = this,
@@ -148,6 +216,7 @@ class CameraProbeService : Service() {
             onMessage = { message -> overlayIndicator.showFeedback(message) }
         )
     }
+    private lateinit var scenePromptController: SceneAssociationPromptController
 
     private fun favoriteCurrentContent(callback: (Boolean) -> Unit) {
         favoriteFlowActive = true
@@ -193,15 +262,38 @@ class CameraProbeService : Service() {
         super.onCreate()
         worker.start(); handler = Handler(worker.looper)
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        featureConfig = GesturePreferences.effectiveFeatures(this)
+        baseFeatureConfig = GesturePreferences.effectiveFeatures(this)
+        featureConfig = sceneDefinition.restrict(baseFeatureConfig)
         entitlement = GestureUnlockStore(this).entitlement()
-        mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
+        globalActionOverrides = GesturePreferences.actionOverrides(this)
+        sceneAssignments = GestureSceneAssignmentController(
+            GesturePreferences.sceneAssociations(this),
+            GesturePreferences.sceneAutoSwitchEnabled(this),
+            GesturePreferences.sceneNotifiedPackages(this)
+        )
+        scenePromptController = SceneAssociationPromptController(
+            context = this,
+            onNotified = { packageName -> sceneAssignments.markNotified(packageName) },
+            onTemporary = { packageName, scene ->
+                sceneAssignments.onForegroundApp(packageName)
+                requestScene(sceneAssignments.useTemporarily(scene))
+                overlayIndicator.showFeedback("已临时切换为${sceneDisplayName(scene)}")
+            },
+            onDefault = { packageName, scene ->
+                GesturePreferences.saveSceneAssociation(this, packageName, scene)
+                requestScene(sceneAssignments.setDefault(packageName, scene))
+                overlayIndicator.showFeedback("已将${sceneDisplayName(scene)}设为默认")
+            },
+            onMessage = { overlayIndicator.showFeedback(it) }
+        )
         globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
         overlayIndicator = OverlayIndicator(this)
+        overlayIndicator.onLongPress = { showSceneSwitchPrompt() }
         preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when {
                 key?.startsWith("feature_") == true -> {
-                    featureConfig = GesturePreferences.features(this)
+                    baseFeatureConfig = GesturePreferences.effectiveFeatures(this)
+                    featureConfig = sceneDefinition.restrict(baseFeatureConfig)
                     pipeline?.updateFeatures(featureConfig)
                     if (!featureConfig.cursor) ControlAccessibilityService.active?.hideCursor()
                     overlayIndicator.showFeedback("手势开关已即时更新")
@@ -209,13 +301,26 @@ class CameraProbeService : Service() {
                 key?.startsWith(GestureUnlockStore.KEY_PREFIX) == true -> {
                     // 签到解锁后无需重启控制：权益与生效开关立即下发给识别引擎。
                     entitlement = GestureUnlockStore(this).entitlement()
-                    featureConfig = GesturePreferences.effectiveFeatures(this)
+                    baseFeatureConfig = GesturePreferences.effectiveFeatures(this)
+                    featureConfig = sceneDefinition.restrict(baseFeatureConfig)
                     pipeline?.updateFeatures(featureConfig)
                     overlayIndicator.showFeedback("解锁状态已即时更新")
                 }
                 key?.startsWith("mapping_") == true -> {
-                    mappingManager = GestureMappingManager(GesturePreferences.actionOverrides(this))
+                    globalActionOverrides = GesturePreferences.actionOverrides(this)
                     overlayIndicator.showFeedback("手势映射已即时更新")
+                }
+                GesturePreferences.isScenePreferenceKey(key) -> {
+                    sceneAssignments.replaceAssociations(GesturePreferences.sceneAssociations(this))
+                    val selection = sceneAssignments.setAutoSwitchEnabled(
+                        GesturePreferences.sceneAutoSwitchEnabled(this)
+                    )
+                    requestScene(selection)
+                    // requestScene only fires on a real scene change; trimming or restoring a
+                    // gesture inside the current scene has to reach the pipeline on its own.
+                    sceneDefinition = sceneDefinitionFor(sceneController.current)
+                    featureConfig = sceneDefinition.restrict(baseFeatureConfig)
+                    pipeline?.updateFeatures(featureConfig)
                 }
                 key == GesturePreferences.COOLDOWN_MS -> {
                     globalCooldown.updateDuration(GesturePreferences.cooldownMs(this))
@@ -242,11 +347,19 @@ class CameraProbeService : Service() {
             try { if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) } catch (e: Exception) { Log.w("CameraProbe", "tone generator init failed", e) }
             try { if (mediaActionSound == null) mediaActionSound = MediaActionSound() } catch (e: Exception) { Log.w("CameraProbe", "media action sound init failed", e) }
         }
+        handler.post(monitorForegroundScene)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
         // 手动解除识别锁：只改锁状态，不能重置 controlMode，否则会把手势控制一起关掉。
         if (intent?.action == ACTION_UNLOCK_RECOGNITION) { unlockRecognition(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_SET_TEMPORARY_SCENE) {
+            applyTemporaryScene(
+                intent.getStringExtra(EXTRA_SCENE_PACKAGE),
+                intent.getStringExtra(EXTRA_SCENE_NAME)
+            )
+            return START_NOT_STICKY
+        }
         // 兜底：用户尚未同意隐私政策时不开启摄像头，也不进入前台服务状态。
         if (!PrivacyConsent.isAccepted(this)) {
             Log.d("CameraProbe", "startup: blocked, privacy policy not accepted yet")
@@ -297,6 +410,12 @@ class CameraProbeService : Service() {
                             if (favoriteFlowActive) return@HandPipeline
                             // 自拍倒计时期间冻结全部手势：连识别提示也不显示，避免与倒计时抢占浮层。
                             if (selfieInProgress) return@HandPipeline
+                            // A gesture unlock does not emit a separate "Love fully released"
+                            // event. The first ordinary event proves the lock state machine has
+                            // completed its release window, so a pending App scene is applied here.
+                            if (!recognitionLocked) {
+                                sceneController.onRecognitionUnlockedAndReleased()?.let(::applySceneTransition)
+                            }
                             // 识别锁是控制状态而不是动作：它不经过映射，不执行动作，也不启动冷却。
                             // 冷却期间整条管线是冻结的，所以这里不会在冷却中提前判断 Love 手势。
                             if (event is GestureEvent.RecognitionLock) {
@@ -308,7 +427,7 @@ class CameraProbeService : Service() {
                                 return@HandPipeline
                             }
                             if (!globalCooldown.allows(event)) return@HandPipeline
-                            val mapped = mappingManager.resolve(event)
+                            val mapped = sceneDefinition.resolve(event, globalActionOverrides)
                             if (mapped != null) {
                                 executeMapped(mapped)
                                 return@HandPipeline
@@ -358,6 +477,10 @@ class CameraProbeService : Service() {
                     }
                 }
                 if (accepted) {
+                    // The foreground monitor may have selected a focused scene while the native
+                    // model was still loading. Do not publish a pipeline with the global feature
+                    // set for even one frame.
+                    newPipeline.updateFeatures(featureConfig)
                     Log.d("CameraProbe", "startup: model ready ${SystemClock.uptimeMillis() - t0} ms after thread start")
                 } else {
                     // The service stopped or a newer initialization won while this native
@@ -453,6 +576,105 @@ class CameraProbeService : Service() {
             fail("相机启动失败：${e.javaClass.simpleName}")
         }
     }
+    private fun requestScene(selection: GestureSceneSelection) {
+        if (::scenePromptController.isInitialized) {
+            when {
+                // Only a real foreground app switch may open the sheet. Anything else (our own-app
+                // flag flipping, a preference change, a manual switch) stays silent, otherwise the
+                // sheet popped up and was torn down again in an endless loop.
+                selection.needsAssociation && selection.fromForegroundSwitch && selection.packageName != null ->
+                    scenePromptController.show(selection.packageName)
+                !selection.needsAssociation -> scenePromptController.dismiss()
+            }
+        }
+        val transition = sceneController.request(selection.scene, recognitionLocked)
+        if (transition != null) applySceneTransition(transition)
+        else if (recognitionLocked && sceneController.pendingWhileLocked != null) {
+            Log.d("CameraProbe", "scene ${selection.scene} pending until recognition unlock release")
+        }
+        // Only a real foreground switch opens the guidance, so log the two cases separately:
+        // otherwise a silent re-evaluation looked exactly like a second prompt in the log.
+        if (selection.needsAssociation) {
+            if (selection.fromForegroundSwitch) {
+                Log.d("CameraProbe", "scene app ${selection.packageName} unassociated; offering guidance")
+            } else {
+                Log.d("CameraProbe", "scene app ${selection.packageName} unassociated, already offered; using GENERAL")
+            }
+        }
+    }
+
+    /** A scene definition always reflects the gestures the user removed from that scene. */
+    /**
+     * Long press on the floating dot. A sheet that is already covering the screen is never replaced
+     * by a second one, and the long press itself cannot fire again while that sheet is up because
+     * it swallows every touch.
+     */
+    private fun showSceneSwitchPrompt() {
+        if (sceneSwitchPrompt.isShowing()) return
+        // The scene guidance must not sit under the switcher the user just opened by hand. Opening
+        // this sheet already means the user knows about scenes, so the guidance does not come back.
+        scenePromptController.dismiss()
+        // "Remember as default" needs an app to bind the choice to; without one the button is hidden.
+        sceneSwitchPrompt.show(sceneController.current, sceneAssignments.currentPackage != null)
+    }
+
+    /** A scene picked by hand overrides the automatic choice until the foreground app changes. */
+    private fun applyManualScene(scene: GestureScene) {
+        requestScene(sceneAssignments.useManually(scene))
+        overlayIndicator.showFeedback("已切换为${sceneDisplayName(scene)}")
+    }
+
+    /**
+     * Same choice, but saved: the current app keeps this scene from now on, so the automatic
+     * switcher hits it directly instead of asking again.
+     */
+    private fun rememberSceneAsDefault(scene: GestureScene) {
+        val packageName = sceneAssignments.currentPackage
+        if (packageName == null) {
+            applyManualScene(scene)
+            overlayIndicator.showFeedback("尚未识别到前台应用，本次切换不会记住")
+            return
+        }
+        GesturePreferences.saveSceneAssociation(this, packageName, scene)
+        requestScene(sceneAssignments.setDefault(packageName, scene))
+        overlayIndicator.showFeedback("已将${sceneDisplayName(scene)}设为该应用的默认")
+    }
+
+    private fun sceneDefinitionFor(scene: GestureScene) = GestureSceneCatalog.definition(
+        scene,
+        GesturePreferences.sceneRemovedCodes(this, scene),
+        GesturePreferences.sceneAddedCodes(this, scene)
+    )
+
+    private fun sceneDisplayName(scene: GestureScene) = when (scene) {
+        GestureScene.GENERAL -> "通用场景"
+        GestureScene.SHORT_VIDEO -> "短视频场景"
+        GestureScene.MUSIC -> "音乐场景"
+    }
+
+    /** Every real scene change is a hard recognition boundary. */
+    private fun applySceneTransition(transition: GestureSceneTransition) {
+        if (volumeHoldActive) finishVolumeHold(atBoundary = true)
+        pipeline?.finishVolumeSession(waitForRelease = false)
+        // Segmented drag strokes do not keep a pointer physically down, but the accessibility
+        // service still owns a logical drag session that must not cross into the new scene.
+        ControlAccessibilityService.active?.endDrag(0f, 0f)
+
+        sceneDefinition = sceneDefinitionFor(transition.current)
+        featureConfig = sceneDefinition.restrict(baseFeatureConfig)
+        pipeline?.resetTracking()
+        pipeline?.updateFeatures(featureConfig)
+        if (!featureConfig.cursor) ControlAccessibilityService.active?.hideCursor()
+
+        val label = when (transition.current) {
+            GestureScene.GENERAL -> "通用场景"
+            GestureScene.SHORT_VIDEO -> "短视频场景"
+            GestureScene.MUSIC -> "音乐场景"
+        }
+        overlayIndicator.showFeedback("已切换至$label")
+        Log.d("CameraProbe", "scene ${transition.previous} -> ${transition.current}")
+    }
+
     private fun executeMapped(mapped: MappedGesture) {
         // 未解锁的手势不得执行；功能开关是独立的一层，不能代替解锁权益判断。
         if (!entitlement.owns(mapped.mapping.code)) return
@@ -501,7 +723,7 @@ class CameraProbeService : Service() {
         when (phase) {
             GestureEvent.VolumeHoldPhase.START -> {
                 if (globalCooldown.isActive()) return
-                val mapped = mappingManager.resolve(event) ?: run {
+                val mapped = sceneDefinition.resolve(event, globalActionOverrides) ?: run {
                     pipeline?.finishVolumeSession(waitForRelease = true)
                     return
                 }
@@ -562,6 +784,8 @@ class CameraProbeService : Service() {
         if (!recognitionLocked) return
         pipeline?.unlockRecognition()
         applyRecognitionLock(false)
+        // Manual unlock has no Love release window, so it is safe to apply a pending scene now.
+        sceneController.onRecognitionUnlockedAndReleased()?.let(::applySceneTransition)
     }
 
     private fun currentDisplayRotationDegrees(): Int {
@@ -1349,6 +1573,7 @@ class CameraProbeService : Service() {
             pipeline.also { pipeline = null }
         }
         if (::overlayIndicator.isInitialized) favoriteController.dismiss()
+        if (::scenePromptController.isInitialized) scenePromptController.dismiss()
         globalCooldown.reset()
         cameraGeneration++
         mainHandler.removeCallbacksAndMessages(null)
@@ -1367,6 +1592,7 @@ class CameraProbeService : Service() {
             getSharedPreferences(GesturePreferences.FILE, Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(it)
         }
         preferenceListener = null
+        sceneSwitchPrompt.dismiss()
         overlayIndicator.remove()
         ControlAccessibilityService.active?.hideCursor()
         worker.quitSafely()

@@ -8,6 +8,81 @@
 
 ## 0. 当前交接摘要（2026-10-05）
 
+> 2026-10-21 二期启动确认：
+> - 产品负责人确认应用已真实公开上架华为应用市场：`https://appgallery.huawei.com/app/C119234419`，真实上线门槛已满足。
+> - G36 已完成人工验收；当前范围为 G01–G36，继续冻结 G37 及后续编号。
+> - 二期首项开发为所有用户免费使用的短视频与音乐场景；通用场景作为默认和失败回退。暂不收费，不做会员、Pro、自定义场景、联网分类、账号同步或线上埋点。
+> - 本轮先完成需求基线同步，运行代码尚未开始修改。正式规则见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6。
+> - 已核对首页运行时完成提示为“全部手势已解锁”，没有写死编号；代码注释中遗留的 G01–G35 已在二期第一批同步修正为 G01–G36。
+
+> 2026-10-21 二期场景第一批（纯逻辑完成，尚未接入运行服务）：
+> - 新增 `GestureScene.kt`：`GENERAL`、`SHORT_VIDEO`、`MUSIC` 三个场景定义，短视频/音乐预设手势集合与场景临时映射。
+> - 场景通过 `GestureFeatureConfig.restrictedTo` 与已经过权益收敛、用户开关收敛的功能配置继续求交集；不会重新开启未解锁或用户已关闭的手势。
+> - 场景映射接收全局 `MappedGesture` 后返回临时副本，不修改持久化映射；G28 强制保留且不进入普通映射。
+> - 新增纯状态 `GestureSceneController`：G28 锁定期间只保留最新待切换目标，解锁并完整释放后才产生切换边界；相同场景不产生无意义重置。
+> - 新增 `GestureSceneTest` 9 条测试；完整 `testDebugUnitTest` 共 175/175 通过，`assembleDebug` 成功，APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,410,640 bytes）。未安装、未真机验收。
+> - 尚未完成：`CameraProbeService`/`HandPipeline` 运行时接入、独占动作结束事件派发、前台包名稳定窗口、本机 App 关联、临时覆盖和场景 UI。
+
+> 2026-10-21 二期场景第二批（本机配置层完成，尚未接入实时前台 App）：
+> - `GesturePreferences` 复用现有 `gesture_settings` 保存自动切换开关和 `App 包名 -> GestureScene` 关联；支持读取全部关联、保存、覆盖和删除，不新增数据库、网络或权限。
+> - `GestureSceneAssignmentController` 负责未知 App 回退通用场景并请求关联、保存关联解析、当前 App 临时覆盖、删除后回退，以及离开 App 后清除临时覆盖。
+> - 关闭自动切换时不弹关联提示并回退通用场景，但用户仍可为当前 App 手动临时选择短视频或音乐场景；离开该 App 后临时选择失效。
+> - 包名做非空、长度、空白字符和至少一个点号的基础校验；系统覆盖层过滤仍由下一批实时前台监听负责。
+> - `GestureSceneTest` 现共 17 条；完整 `testDebugUnitTest` 共 183/183 通过，`assembleDebug` 成功，APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,415,555 bytes）。未安装、未真机验收。
+> - 尚未完成：服务运行时接入、前台包名稳定窗口、系统覆盖层过滤、独占动作安全结束、场景管理/首次关联 UI。
+
+> 2026-10-21 二期场景第三批（运行服务接入完成，尚无场景 UI）：
+> - `CameraProbeService` 每 250ms 复用无障碍服务已有的前台包名，只在同一结果稳定 500ms 后切换；系统覆盖层继续由既有前台包名过滤负责，`canRetrieveWindowContent="false"` 不变，不读取第三方页面内容或控件树。
+> - 当前场景已接入实际识别与执行链：先以解锁权益和用户开关得到基础集合，再按场景收窄；事件先解析用户全局映射，再应用场景临时覆盖，不写回持久化配置。没有 App 关联时稳定回退通用场景，因此当前用户行为不变。
+> - 真实场景变化前会结束持续音量和拖动、清空识别/轨迹/候选状态，并在新场景禁用 G01 时隐藏光标；模型仍在加载时也会把最新场景配置交给新建管线，避免首帧短暂使用全局集合。
+> - G28 锁定期间场景请求只保留最新目标；手动解锁可立即应用，手势解锁则等 Love 完整释放后由下一次普通事件跨过切换边界，避免释放窗口被新场景状态污染。
+> - `GestureSceneTest` 现共 20 条；完整 `testDebugUnitTest` 共 186/186 通过，`assembleDebug` 成功，APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,418,798 bytes，2026-10-21 14:44:45）。未安装、未真机验收。
+> - 尚未完成：场景管理页、自动切换开关 UI、首次未知 App 关联提示，以及“仅本次使用/设为默认”的用户入口；在这些入口完成前，没有关联数据的设备始终使用通用场景。
+
+> 2026-10-21 至 2026-10-22 二期场景第四批（UI 与 JVM 预览代码已落盘，待 CodeBuddy 接续及真机验收）：
+> - 首页最终入口要求：四宫格第三项为“场景模式”；“保持授权”移到右上角并与“设置”并列；右上角“使用技巧”按钮已删除，但页面下方原有技巧内容没有删除。旧参考稿中的 `PRO` 不进入正式 UI。
+> - 四宫格统一使用产品负责人指定的透明切片：`menu_calibration.png`、`menu_mapping.png`、`menu_scene.png`、`menu_favorite.png`。源文件位于 `ui/切片/空白/`，应用副本位于 `app/src/main/res/drawable-nodpi/`；四个标题均由同一个真实 `TextView` 绘制，当前字号为 **12sp**，相对上一版向上移动 **2dp**（`bottomMargin=10dp`），切片不承载文字和点击状态。
+> - `SceneManagementActivity` 负责状态、持久化、弹层与服务交接；页面视图已拆到 `ScenePageUi.kt`，包含自动切换开关、最近前台 App、关联列表、添加/删除关联，以及通用/短视频/音乐三种场景选择。应用列表只使用既有 launcher query 和本机包名/名称/图标，不读取第三方页面内容。
+> - 当前 App 未关联且自动切换开启时，进入场景页会显示首次关联选择层；“仅本次使用”只在手势服务运行时写入服务内存态，离开 App 后失效；服务未运行时明确提示，不伪装成功。“设为默认”写入现有本机配置。G28 锁定期间仍由服务状态机延迟到解锁边界后切换。
+> - 工作区新增 `ScenePagePreviewTest.kt` 与 Robolectric 资源配置，当前磁盘存在 4 张 JVM 预览：`app/build/previews/scene-page-empty.png`、`scene-page-associated.png`、`scene-page-auto-switch-off.png`、`scene-choice-sheet.png`。这些文件及 `app/build.gradle.kts`、`gradle/gradle-daemon-jvm.properties` 是并行/后续工作产生的未提交改动，接手时必须先复核，不得删除或覆盖。
+> - 当前测试报告显示 `testDebugUnitTest` **190/190 通过**、0 failure/0 error/0 skipped；当前 Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`（62,435,335 bytes，磁盘时间 2026-10-21 22:12:01）。但本对话最后两次 `assembleDebug` 都卡在 Gradle 单次守护进程启动阶段、未进入任务后被终止，因此不能把该 APK 宣称为最后一次 12sp/上移 2dp 修改由本轮命令验证生成；CodeBuddy 接手后须重新运行完整验证。
+> - 尚未安装、未真机验收。必须重点检查：顶部两个入口在小屏和大字体下是否裁切；四宫格文字 12sp 与上移 2dp 是否符合视觉要求；切片透明边缘与拉伸；场景页所有状态；首次关联；仅本次离开失效；设为默认；自动开关；无关联回退通用；G28 锁定延迟切换。
+> - 2026-10-22 产品负责人真机截图反馈“短视频场景没有”：根因是通用/短视频/音乐三个预设只存在于应用关联后的选择弹层，管理页没有可见入口。`ScenePageUi` 已新增“场景方案”区，直接展示三张预设卡片及能力说明；点击时若有当前应用则进入该应用确认层并预选目标场景，若没有当前应用则先选择应用。保存仍必须经过“仅本次使用”或“设为默认”，不会因浏览卡片自动改配置。
+> - 产品负责人随后要求应用选择弹窗与“手势绑定动作 → 打开应用”列表一致。场景页已用同一组视觉参数替换系统 `AlertDialog.setItems`：深色霓虹面板、应用名称/包名搜索、320dp 滚动列表、异步应用图标、已关联标记及描边取消按钮；选择应用后继续进入场景确认层，业务状态机不变。
+> - 2026-10-22 已验证：构建命令临时把未提交的 `gradle/gradle-daemon-jvm.properties` 改名，使用现有 JDK 17 执行 `testDebugUnitTest assembleDebug`，在 `finally` 中原样恢复该文件。结果 **BUILD SUCCESSFUL**，测试 **190/190**、0 failure/0 error/0 skipped；`git diff --check` 通过（仅既有 LF→CRLF 提示）。最新 Debug APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,441,436 bytes，2026-10-22 02:43:39）。尚未安装、未真机验收。
+> - 产品负责人进一步确认触发时机：不是进入场景管理页才提示，而是手势服务运行、自动切换开启、首次进入一个未关联普通 App 且包名稳定 500ms 后，就必须看到场景选择。新增 `SceneAssociationPromptController` 复用现有悬浮窗权限显示可交互遮罩，提供通用/短视频/音乐、“暂不设置/仅本次使用/设为默认”；面板期间禁止手势与光标穿透，离开目标 App 自动关闭，已关联或关闭自动切换时不显示，服务停止时清理。
+> - 上述首次进入弹层接入后已重新执行完整 `testDebugUnitTest assembleDebug`：**BUILD SUCCESSFUL**，测试 **190/190**、0 failure/0 error/0 skipped；`git diff --check` 通过（仅既有 LF→CRLF 提示）。最新 Debug APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,448,278 bytes，2026-10-22 02:54:03）。本轮仍未安装 APK，首次进入弹层的显示、按钮行为、离开 App 自动关闭、G28 锁定延迟切换及不同系统悬浮窗兼容性均待真机验收。
+> - 2026-10-22 “运行一段时间变卡”静态审计未发现相机 `Image`、`ImageReader`、Camera、MediaPipe 管线或悬浮 View 的明确未关闭链路；高频 YUV→Bitmap→旋转 Bitmap 仍是主要内存抖动嫌疑，但官方异步示例未证明 `detectAsync` 返回后可立即回收输入 Bitmap，因此未采用有原生 use-after-recycle 风险的激进回收。已做两项低风险收敛：`HandPipeline.close()` 清空尚未消费的自拍帧回调；场景选择层不存在或前台包名未变化时，不再每 250ms 向主线程投递关闭检查。重新执行 `testDebugUnitTest assembleDebug`：**BUILD SUCCESSFUL**，测试 **190/190**；最新 Debug APK 62,448,304 bytes（2026-10-22 03:10:31）。无线 ADB 因重复 mDNS 连接持续 `protocol fault / connection reset`，尚未取得连续 `dumpsys meminfo`，不能宣称内存泄漏已修复或卡顿已通过真机验收。
+> - 2026-10-22 自身 App 前台回退通用场景（代码完成，JVM 测试与 `assembleDebug` 通过，**尚未安装、尚未真机验收**）：根因是 `ControlAccessibilityService.onAccessibilityEvent` 用 `takeIf { it.isNotBlank() && it != packageName }` 丢弃自身包名事件，因此用户停留在魔法手势自己的页面时 `foregroundPackage()` 仍是上一个第三方 App，上一个场景继续生效，点赞、收藏、返回、切歌等手势会注入到自己的界面，场景页「最近前台 App」显示的也是上一个 App。四处最小修改：`ControlAccessibilityService` 新增独立的 `selfForeground` 标志与 `isSelfForeground()`（自身事件仍不写入 `foregroundPackageName`；收藏、最近任务目标等待与系统覆盖层过滤零改动；打开最近任务时同步清标志）；`GestureSceneAssignmentController.onSelfForeground()` 在临时场景判断之前返回通用场景且 `needsAssociation=false`，但保留 `currentPackage` 以便离开后恢复；`CameraProbeService.monitorForegroundScene` 只在标志变化时调用一次 `requestScene`；`GestureSceneTest` 新增 4 条用例（回退通用并保留包名、未关联 App 也不弹层、覆盖临时与已有关联并在离开后恢复、包名跟踪与自身标志解耦）。同轮复核结论：打开自动切换时**不存在**配置文件死循环读取，250ms 轮询内有 500ms 稳定窗口、相同场景不产生切换边界、循环体内不读取 SharedPreferences。方案与边界全文见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.6。真机必须确认荣耀 ALP-AN00 与 Redmi Note 11R 的无障碍能否报出自身包名；若某 ROM 不发事件，则维持旧行为（不误判，但也不回退）。
+> - 2026-10-22 场景方案开放有限的手势删减（产品负责人确认放开 §7.6.5 中的对应禁止项，代码完成，JVM 测试与 `assembleDebug` 通过，**尚未安装、尚未真机验收**）：场景管理页的短视频／音乐卡片新增「编辑 ✎」入口（已删减时显示「已调整 ✎」），打开手势清单弹层，勾选即参与、取消即移除，可随时加回并提供「恢复默认」；通用场景不开放入口。实现上新增一层本机存储 `scene_removed_<场景名>`（保存被移除的编号），`GestureSceneCatalog.definition(scene, removedCodes)` 按移除集合重建 `enabledCodes` 与 `actionOverrides` 并强制保留 `SYSTEM_CONTROL_CODES`，`GestureSceneCatalog.isEditable()` 让通用场景恒不接受移除；`CameraProbeService` 的场景切换与偏好监听统一走 `sceneDefinitionFor()`，因此运行中编辑即时生效。严格限制：只能移除出厂预设内已有的手势，不能加入预设外手势、不能改场景内动作映射、不能新增或复制场景，G28 在清单中显示为「识别锁，始终保留」且不可点；删减只在「已解锁 + 全局开关已开启 + 场景已启用」之上继续收窄。`GestureSceneTest` 新增 4 条用例（移除后手势与场景映射同时失效、识别锁不可移除、通用场景恒不接受移除、清空后恢复完整预设）。边界与状态见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.7 与 `REQUIREMENTS_CHANGELOG.md` 2026-10-22 条目。
+> - 2026-10-22 通用场景图标更换与悬浮球长按手动切换场景（代码完成，JVM 测试与 `assembleDebug` 通过，**尚未安装、尚未真机验收**）：通用场景卡片图标由 `▱` 改为 `◎`（短视频 `▶`、音乐 `♫` 不变）。新增 `SceneSwitchPromptController.kt`（服务侧 `TYPE_APPLICATION_OVERLAY` 全屏弹层，与 `SceneAssociationPromptController` 同参数风格，提供 `show(current)` / `dismiss()` / `isShowing()`），内容由新增的 `ScenePageUi.buildSceneSwitchPrompt()` 提供；`OverlayIndicator.DragTouchListener` 新增 2 秒长按判定，拖动超过 8dp 取消、松手时若已触发则不再 `openApp()`、`remove()` 时取消未触发的长按；`CameraProbeService` 用 `by lazy` 持有控制器并在 `overlayIndicator.onLongPress` 里打开，选择后走 `sceneAssignments.useManually(scene)`。重复弹窗有三层防护：全屏遮罩吞掉触摸、`show()` 内 `overlay != null` 直接返回、服务侧先判 `isShowing()`。同时调整 §7.6.6 的优先级：手动选择的场景优先于「自身 App 前台回退通用」，因为它是用户明确意图；自动回退只针对上一个 App 的场景。新增 `useManually`，它在还没有前台包名时也能生效（`useTemporarily` 做不到），`selection()` 在无包名时同样尊重手动选择。`GestureSceneTest` 相应更新为「自身回退丢弃已保存场景但保留手动选择」，并新增「无前台包名时手动切换仍生效」。边界与状态见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.8。
+> - **2026-10-22 弹层死循环回归与修复（真机已复现，修复已装机）**：04:33 装上「自身 App 前台回退通用场景」后，打开魔法手势自己的界面出现「为当前应用选择场景」弹层反复弹出、弹出即关又弹的死循环，屏幕被持续遮挡。**根因**：`monitorForegroundScene` 里 `isSelfForeground()` 每次翻转都调用 `requestScene`，而 `requestScene` 无条件按 `needsAssociation` 决定 show/dismiss；打开自己 App 时，上一个第三方 App 的残留窗口事件与自身窗口事件交替到达，自身标志在 true/false 之间反复翻转，于是 `needsAssociation` 在 false/true 之间抖动，弹层被 show→dismiss→show 无限循环。三处修复：① `GestureSceneSelection` 新增 `fromForegroundSwitch`，只有 `onForegroundApp`（真正的前台 App 变化）才置 true；② `requestScene` 只在 `needsAssociation && fromForegroundSwitch` 时 show，自身标志翻转、偏好重载、手动切换一律静默，`!needsAssociation` 时才 dismiss；③ 自身标志与前台包名一样要求 500ms 稳定窗口（`selfCandidate`/`selfCandidateSince`），避免场景在通用与上一个 App 场景之间抖动导致反复清场。`GestureSceneTest` 新增「只有真正的前台切换才能打开关联弹层」一条（33 条）。**状态**：`testDebugUnitTest assembleDebug` 通过 203/203，APK 62,465,874 bytes 已于 04:46:48 覆盖装机；**死循环是否在真机上彻底消失仍需用户复验**。应急止损方法：`adb shell am force-stop com.magicgesture.app`，或从通知栏停止手势控制、或在场景页关闭自动切换。
+> - **2026-10-22 悬浮球位置持久化（覆盖上一条「每次归位」，代码完成，待真机验收）**：产品负责人要求「移动后关掉 APP 或重启手机都要从之前移动的位置显示」。规则：**从未拖动**→默认左下角（底部留 `bottomInset=dp(28)` 避开系统手势条）；**拖动过**→记住该位置，此后关 App、重启手机、再启动手势都从该位置显示。实现：`GesturePreferences` 新增 `dot_position_x`/`dot_position_y` 与 `savedDotPosition()`（未存过返回 null，用于区分"没移动过"与"移到 0,0"）/`saveDotPosition()`；`OverlayIndicator` 中 `resetToHomeCorner()` 改为 `restorePosition()`（有保存则恢复并按当前屏幕尺寸 `coerceIn` 钳制，防旋转后越界），`snapToEdge()` 末尾保存——保存的是吸附后坐标，与用户看到的一致。已装机 13:03:50。
+> - **2026-10-22 悬浮球默认位置改左下角（产品负责人要求，代码完成，待真机验收）**：原默认在**右侧、垂直 1/3 处**。改为 `OverlayIndicator` 新增 `bottomInset = dp(28)`，默认与归位均为 `x = margin`、`y = height - touchSize - bottomInset`；新增 `resetToHomeCorner()` 并在 `show()` 开头调用，**每次开始手势控制都回左下角**（原先 `params` 只在构造时定位置，停止再启动会沿用上次拖动位置，不可预期）。抬高 28dp 是为了避开系统手势导航条，否则在上滑区会被系统返回手势抢走拖不动球。拖动 >8dp 与 `snapToEdge()` 左右吸附行为不变，位置不持久化。已装机 12:59:34。
+> - **2026-10-22 长按震动已通过验收（真机）**：最终方案为**双脉冲满振幅波形** `createWaveform(timings=[0,90,60,90], amplitudes=[0,255,0,255], -1)`。三易其稿过程：`performHapticFeedback` 被 `haptic_feedback_enabled=0` 屏蔽（真机实测该值为 0）→ `Vibrator.createOneShot(25ms)` 几乎无感 → 波形双脉冲通过。要点：`VibrationEffect.MAX_AMPLITUDE` **不在公开 SDK**（须写 255）；不传 amplitudes 时用平台默认强度，正是"太弱"根源。
+> - **2026-10-22 抖音打开后被切回通用场景——自身前台判定错误（重要，真机取证 + 修复）**：真机日志 `12:05:49 scene GENERAL -> SHORT_VIDEO` 紧接 `12:05:49 scene SHORT_VIDEO -> GENERAL`。根因：`ControlAccessibilityService` 用**无障碍窗口事件**判定「用户在看自己的界面」——`if (pkg == packageName) { selfForeground = true; return }`，而**悬浮球、场景提示条、手势反馈都是 `TYPE_APPLICATION_OVERLAY`，同样归属 `com.magicgesture.app`**，悬浮球常驻、反馈频繁，任一 overlay 出现就把当前 App 的场景偷回 GENERAL。修复：新增 `GestureApplication.kt`（`Application` + `ActivityLifecycleCallbacks` resumed 计数，`ownScreenVisible()`），manifest 加 `android:name=".GestureApplication"`；`isSelfForeground()` 改读它；无障碍事件自身包名分支只 `return` 不置位；删除 `selfForeground` 字段与 `globalAction` 里的置位。语义收敛为「只有我们的 Activity 在前台才算」。同时悬浮球长按 2000ms→**1000ms** 并在触发瞬间 `performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)`（`scheduleLongPress(v: View)` 传入 View，免权限）。**真机已验证生效（12:38）**：停在抖音期间场景保持 SHORT_VIDEO，切到 luna 音乐只打一条 `scene SHORT_VIDEO -> MUSIC`，**无反向回退**——进入 luna 时起点是 SHORT_VIDEO 而非 GENERAL，即抖音期间场景没被偷走，修复成立。仍未验收：长按约 1 秒弹出且震动、快速点击仍打开 App。另注：取证时 `adb logcat -s CameraProbe` 过滤器在荣耀设备上**偶发抓不到**（本次连 startup 日志都没有），改用全量 `logcat -v time` 再 grep `CameraProbe` 才稳定抓到，以后取证不要只依赖 `-s`。
+> - **2026-10-22 提示条「每应用只问一次」未生效的真机取证与修复（重要）**：12:01 通过 `adb logcat -s CameraProbe` 抓到真机证据——同一个 `cn.gov.chinatax.gt4.app` 在 12:01:20 与 12:01:23 连续两次打印 `unassociated`，说明「只提示一次」没生效。**根因**：提示条结束时只调用 `GesturePreferences.markSceneNotified` 写持久化，**没有同步服务内存里的 `notified` 集合**，于是下一次前台判定仍认为该 App「没问过」。修复：给 `SceneAssociationPromptController` 增加 `onNotified: (String) -> Unit` 回调，`dismissInternal()` 与 `attach()` 失败路径统一走 `markNotified()`（持久化 + 回调），服务侧 `onNotified = { pkg -> sceneAssignments.markNotified(pkg) }` 同步内存态。另把 `requestScene` 里那条日志按 `fromForegroundSwitch` 分两种文案（`offering guidance` / `already offered`），否则不弹层的静默重算在日志里看起来和二次弹层一模一样（hiboard 曾出现 340ms 内两条，实为一次弹层 + 一次静默重算）。已确认 `scene_notified` 持久化正常落地（真机读到 hiboard、unionpay、chinatax、immusician.music、rimet 五个包名）。**仍待真机确认**：在控制保持运行的前提下，切到未关联 App 出现提示条、切走再切回同一 App 不再出现。
+> - **2026-10-22 真机取证要点**：`adb logcat -s CameraProbe -v time` 可正常抓到日志（荣耀设备无限制）；但**只有 `CameraProbeService` 真正在运行且控制开启（controlMode=true）时才有场景日志**，只有 `ControlAccessibilityService` 存活时日志为空——排查时空日志要先 `dumpsys activity services com.magicgesture.app` 确认服务，别误判为日志被限制。另可用 `run-as com.magicgesture.app cat /data/data/com.magicgesture.app/shared_prefs/gesture_settings.xml` 直接读偏好验证持久化。
+> - **2026-10-22 场景关联提示改为非阻塞提示条 + 每应用只问一次（产品负责人确认三项，代码完成，JVM 测试与 `assembleDebug` 通过，APK 62,468,928 bytes 已于 04:58:05 覆盖装机，真机验收中）**：原实现每进一个未关联 App 就弹全屏遮罩且期间停帧丢事件隐藏光标，用户抱怨「每个 APP 都弹、打扰太多」，且打开应用时路径经过桌面与目标 App 两个未关联包名，出现弹两次。改造：① `SceneAssociationPromptController` 拆为两态——提示条（屏幕顶部小横幅「<应用名> 未关联场景 · 点此选择 ›」，5 秒自动消失，`FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCH_MODAL`，不拦触摸不停识别不隐藏光标）点击才展开全屏面板，面板点遮罩空白处关闭；② `GestureSceneAssignmentController` 新增 `notifiedPackages`/`markNotified(pkg)`，`needsAssociation` 增加 `pkg !in notified` 条件（Service 侧 `requestScene` 逻辑零改动），`GesturePreferences` 新增 `scene_notified` 集合并纳入 `isScenePreferenceKey()`，提示条超时/关闭/做出选择任一路径都 `markSceneNotified`；③ 移除 `onFlowStateChanged` 与 `scenePromptActive`，`CameraProbeService` 中停帧（`!scenePromptActive`）与丢事件（`favoriteFlowActive || scenePromptActive`）两处判断删除，故提示条与面板展开期间手势照常工作；④ 悬浮球长按面板新增「默认」按钮（`SceneSwitchCallbacks.onRememberDefault` → `rememberSceneAsDefault`），无前台包名时不显示。`GestureSceneTest` 新增 2 条（同一 App 只提示一次且换 App 仍提示、`markNotified` 忽略非法包名）。详细边界见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.9 与 `REQUIREMENTS_CHANGELOG.md` 2026-10-22 第三条。
+> - 2026-10-22 场景内手势编辑再放开：允许添加预设之外的手势（代码完成，JVM 测试与 `assembleDebug` 通过，**尚未安装本轮 APK、尚未真机验收**）。编辑清单改为两段：「场景预设 · 已选 N」与「可添加的手势 · 已选 N」（后者为 G01–G36 中不属于该预设的编号）。`GestureSceneCatalog.definition(scene, removedCodes, addedCodes)` 按「出厂预设 − 删减 + 增加」重建 `enabledCodes`，`actionOverrides` 只保留仍在场景内的预设手势，因此**后添加的手势没有场景内映射、自动落到用户全局映射**（清单标注「沿用你在全局设置的动作」）；未解锁手势可勾选但标注「未解锁 · 添加后仍需解锁才生效」，三层收敛不变。新增 `scene_added_<场景名>` 存储并纳入 `isScenePreferenceKey()`；通用场景仍返回出厂对象本身（`definition` 对 GENERAL 直接 return base，测试用引用相等断言）。`GestureSceneTest` 新增 3 条（添加预设外手势沿用全局映射且不动预设映射、删减与增加可组合且保留识别锁、通用场景同时忽略删减与增加）。边界与状态见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.7 与 `REQUIREMENTS_CHANGELOG.md` 2026-10-22 第二条。
+
+### CodeBuddy 接续工作日志（2026-10-22）
+
+- **环境与 Git 基线**：Windows / PowerShell；工程 `E:\2026\MagicGesture-v1.0.0`；分支 `V1.0.0`；HEAD `6ef595c5869be9703972fed791753d578d51be2e`。远程 `origin` 为 Gitee、`github` 为 GitHub；当前分支状态显示与 `github/V1.0.0` 同基线，二期场景代码仍全部位于未提交工作区。本轮没有本地提交，也没有 push。
+- **工作区归属与保护**：`CameraProbeService.kt`、`GesturePreferences.kt`、`GestureScene.kt`、`SceneAssociationPromptController.kt`、`SceneManagementActivity.kt`、`ScenePageUi.kt`、Manifest、场景测试及相关需求/交接文档属于二期场景开发；`MainActivity.kt`、四个菜单切片和 UI 设计稿属于已确认首页改版；`HandPipeline.kt` 当前只新增关闭时清空待自拍回调的低风险收敛。`app/build.gradle.kts`、`ScenePagePreviewTest.kt`、`gradle/gradle-daemon-jvm.properties` 及 4 张 JVM 预览属于同一未提交 UI 预览链路。`AGENTS.md` 与其余已有文档也有未提交修改。接手者必须先看完整 diff，不得 reset、checkout、清理或覆盖任何文件，也不得删除 `.codebuddy/`。
+- **已完成的产品行为**：首页第三个主导航为“场景模式”；右上角保留“保持授权”和“设置”，移除“使用技巧”按钮；四个导航标题统一 12sp 并向上 2dp。场景管理页可直接看到通用、短视频、音乐三种方案，可搜索并关联已安装应用；应用选择列表使用深色霓虹卡片、图标、名称/包名搜索和已关联标记。手势服务运行且自动切换开启时，首次进入稳定 500ms 的未关联普通 App 会显示场景选择悬浮层，支持“暂不设置”“仅本次使用”“设为默认”；弹层期间禁止手势与光标穿透，离开目标 App 自动关闭。
+- **运行时边界**：场景只在用户已经拥有且已经启用的手势集合内继续收窄，不重新开放未解锁功能；场景映射是运行时临时副本，不覆盖用户全局映射。G28 锁定期间延迟切换，切换前结束持续音量/拖动并清空识别状态。未关联、关闭自动切换或异常时回退通用场景。首版只有 `GENERAL`、`SHORT_VIDEO`、`MUSIC`，全部免费；禁止增加 Pro、付费、自定义场景、账号、联网分类、同步、埋点或 G37。
+- **隐私与权限**：保持 `accessibility_service.xml` 的 `canRetrieveWindowContent="false"`；场景功能只复用无障碍服务已经维护的前台包名，不读取第三方页面文字、控件树、密码或聊天内容；没有增加网络、账号或支付依赖。首次场景选择复用既有悬浮窗权限，没有新增权限。
+- **安装踩坑（2026-10-22，重要）**：手机**息屏（Dozing/AOD）时 `install -r` 会被系统直接拒绝**（`INSTALL_FAILED_ABORTED: User rejected permissions`），因为安装确认弹窗根本看不见。装之前先确认 `dumpsys power` 的 `mWakefulness` 为 `Awake`；若不是，用 `adb -s <serial> shell input keyevent 224`（KEYCODE_WAKEUP）唤醒后等待 2 秒再装。本轮 05:00 的 APK 就因此失败一次，11:58 唤醒后重试 Success。
+- **最新验证证据**：2026-10-22 04:57 使用现有 JDK 17，临时改名并在 `finally` 中原样恢复未提交的 `gradle/gradle-daemon-jvm.properties` 后执行 `testDebugUnitTest assembleDebug`，结果 **BUILD SUCCESSFUL in 22s**；测试 **205/205**、0 failure/0 error/0 skipped（`GestureSceneTest` 由 20 条增至 35 条）。`git diff --check` 通过，仅有既有 LF→CRLF 提示。最新 Debug APK 为 `app/build/outputs/apk/debug/app-debug.apk`，62,470,643 bytes，磁盘时间 2026-10-22 12:18:13，签名类型为 Debug，已于 12:19:28 覆盖安装到荣耀 ALP-AN00（`lastUpdateTime=2026-10-22 12:19:28`，覆盖安装未清数据）。没有执行 Release 构建或生成新的 Release APK/AAB。（此前 190/190、194/194、198/198、199/199、202/202、203/203 与 62,448,304、62,448,598、62,455,891、62,460,926、62,465,223、62,465,874、62,468,928、62,469,206、62,469,590、62,469,638 bytes 的记录已被本条取代，不要再引用。）没有执行 Release 构建或生成新的 Release APK/AAB。（此前 190/190、194/194、198/198、199/199、202/202、203/203 与 62,448,304、62,448,598、62,455,891、62,460,926、62,465,223、62,465,874 bytes 的记录已被本条取代，不要再引用。）
+- **安装状态（2026-10-22 04:39 最新，取代 04:18 记录）**：最新 Debug APK（62,465,223 bytes，2026-10-22 04:33:17，含场景内手势「增加预设外手势」能力）已通过 `adb -s <serial> install -r` 安装到荣耀 ALP-AN00（HNALP-Q），结果 **Success**。安装后 `dumpsys package` 显示 `versionName=1.0.0`、`versionCode=10`、`firstInstallTime=2026-10-12 20:42:07`、`lastUpdateTime=2026-10-22 04:39:22`、`dataDir=/data/user/0/com.magicgesture.app`：即**覆盖安装、未清数据**，场景关联与解锁记录应仍在。注意两点：① 该设备当前有两个重复无线 mDNS 别名（`...Knd1vN._adb-tls-connect._tcp` 与 `...Knd1vN (2)._adb-tls-connect._tcp`），任何 adb 命令必须带 `-s` 指定 serial，否则报 `more than one device/emulator`；② 第一次 `install -r` 返回 `INSTALL_FAILED_ABORTED: User rejected permissions`，原因是手机端安装确认弹窗未被允许，第二次发起并在手机上点允许后才 Success，后续安装需提醒先解锁亮屏并留意确认弹窗。另：`pm list packages` 在该设备上抛 `SecurityException: Shell does not have permission to access user 100`，属设备限制，不影响安装，查版本改用 `dumpsys package`。
+- **明确未完成/未验收**：APK 已安装但**尚未启动应用、尚未开始任何人工验收**；首页视觉、三个场景方案、应用搜索列表、首次进入弹层、“仅本次使用”离开失效、“设为默认”、自动切换开关、无关联回退、G28 延迟切换和不同系统悬浮窗兼容性均未完成本轮真机验收。另需真机验收场景内手势编辑：删除与添加后运行中即时生效、添加预设外手势后按全局动作生效、未解锁手势添加后不生效、G28 不可移除、恢复默认同时清空删减与增加、与解锁/开关三层收敛不冲突、两段长清单滚动与底部按钮在小屏可用。以及悬浮球长按切换场景：长按 2 秒手感与不误触、拖动不触发、弹窗不叠弹、切换后即时生效且换 App 后恢复自动选择、无悬浮窗权限时只提示不崩溃。构建成功、APK 生成和 JVM 预览不能代替安装与人工验收。另需真机验收本次新增的「自身 App 前台回退通用场景」：进入自己 App 是否立即回退通用、是否不再对自己界面注入点赞/收藏/返回/切歌、离开后是否按 500ms 稳定窗口恢复上一个 App 的场景，以及无障碍是否真的能报出自身包名（`adb logcat -s CameraProbe` 观察 `scene SHORT_VIDEO -> GENERAL` 是否每次进入自己 App 只出现一次，不刷屏）。
+- **卡顿/内存风险**：静态审计没有发现相机 `Image`、`ImageReader`、Camera、MediaPipe 管线或悬浮 View 的明确未关闭链路。当前主要嫌疑是 640×480 识别帧持续执行 YUV→ARGB Bitmap→旋转 Bitmap 带来的内存分配/GC 抖动，而不是已经证实的无限增长泄漏。没有采用 `detectAsync` 返回后立即 `recycle()` 的激进方案，因为官方异步契约不足以证明安全，存在 native use-after-recycle 风险。已完成的低风险优化仅为关闭管线时清空待自拍回调，以及无场景弹层/包名未变化时不再每 250ms 投递主线程关闭检查。
+- **真机与 ADB 状态**：发现荣耀 ALP-AN00 的两个重复无线 mDNS 别名；读取 `dumpsys meminfo` 时持续出现 `protocol fault (couldn't read status): connection reset`，因此没有取得可用的 Java Heap、Native Heap、Graphics、GC 或稳态温度曲线。不得宣称卡顿或内存问题已经修复。
+- **下一步 P0**：APK 已覆盖安装完成（见上条安装状态），现在直接进入人工验收：建议只保留一个稳定 ADB 连接（当前有两个重复无线别名，命令必须带 `-s`）；依次验收首次进入未关联短视频 App、音乐 App、通用 App时的场景选择和保存行为，再验收离开 App、服务停止、关闭自动切换及 G28 锁定边界。随后验收自身 App 前台回退：手势控制运行中打开魔法手势自己的首页与场景页，确认场景回退通用、不弹关联层、手势不再作用于自己界面，返回上一个第三方 App 后场景恢复；重点确认无障碍能报出自身包名（若 logcat 完全没有 `scene ... -> GENERAL` 说明该 ROM 不发自身事件，需回报产品负责人后再定方案）。
+- **下一步 P1**：同一设备、同一识别场景分别在启动后、5分钟、15分钟采集 `dumpsys meminfo com.magicgesture.app`、进程 PSS/RSS、Java/Native/Graphics、GC/帧率和温度；观察停止服务后内存是否回落。只有持续增长且停止后不回落才继续按泄漏追踪；若内存呈锯齿回落但伴随卡顿，则优先设计安全的两帧 Bitmap 缓冲池，并先做 MediaPipe 输入生命周期验证。
+- **Git 边界**：当前没有提交、没有推送。产品负责人本次仅要求写交接文档，不构成本地提交或远程同步授权。
+
 > 2026-10-13 性能优化第一批（代码完成，待真机量化验收）：
 > - 启动状态改为相机会话、MediaPipe 模型和首个推理结果全部就绪后才置为“运行中”；首页不再固定 350ms 后退到桌面，而是等待真实就绪，最长 20 秒失败关闭服务。
 > - `hand_landmarker.task` 改为 APK 内不压缩，减少每次新建识别管线时对 7.8MB 模型的解压/复制；Debug APK 已确认 `Length == CompressedLength == 7,819,105`。
@@ -482,7 +557,7 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 ### 2026-10-03 G35「双指枪·竖向」（代码完成、图片与算法姿势待确认）
 
-产品负责人已再次确认：G35 已完成开发并正式纳入当前版本；现有范围为 G01–G35，后续继续冻结 G36 及新手势概念。
+> 历史记录：2026-10-03 时产品范围曾为 G01–G35；2026-10-21 产品负责人已另行重新立项并加入 G36。当前范围以本文顶部二期摘要和 `AGENTS.md` 为准，继续冻结 G37 及后续编号。
 
 > **2026-10-04 默认动作互换（产品负责人确认）**：G35 与 G25 的默认绑定动作对调——
 > **G35 由「向上滑动」改为「下拉通知栏」**，**G25 由「下拉通知栏」改为「向上滑动」**。
@@ -607,14 +682,14 @@ GlobalCooldownManager：时长由用户配置、当前默认 1500ms，仅动作�
 
 ### 6.2 P1：当前待开发安全优化
 
-4. **手持物抑制（已列入待开发，当前仅记录）**：当前控制手稳定持有杯、瓶、碗、餐具、手机或包装物等常见物品时，冻结整条手势识别管线并清空全部瞬态状态；最近手持物时不得改由后方空手触发。当前 MediaPipe 手部模型不直接输出持物类别，后续需评估本机物体检测与“空手／持物”分类、连续帧确认、迟滞退出、独占动作安全结束、性能预算和低端机降级。该能力不能保证识别细小、透明、完全遮挡或训练范围外物品，也不能替代主动暂停与现有互斥治理。详细记录见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.4；当前未实现、未构建、未真机验证，不新增 G36。
-5. **六六顺识别锁（已列入待开发，当前仅记录）**：推荐把 G34 调整为所有用户可用、不可关闭、不可换绑的系统级识别锁；六六顺稳定保持建议 1 秒切换锁定／解锁，触发后须完整释放建议 800ms。锁定期间只运行最近控制手与六六顺专用判定，其他手势、光标、反馈、进度、轨迹和候选状态全部冻结；进入锁定前须安全结束拖动、持续音量等独占动作。停止全部控制后清除锁状态，下次主动启动默认正常识别，并保留 App／通知手动解除入口。该方案与 G34 当前第 6 次签到解锁、可关闭、可换绑规则冲突，实施前必须再次确认并同步签到、映射、功能开关、首页／校准页和测试；详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.5。当前未实现、未构建、未真机验证，不新增 G36。
+4. **手持物抑制（已列入待开发，当前仅记录）**：当前控制手稳定持有杯、瓶、碗、餐具、手机或包装物等常见物品时，冻结整条手势识别管线并清空全部瞬态状态；最近手持物时不得改由后方空手触发。当前 MediaPipe 手部模型不直接输出持物类别，后续需评估本机物体检测与“空手／持物”分类、连续帧确认、迟滞退出、独占动作安全结束、性能预算和低端机降级。该能力不能保证识别细小、透明、完全遮挡或训练范围外物品，也不能替代主动暂停与现有互斥治理。详细记录见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.4；当前未实现、未构建、未真机验证，不新增 G37。
+5. **六六顺识别锁（已列入待开发，当前仅记录）**：推荐把 G34 调整为所有用户可用、不可关闭、不可换绑的系统级识别锁；六六顺稳定保持建议 1 秒切换锁定／解锁，触发后须完整释放建议 800ms。锁定期间只运行最近控制手与六六顺专用判定，其他手势、光标、反馈、进度、轨迹和候选状态全部冻结；进入锁定前须安全结束拖动、持续音量等独占动作。停止全部控制后清除锁状态，下次主动启动默认正常识别，并保留 App／通知手动解除入口。该方案与 G34 当前第 6 次签到解锁、可关闭、可换绑规则冲突，实施前必须再次确认并同步签到、映射、功能开关、首页／校准页和测试；详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §6.5。当前未实现、未构建、未真机验证，不新增 G37。
 
-### 6.3 真实上线后／下一里程碑候选（当前禁止实施）
+### 6.3 二期开发与其余候选
 
 6. **二期新手势候选：双指水平快退／快进**：仅记录，尚未分配编号，也未进入当前解锁和发布范围；与 G29/G30 双指左右挥切歌存在直接姿势冲突。二期重新立项时必须先定义速度、位移、保持时长和互斥优先级。详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.4。
-7. **自定义组合手势与个人模板**：产品模型为“基础手势 + 基本行为 → 动作功能”；先支持对预设基础手势录制 3～5 轮进行本机校准，稳定后再评估完全自由的新手形。当前未授权实施，不新增 G36。详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.5 和 §7.5.5。
-8. **按前台 App 自动切换手势场景**：依据前台应用包名及本机保存的关联切换短视频、媒体、阅读或通用场景，不读取第三方页面内容或控件树。需规划用户确认、手动覆盖、失败回退、切换清场和独占动作安全结束。详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6。
+7. **自定义组合手势与个人模板**：产品模型为“基础手势 + 基本行为 → 动作功能”；先支持对预设基础手势录制 3～5 轮进行本机校准，稳定后再评估完全自由的新手形。当前未授权实施，不新增 G37。详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.5 和 §7.5.5。
+8. **按前台 App 自动切换手势场景（已确认开发）**：首版只实现所有用户免费使用的短视频与音乐场景，通用场景作为回退；依据前台包名及本机关联切换，不读取第三方页面内容或控件树，包含首次关联、当前 App 临时覆盖、失败回退、切换清场和独占动作安全结束。详见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6。
 9. **G03/G04/G09/G10 二期轨迹手势**：四个编号已完成默认关闭、默认未绑定及第 7 个签到包预留；S、圆圈、V 等轨迹尚未开发，具体编号分配和验收必须等 App 真实公开上线后重新规划。
 
 ### 6.4 已完成、已验收或已接受现状
@@ -670,7 +745,7 @@ Release APK 已于 2026-10-06 重装到荣耀 ALP-AN00 并通过产品负责人�
 | 文件 | 职责 |
 |---|---|
 | `GestureEngine.kt` | 全部姿势检测与状态机（V 字块在最前，注意与两指块的互斥；两指双击状态机在挥手状态机旁） |
-| `GestureArchitecture.kt` | 手势码 G01-G35 / 映射（伴生对象 `defaultMappings`）/门控/动作执行器/`GestureAction` 与文案 |
+| `GestureArchitecture.kt` | 手势码 G01–G36 / 映射（伴生对象 `defaultMappings`）/门控/动作执行器/`GestureAction` 与文案 |
 | `CameraProbeService.kt` | 前台服务：相机管线、偏好监听（`feature_*` 与 `mapping_*` 即时生效）、自拍链路、媒体键与音量 |
 | `ControlAccessibilityService.kt` | 无障碍：`globalAction()`/`inject()`/`tapPixels()`/`foregroundPackage()`/媒体键；`busy` 标志是全局注入锁（疑似卡死点，见 §3 末节②） |
 | `FavoriteButtonController.kt` | 收藏标定与坐标点击：首次标定浮层、准星、`saveFavoriteProfile` 读取；**失败分支共用兜底文案**（当前待定位） |

@@ -3,6 +3,117 @@
 > 本文档持续记录产品负责人已经明确确认、会影响现有功能行为的需求变更。  
 > 这里只记录 G01–G36 现有范围内的稳定性、交互和发布需求，不作为新增手势或二期功能的开发授权。
 
+## 2026-10-22：应用选择弹窗打开慢（主线程做了几百次跨进程调用）
+
+反馈：场景页点击「选择要关联的应用」弹窗、以及页面底部「关联新应用」按钮，**响应都很慢**（两者都是 `SceneManagementActivity.showAppPicker()`）。
+
+**根因（全部在主线程，且都在 `dialog.show()` 之前）**
+
+1. `packageManager.queryIntentActivities(MAIN/LAUNCHER, 0)`——跨进程查询全部桌面应用。
+2. `sortedBy { it.loadLabel(packageManager) }`——**每个应用一次 Binder 调用**解析标签。
+3. `render()` 里对每个应用**再调一次** `loadLabel()`（同一份标签算了两遍）。
+4. 每行一次 `GesturePreferences.sceneAssociation(...)` 读 SharedPreferences。
+
+机器上装了两三百个应用时，这是几百次 Binder 调用 + 几百次 SP 读取，全部阻塞 UI 线程，弹窗要等它们做完才显示。
+
+**修复**
+
+- 弹窗**先立即 `show()`**，列表区域显示「正在加载应用…」，加载完成后填充——点击响应变为即时。
+- 查询与 `loadLabel()` 全部移到 `appLoader` 后台线程（独立于 `iconLoader`，避免拖慢图标加载）。
+- 标签**只解析一次**，存进 `AppEntry(packageName, label)`，排序与搜索过滤都复用它。
+- 关联状态改为**一次性** `GesturePreferences.sceneAssociations(this)` 读成 Map，逐行查 Map 而非逐个读 SP。
+- 回调回主线程时校验 `isFinishing || isDestroyed`，避免 Activity 已销毁后再刷新列表。
+
+状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（205/205），APK 62,474,167 bytes 已于 13:09:30 覆盖装机；**尚未真机验收**（须确认弹窗即时打开、列表随后填充、搜索仍可用、选中的应用仍有 ✓ 标记）。
+
+## 2026-10-22：悬浮球位置持久化——记住用户移动后的位置（覆盖上一条「每次归位」）
+
+产品负责人要求「移动后关掉 APP 或重启手机，都要从用户之前移动的位置显示，而不是回到初始化位置」。这是对上一条「每次开始手势时归位左下角」的覆盖修正：归位逻辑只在**从未移动过**时生效。
+
+**规则**
+
+- **从未拖动过** → 使用默认位置（左下角，底部留 28dp 避开系统手势条）。
+- **拖动过** → 记住该位置，此后关掉 App、重启手机、再次开始手势，都从该位置显示。
+- 保存的值是**吸附后的坐标**（拖动 >8dp 松手时 `snapToEdge()` 落点），与用户实际看到的位置一致。
+- 恢复时按当前屏幕尺寸**钳制边界**（`coerceIn(margin, max)`），旋转屏幕或显示尺寸变化后不会跑到屏幕外。
+
+**实现**：`GesturePreferences` 新增 `dot_position_x` / `dot_position_y` 与 `savedDotPosition()` / `saveDotPosition()`（未存过时返回 null，用于区分"没移动过"与"移动到 0,0"）；`OverlayIndicator` 中 `resetToHomeCorner()` 改为 `restorePosition()`（有保存位置则恢复并钳制，否则用左下角），`snapToEdge()` 末尾保存坐标。
+
+状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（205/205），APK 62,471,944 bytes 已于 13:03:50 覆盖装机；**尚未真机验收**（须确认拖动后关闭 App 再启动、以及重启手机后位置均保持）。
+
+## 2026-10-22：悬浮球默认位置改为左下角（每次开始手势时归位）
+
+产品负责人要求「开始手势的时候，默认把悬浮球放到屏幕左下角」。原默认位置为**右侧、屏幕垂直 1/3 处**（`params.x = width - touchSize - margin`、`y = height / 3`）。
+
+改动集中在 `OverlayIndicator`：
+
+- 新增 `bottomInset = dp(28)`，默认位置与归位逻辑均为 `x = margin`、`y = height - touchSize - bottomInset`。抬高的 28dp 是为了**避开系统手势导航条**——贴底时在该区域上滑会被系统返回手势抢走，导致拖不动球。
+- 新增 `resetToHomeCorner()`，并在 `show()` 开头调用：**每次开始手势控制都回到左下角**。原先 `params` 只在构造时定一次位置，停止再启动会沿用上次拖动的位置，不可预期。
+
+保留行为不变：拖动 >8dp 仍可移动，`snapToEdge()` 仍按左右半屏吸附（手动拖到底可比默认更贴底）。位置不做持久化，属预期。
+
+状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（205/205），APK 62,471,446 bytes 已于 12:59:34 覆盖装机；**尚未真机验收**（须确认开始手势后球在左下角、可正常拖动、不在系统手势条上）。
+
+## 2026-10-22：抖音打开后被切回通用场景（自身前台判定错误）+ 长按改为 1000ms 并加震动
+
+**问题**：打开抖音，场景切到 SHORT_VIDEO 后立刻被切回 GENERAL。日志真机取证：`12:05:49 scene GENERAL -> SHORT_VIDEO` 与 `12:05:49 scene SHORT_VIDEO -> GENERAL` 同一秒来回。
+
+**根因**：`ControlAccessibilityService` 用**无障碍窗口事件**判定「用户正在看 MagicGesture 自己的界面」——事件包名等于自身包名就把 `selfForeground` 置 true，场景随之强制回退 GENERAL。但**悬浮球、场景提示条、手势反馈都是 `TYPE_APPLICATION_OVERLAY` 窗口，同样归属 `com.magicgesture.app`**，悬浮球常驻、反馈频繁弹出，于是任一 overlay 出现都会把当前应用的场景偷走。
+
+**修复**：改用**真实 Activity 生命周期**判定。新增 `GestureApplication`（`Application` 子类，注册 `ActivityLifecycleCallbacks`，用 resumed 计数），manifest 声明 `android:name=".GestureApplication"`；`isSelfForeground()` 改为读 `GestureApplication.ownScreenVisible()`；无障碍事件里自身包名分支不再置位、只 `return`；删除 `selfForeground` 字段及 `globalAction` 中的置位。语义变为「只有我们的 Activity 在前台才算」，overlay 不再干扰。自身 Activity 之间切换会短暂经过 0，但服务侧 500ms 稳定窗口会过滤该抖动。
+
+**同时**：悬浮球长按阈值 2000ms → **1000ms**（Android 无障碍「中等」档，与 <400ms 的普通点击有足够边界），并在触发瞬间加轻震动，让「按够了」这件事有明确信号。
+
+**震动方案三易其稿（真机实测驱动，最终定稿）**：① 最初用 `performHapticFeedback(LONG_PRESS)`——真机**完全无反应**，因该 API 受系统「触感反馈」开关控制，实测 `settings get system haptic_feedback_enabled = 0`（用户关闭），overlay 窗口也不触发；② 改用 `Vibrator` + `createOneShot(25ms)`，新增 `android.permission.VIBRATE`（normal 级，安装即授予），并通过进程启动时间（12:42:22）晚于安装时间（12:42:21）确认新代码确实在运行——仍**几乎无感**，马达太弱/时长太短；③ 最终改为 **双脉冲满振幅波形** `createWaveform(timings=[0,90,60,90], amplitudes=[0,255,0,255], repeat=-1)`（震 90ms—停 60ms—再震 90ms），旧版降级为 `vibrate(timings, -1)`。注意 `VibrationEffect.MAX_AMPLITUDE` **不在公开 SDK**（编译报 unresolved reference，须写 255）；`createWaveform` 不传 amplitudes 时用平台默认强度，正是「太弱」的原因，故显式给 255。另加 `Log.d("CameraProbe", "long press tick waveform ...")` 便于区分「调用了但震不动」与「被系统拦截」。
+
+状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（205/205），APK 62,470,643 bytes 已于 12:19:28 覆盖装机；**尚未真机验收**。真机须确认：打开抖音能稳定停在短视频场景不再回退、打开其他已关联 App 同理、长按悬浮球约 1 秒弹出且震动、快速点击仍能打开 App。
+
+## 2026-10-22：场景关联提示改为非阻塞提示条 + 每个应用只问一次
+
+原实现每进入一个未关联 App 就弹一次全屏遮罩，且弹层期间手势识别完全停摆（停帧 + 丢事件 + 隐藏光标），打扰过大。产品负责人确认三项改造：
+
+- **非阻塞提示条**：未关联 App 前台稳定 500ms 后在屏幕顶部显示小横幅「<应用名> 未关联场景 · 点此选择 ›」，5 秒自动消失；`FLAG_NOT_FOCUSABLE` + `FLAG_NOT_TOUCH_MODAL`，不拦截触摸、不停识别、不隐藏光标。点击才展开原全屏面板，点遮罩空白处关闭。
+- **每个应用只提示一次**：提示条超时、被关闭、做出选择，任一路径都把包名记入 `scene_notified`，此后静默使用通用场景。
+- **悬浮球长按加「默认」**：手动切换场景时可顺便把当前应用固化为该场景默认值（无前台包名时按钮不显示）。
+
+实现：`GestureSceneAssignmentController` 新增 `notifiedPackages`/`markNotified`，`needsAssociation` 收窄为「仍需打扰一次」；`GesturePreferences` 新增 `scene_notified`；`SceneAssociationPromptController` 拆两态并移除阻断回调，`CameraProbeService` 中 `scenePromptActive` 相关停帧与丢事件判断删除。同步更新：`ScenePageUi.kt`、`SceneSwitchPromptController.kt`、`GestureSceneTest.kt`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`（新增 §7.6.9）。
+
+状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（205/205），APK 62,468,928 bytes 已于 04:58:05 覆盖装机；**尚未真机验收**。
+
+## 2026-10-22：场景内手势编辑再放开——允许添加预设之外的手势
+
+产品负责人在上一节「只允许删减出厂预设内手势」的基础上再放开一步，编辑清单现在既能删也能加。
+
+- 清单分两段：「场景预设」（出厂手势，可取消勾选）与「可添加的手势」（G01–G36 中不属于该预设的编号，勾选即加入该场景）。
+- **添加的手势沿用你在全局为它绑定的动作**，场景不为它编造映射（短视频 G25 上滑、G36 下滑等预设映射仍然只属于预设成员）。换句话说：场景决定「哪些手势参与」和「预设手势的场景内动作」，动作换绑仍只在全局映射页做。
+- 未解锁的手势可以勾选，但清单标注「未解锁 · 添加后仍需解锁才生效」，三层收敛不变——编辑不能反向打开任何手势。
+- G28 识别锁仍恒保留；「恢复默认」同时清空删减与增加；通用场景仍完全不接受编辑。
+- 实现：`GestureSceneCatalog.definition(scene, removedCodes, addedCodes)` 按「预设 − 删减 + 增加」重建，后添加的手势不进 `actionOverrides` 因而落到全局映射；新增 `scene_added_<场景名>` 存储并纳入 `isScenePreferenceKey()`。
+- 同步更新：`GestureScene.kt`、`GesturePreferences.kt`、`CameraProbeService.kt`、`ScenePageUi.kt`、`SceneManagementActivity.kt`、`GestureSceneTest.kt`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`（§7.6.5 与 §7.6.7）。
+- 状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（202/202）；**尚未安装本轮 APK、尚未真机验收**。
+
+## 2026-10-22：预设场景开放有限的手势删减（原 §7.6.5 禁止项部分放开）
+
+产品负责人确认对 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6.5 中「不开放预设场景内部手势清单编辑器」做**有限放开**，允许编辑场景方案绑定了哪些手势。
+
+- 开放范围：**只有短视频场景与音乐场景**可以编辑，通用场景不开放（它保持用户的全局手势设置，在此删减会与校准页功能开关重复并互相打架）。
+- 编辑方式：场景方案卡片新增「编辑 ✎」入口（已删减时显示「已调整 ✎」），打开手势清单弹层，勾选即参与、取消勾选即移除；可随时加回，并提供「恢复默认」一键还原出厂预设。
+- 严格限制：只能移除该场景**出厂预设内已有**的手势，不能把预设之外的手势加进来；**不改场景内动作映射**（短视频场景内 G25 仍固定上滑、G36 仍固定下滑）；不能新增、复制或重命名场景。
+- G28 识别锁在任何场景中恒保留，清单中显示为「识别锁，始终保留」且不可点。
+- 三层收敛不变：删减只在「已解锁 + 全局开关已开启 + 场景已启用」之上继续收窄，不能反向打开任何手势。
+- 生效方式：勾选变化立即写入本机偏好，手势控制运行中通过偏好监听即时下发，无需重启控制。
+- 同步更新：`GestureScene.kt`、`GesturePreferences.kt`、`CameraProbeService.kt`、`ScenePageUi.kt`、`SceneManagementActivity.kt`、`GestureSceneTest.kt`、`ScenePagePreviewTest.kt`、`GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md`（§7.6.5 改写、新增 §7.6.7）。
+- 状态：代码已完成，`testDebugUnitTest assembleDebug` 通过（198/198）；**尚未安装、尚未真机验收**。
+
+## 2026-10-21：真实上线并启动二期手势场景
+
+- 产品负责人确认应用已真实公开上架华为应用市场：`https://appgallery.huawei.com/app/C119234419`，项目进入二期开发阶段。
+- G36 已完成人工验收；现有手势范围为 G01–G36，继续冻结 G37 及后续编号。
+- 二期首项正式能力为手势场景，首版所有用户免费使用短视频场景与音乐场景，通用场景作为默认与失败回退。
+- 场景依据前台 App 包名和本机保存的关联切换，不读取第三方页面内容或控件树；首次关联、当前 App 临时覆盖、失败回退、切换清场和独占动作安全结束均为首版范围。
+- 短视频场景纳入 G25 向上滑动与 G36 向下滑动；音乐场景纳入播放/暂停、切歌、音量和静音。完整默认集合、映射优先级与非目标范围见 `GESTURE_UNLOCK_PRODUCT_REQUIREMENTS.md` §7.6。
+- 本轮不收费，不实现会员、Pro、自定义场景、联网分类、账号同步或线上埋点。
+
 ## 2026-10-21：新增 G36 单指枪·竖向（下），G25 收窄为只认食指向上
 
 产品负责人明确重新立项，新增第 36 个手势编号（这是本次唯一突破“停止新增手势编号”的授权，不含其他新编号）。

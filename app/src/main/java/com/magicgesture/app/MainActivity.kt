@@ -379,17 +379,39 @@ class MainActivity : Activity() {
                 setPadding(0, dp(2), 0, 0)
             })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        // 设计稿切片：图标 + 文字一体的霓虹按钮，直接整图展示。
-        addView(headerImageAction(R.drawable.header_trick, "使用技巧") { scrollTo(tipsAnchor) },
-            LinearLayout.LayoutParams(dp(54), dp(57)).apply { marginEnd = dp(7) })
-        addView(headerImageAction(R.drawable.header_setting, "设置") {
+        addView(headerAction(R.drawable.ic_keep_shield, "保持授权") {
+            startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
+        }, headerActionParams())
+        addView(headerAction(R.drawable.ic_header_settings, "设置") {
             startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
-        }.apply {
-            // 产品要求暂时隐藏“设置”入口：校准页入口改由“手势校准”快捷菜单承担。
-            // 需要恢复时删掉下面这行即可。
-            visibility = View.GONE
-        }, LinearLayout.LayoutParams(dp(54), dp(57)))
+        }, headerActionParams(last = true))
     }
+
+    private fun headerAction(icon: Int, description: String, action: () -> Unit) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = rounded(Color.argb(205, 6, 32, 70), 14, Color.rgb(42, 101, 169))
+            isClickable = true
+            isFocusable = true
+            contentDescription = description
+            foreground = pressable(Color.TRANSPARENT, Color.argb(65, 255, 255, 255), 14)
+            setOnClickListener { action() }
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(icon)
+                imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(23), dp(23)))
+            addView(label(description, 8.5f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                maxLines = 1
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+
+    private fun headerActionParams(last: Boolean = false) =
+        LinearLayout.LayoutParams(dp(48), dp(57)).apply { if (!last) marginEnd = dp(4) }
 
     private fun headerImageAction(drawableRes: Int, description: String, action: () -> Unit) =
         ImageView(this).apply {
@@ -482,29 +504,39 @@ class MainActivity : Activity() {
 
     private fun buildQuickAccessGrid(): View = LinearLayout(this).apply {
         gravity = Gravity.CENTER
-        addView(menuImageButton(R.drawable.menu_calibration, "手势校准") {
+        addView(slicedMenuButton(R.drawable.menu_calibration, "手势校准") {
             startActivity(Intent(this@MainActivity, CalibrationActivity::class.java))
         }, menuButtonParams(end = 4))
-        addView(menuImageButton(R.drawable.menu_mapping, "手势映射") {
+        addView(slicedMenuButton(R.drawable.menu_mapping, "手势映射") {
             startActivity(Intent(this@MainActivity, GestureMappingActivity::class.java))
         }, menuButtonParams(start = 4, end = 4))
-        addView(menuImageButton(R.drawable.menu_authorization, "保持授权") {
-            startActivity(Intent(this@MainActivity, KeepAuthorizationActivity::class.java))
+        addView(slicedMenuButton(R.drawable.menu_scene, "场景模式") {
+            startActivity(Intent(this@MainActivity, SceneManagementActivity::class.java))
         }, menuButtonParams(start = 4, end = 4))
-        addView(menuImageButton(R.drawable.menu_favorite, "收藏位置") {
+        addView(slicedMenuButton(R.drawable.menu_favorite, "收藏位置") {
             startActivity(Intent(this@MainActivity, FavoriteLocationActivity::class.java))
         }, menuButtonParams(start = 4))
     }
 
-    private fun menuImageButton(image: Int, label: String, action: () -> Unit) = ImageView(this).apply {
-        setImageResource(image)
-        scaleType = ImageView.ScaleType.FIT_CENTER
-        adjustViewBounds = false
-        contentDescription = label
+    /** Transparent clean artwork plus live text; no changing label is baked into the bitmap. */
+    private fun slicedMenuButton(image: Int, title: String, action: () -> Unit) = FrameLayout(this).apply {
+        foreground = pressable(Color.TRANSPARENT, Color.argb(70, 255, 255, 255), 18)
         isClickable = true
         isFocusable = true
-        foreground = pressable(Color.TRANSPARENT, Color.argb(75, 255, 255, 255), 18)
+        contentDescription = title
         setOnClickListener { action() }
+        addView(ImageView(this@MainActivity).apply {
+            setImageResource(image)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        addView(label(title, 12f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setShadowLayer(dp(4).toFloat(), 0f, 0f, Color.rgb(28, 91, 255))
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28), Gravity.BOTTOM).apply {
+            bottomMargin = dp(10)
+        })
     }
 
     private fun menuButtonParams(start: Int = 0, end: Int = 0) =
@@ -776,7 +808,7 @@ class MainActivity : Activity() {
     ).apply { marginEnd = dp(6) }
 
     /**
-     * 每日签到按钮：设计稿霓虹横幅切片，点击即签到，一天最多一次，断签不清零，7 次签到后 G01–G35 全部拥有。
+     * 每日签到按钮：设计稿霓虹横幅切片，点击即签到，一天最多一次，断签不清零，7 次签到后 G01–G36 全部拥有。
      * 权益只保存在本机，不联网、无账号、无付费入口。
      */
     private fun checkInCard(): View = FrameLayout(this).apply {
@@ -1296,7 +1328,7 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 授权门控：两项授权没做完时，只保留授权入口，中间的快捷菜单（手势校准/手势映射/保持授权/收藏位置）
+     * 授权门控：两项授权没做完时，只保留授权入口，中间的快捷菜单（手势校准/手势映射/场景模式/收藏位置）
      * 与每日签到卡都隐藏；两项授权齐全后授权按钮区隐藏、菜单与签到卡恢复显示。
      */
     private fun applyPermissionGating() {

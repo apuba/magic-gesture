@@ -207,7 +207,9 @@ class HandPipeline(
             try {
                 landmarker.detectAsync(mpImage, now)
             } finally {
-                // detectAsync retains the MPImage until the asynchronous graph has consumed it.
+                // Keep the established MediaPipe wrapper lifecycle. The official asynchronous
+                // samples do not establish that the caller-owned Bitmap may be recycled here;
+                // recycling it before the result callback would risk native use-after-recycle.
                 mpImage.close()
             }
         } catch (error: Throwable) {
@@ -227,7 +229,14 @@ class HandPipeline(
         oldestInFlightAt = 0L
         return true
     }
-    override fun close() { if (closed.compareAndSet(false, true)) { activeHandSelector.reset(); engine.stop(); landmarker.close() } }
+    override fun close() {
+        if (closed.compareAndSet(false, true)) {
+            pendingFrameCapture = null
+            activeHandSelector.reset()
+            engine.stop()
+            landmarker.close()
+        }
+    }
     /**
      * Reused scratch buffers. A 640x480 frame is 307200 pixels, and allocating fresh plane and
      * pixel arrays per frame at 20 fps feeds the allocator hundreds of megabytes per second,

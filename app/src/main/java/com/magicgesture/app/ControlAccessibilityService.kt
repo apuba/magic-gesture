@@ -113,7 +113,12 @@ class ControlAccessibilityService : AccessibilityService() {
     /** When Recents was last opened; the selected app may never announce itself at all. */
     @Volatile private var recentsOpenedAt = 0L
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() && it != packageName } ?: return
+        val pkg = event?.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
+        // Our own package is never a scene target. It used to also raise the "own UI is on top"
+        // flag here, but our overlays (floating dot, guidance banner, gesture feedback) are owned
+        // by this package too, so any of them appearing stole the current app's scene. That is now
+        // tracked from real Activity lifecycles in GestureApplication.
+        if (pkg == packageName) return
         foregroundPackageName = when {
             // Status bar, notification shade, IME and permission dialogs are transient overlays:
             // recording them as "the current app" made the OK favorite gesture keep failing after
@@ -169,6 +174,13 @@ class ControlAccessibilityService : AccessibilityService() {
     override fun onDestroy() { active = null; hideCursor(); imageWorker.shutdownNow(); super.onDestroy() }
 
     fun foregroundPackage(): String? = if (isAwaitingRecentsTarget()) null else foregroundPackageName
+
+    /**
+     * True when MagicGesture's own UI is the top window. Gesture control keeps running in that
+     * state, so scenes must fall back to GENERAL instead of acting on our own screens with the
+     * previous app's scene. Own window events never reach [foregroundPackage], hence this flag.
+     */
+    fun isSelfForeground(): Boolean = GestureApplication.ownScreenVisible()
 
     /**
      * True only between opening Recents and receiving the selected app's real window event.

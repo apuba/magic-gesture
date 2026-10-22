@@ -16,7 +16,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -35,12 +39,22 @@ class OverlayIndicator(
      */
     enum class State { STARTING, RUNNING, LOCKED, ERROR }
 
+    /**
+     * Two full-strength pulses with a gap between them. A single short tick was too weak to notice
+     * on Honor's motor; this reads as a deliberate confirmation without becoming a notification
+     * buzz. Timings are delay/pause pairs: 0 delay, 90ms on, 60ms off, 90ms on, no repeat.
+     */
+    private val tickTimings = longArrayOf(0, 90, 60, 90)
+    private val tickAmplitudes = intArrayOf(0, 255, 0, 255)
+
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var feedbackEnabled = GesturePreferences.feedbackEnabled(context)
     private val visualSize = dp(32)
     private val touchSize = dp(44)
     private val margin = dp(8)
+    /** Keeps the default corner above the system gesture bar at the bottom of the screen. */
+    private val bottomInset = dp(28)
     private var view: FloatingDotView? = null
     private var feedbackView: TextView? = null
     private var state = State.STARTING
@@ -54,8 +68,10 @@ class OverlayIndicator(
         PixelFormat.TRANSLUCENT
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        x = context.resources.displayMetrics.widthPixels - touchSize - margin
-        y = context.resources.displayMetrics.heightPixels / 3
+        x = margin
+        // Left-bottom corner, lifted clear of the system gesture bar so dragging the dot is not
+        // stolen by the back gesture.
+        y = context.resources.displayMetrics.heightPixels - touchSize - bottomInset
     }
     private val feedbackParams = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -69,6 +85,15 @@ class OverlayIndicator(
         gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
         y = dp(72)
     }
+    /**
+     * Fired when the dot is held without being dragged. The service uses it to open the manual
+     * scene switcher, so a press that already triggered this must not also open the app.
+     */
+    var onLongPress: (() -> Unit)? = null
+    // Long enough that an ordinary tap on the dot (well under 400ms) still opens the app, short
+    // enough that it does not feel like a wait. Matches Android's "medium" hold delay.
+    private val longPressMs = 1000L
+    private var dragListener: DragTouchListener? = null
     private val hideFeedback = Runnable {
         feedbackView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
         feedbackView = null
@@ -99,10 +124,13 @@ class OverlayIndicator(
 
     fun show() {
         if (view != null || !Settings.canDrawOverlays(context)) return
+        restorePosition()
+        val listener = DragTouchListener()
         val dot = FloatingDotView(context).apply {
-            contentDescription = "隔空手势运行中，轻点返回应用，拖动可移动"
-            setOnTouchListener(DragTouchListener())
+            contentDescription = "隔空手势运行中，轻点返回应用，拖动可移动，长按切换场景"
+            setOnTouchListener(listener)
         }
+        dragListener = listener
         view = dot
         paint()
         try {
@@ -301,6 +329,8 @@ class OverlayIndicator(
     }
 
     fun remove() {
+        dragListener?.cancelLongPress()
+        dragListener = null
         main.removeCallbacks(hideFeedback)
         feedbackView?.let { try { windowManager.removeView(it) } catch (_: Exception) { } }
         feedbackView = null
@@ -330,11 +360,60 @@ class OverlayIndicator(
         })
     }
 
+    /**
+     * Short tick when the long press fires. Uses the Vibrator directly instead of
+     * performHapticFeedback: that one is muted by the system "touch feedback" setting, and on a
+     * device where the user turned it off the long press had no feedback at all.
+     */
+    private fun vibrateTick() {
+        val vibrator = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION") context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+        }.getOrNull()
+        if (vibrator?.hasVibrator() != true) {
+            Log.d("CameraProbe", "long press tick skipped: no vibrator")
+            return
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Explicit amplitudes: the waveform overload defaults to the platform strength,
+                // which was too weak to feel here. MAX_AMPLITUDE is not public, hence 255.
+                vibrator.vibrate(VibrationEffect.createWaveform(tickTimings, tickAmplitudes, -1))
+            } else {
+                @Suppress("DEPRECATION") vibrator.vibrate(tickTimings, -1)
+            }
+            Log.d("CameraProbe", "long press tick waveform ${tickTimings.joinToString(",")}")
+        }.onFailure { Log.d("CameraProbe", "long press tick failed: ${it.javaClass.simpleName}") }
+    }
+
     private inner class DragTouchListener : View.OnTouchListener {
         private var downX = 0f
         private var downY = 0f
         private var startX = 0
         private var startY = 0
+        private var longPressRunnable: Runnable? = null
+        private var longPressFired = false
+
+        fun cancelLongPress() {
+            longPressRunnable?.let { main.removeCallbacks(it) }
+            longPressRunnable = null
+        }
+
+        private fun scheduleLongPress(view: View) {
+            longPressFired = false
+            val runnable = Runnable {
+                longPressRunnable = null
+                longPressFired = true
+                // A tick at the moment the hold is enough, so the sheet never appears unannounced.
+                vibrateTick()
+                onLongPress?.invoke()
+            }
+            longPressRunnable = runnable
+            main.postDelayed(runnable, longPressMs)
+        }
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             when (event.actionMasked) {
@@ -343,15 +422,24 @@ class OverlayIndicator(
                     downY = event.rawY
                     startX = params.x
                     startY = params.y
+                    if (onLongPress != null) scheduleLongPress(v)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    // A drag is not a long press: cancel as soon as the finger really moves.
+                    if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(8)) cancelLongPress()
                     params.x = startX + (event.rawX - downX).toInt()
                     params.y = startY + (event.rawY - downY).toInt()
                     try { windowManager.updateViewLayout(v, params) } catch (_: Exception) { }
                     return true
                 }
-                MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    cancelLongPress()
+                    // The press already opened the scene switcher; releasing must not open the app.
+                    if (longPressFired) {
+                        longPressFired = false
+                        return true
+                    }
                     val moved = abs(event.rawX - downX) + abs(event.rawY - downY)
                     if (moved < dp(8)) openApp() else snapToEdge(v)
                     return true
@@ -361,11 +449,32 @@ class OverlayIndicator(
         }
     }
 
+    /**
+     * Where the dot appears when gesture control starts: the place the user last dragged it to, or
+     * the home corner (bottom-left) when it has never been moved. Saved coordinates are clamped,
+     * because the screen can be a different size after a rotation or a display change.
+     */
+    private fun restorePosition() {
+        val metrics = context.resources.displayMetrics
+        val maxX = (metrics.widthPixels - touchSize - margin).coerceAtLeast(margin)
+        val maxY = (metrics.heightPixels - touchSize - margin).coerceAtLeast(margin)
+        val saved = GesturePreferences.savedDotPosition(context)
+        if (saved != null) {
+            params.x = saved.first.coerceIn(margin, maxX)
+            params.y = saved.second.coerceIn(margin, maxY)
+            return
+        }
+        params.x = margin
+        params.y = (metrics.heightPixels - touchSize - bottomInset).coerceIn(margin, maxY)
+    }
+
     private fun snapToEdge(dot: View) {
         val screenWidth = context.resources.displayMetrics.widthPixels
         params.x = if (params.x + touchSize / 2 < screenWidth / 2) margin else screenWidth - touchSize - margin
         params.y = params.y.coerceIn(margin, context.resources.displayMetrics.heightPixels - touchSize - margin)
         try { windowManager.updateViewLayout(dot, params) } catch (_: Exception) { }
+        // Remember where it was left, so closing the app or rebooting does not send it home.
+        GesturePreferences.saveDotPosition(context, params.x, params.y)
     }
 
     private inner class FloatingDotView(context: Context) : View(context) {
