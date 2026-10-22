@@ -8,6 +8,13 @@
 
 ## 0. 当前交接摘要（2026-10-05）
 
+> 2026-10-22 息屏摄像头与音乐/导航优化（基于当前 HEAD `045fa02` 开发）：
+> - `CameraProbeService` 动态监听 `SCREEN_OFF`、`SCREEN_ON`、`USER_PRESENT` 和系统音频播放配置。亮屏且已解锁，或息屏仍有 `USAGE_MEDIA` 媒体播放时运行摄像头；纯导航播报使用独立 audio usage，不会误判为音乐。
+> - 息屏无音乐时关闭 CaptureSession、CameraDevice、识别/自拍 ImageReader，暂停 HandPipeline、结束持续音量与拖动、清除冷却并隐藏光标；前台服务、通知和已加载 MediaPipe 模型保留，避免后台重新创建 camera 前台服务。
+> - 息屏媒体音乐存在时冻结前台 App 轮询并临时使用音乐场景；媒体停止后等待 8 秒再暂停摄像头。解锁进入界面后恢复 Camera，重置前台包名稳定器并重新按当前 App 关联选择场景。
+> - 新增纯状态 `ScreenCameraPolicy.kt` 与 `ScreenCameraPolicyTest.kt` 6 条测试，包含媒体用途为真、导航播报用途为假的分类回归。完整 `testDebugUnitTest assembleDebug` **BUILD SUCCESSFUL**，当前总测试 **211/211**、0 failure/0 error/0 skipped；最新 Debug APK 为 `app/build/outputs/apk/debug/app-debug.apk`（62,479,605 bytes，2026-10-22 13:54:04，SHA-256 `7FA194818CFD86EACA7853CFDA71ABEE7D187B8587F4EC4FBBBAF3DB2027E13A`）。尚未安装、未真机验收。
+> - 真机 P0：息屏无音乐确认摄像头指示消失且通知进入待机；息屏音乐保持识别；纯导航播报不保持摄像头；音乐+导航保持音乐场景；切歌8秒内不抖动关闭；亮屏但未解锁不恢复，解锁后恢复；连续10轮无崩溃、无ANR、无相机占用残留。
+
 > 2026-10-21 二期启动确认：
 > - 产品负责人确认应用已真实公开上架华为应用市场：`https://appgallery.huawei.com/app/C119234419`，真实上线门槛已满足。
 > - G36 已完成人工验收；当前范围为 G01–G36，继续冻结 G37 及后续编号。

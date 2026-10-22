@@ -4,7 +4,9 @@ import android.Manifest
 import android.app.*
 import android.content.Context
 import android.content.ContentValues
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -19,6 +21,7 @@ import android.media.ImageReader
 import android.media.MediaActionSound
 import android.media.ToneGenerator
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.provider.MediaStore
 import android.os.*
 import android.util.DisplayMetrics
@@ -69,12 +72,17 @@ class CameraProbeService : Service() {
         private const val RECOGNITION_TARGET_FPS = 20
         private const val SCENE_FOREGROUND_STABLE_MS = 500L
         private const val SCENE_FOREGROUND_POLL_MS = 250L
+        /** Avoid camera close/reopen churn during a track change or a short network buffer. */
+        private const val SCREEN_OFF_MUSIC_STOP_GRACE_MS = 8_000L
     }
 
     private val channel = "camera_probe"
     private val worker = HandlerThread("camera-probe")
     private lateinit var handler: Handler
     private lateinit var cameraManager: CameraManager
+    private lateinit var audioManager: AudioManager
+    private lateinit var powerManager: PowerManager
+    private lateinit var keyguardManager: KeyguardManager
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
@@ -130,6 +138,10 @@ class CameraProbeService : Service() {
     private val sceneController = GestureSceneController()
     private var sceneDefinition = GestureSceneCatalog.definition(GestureScene.GENERAL)
     private val foregroundStabilizer = ForegroundPackageStabilizer(SCENE_FOREGROUND_STABLE_MS)
+    private lateinit var screenCameraPolicy: ScreenCameraPolicy
+    private var cameraSuspendedForScreen = false
+    private var screenReceiverRegistered = false
+    private var audioPlaybackCallbackRegistered = false
     private val featureGate = GestureFeatureGate()
     private val selfieWriter = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -164,10 +176,35 @@ class CameraProbeService : Service() {
     private var mutedVolume: Int? = null
     /** Last time the play fallback tried to wake a music app; see MUSIC_WAKE_COOLDOWN_MS. */
     private var lastMusicWakeAt = 0L
+    private val suspendAfterMusicStops = Runnable {
+        if (!screenCameraPolicy.screenUsable && !screenCameraPolicy.mediaMusicActive) {
+            suspendCameraForScreen("息屏且没有音乐播放，摄像头已暂停")
+        }
+    }
+    private val retryScreenSuspendAfterExclusiveWork = Runnable {
+        if (!screenCameraPolicy.screenUsable) updateScreenAvailability(false)
+    }
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            handler.post {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> updateScreenAvailability(false)
+                    Intent.ACTION_SCREEN_ON -> updateScreenAvailability(currentScreenUsable())
+                    Intent.ACTION_USER_PRESENT -> updateScreenAvailability(true)
+                }
+            }
+        }
+    }
+    private val audioPlaybackCallback = object : AudioManager.AudioPlaybackCallback() {
+        override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+            val mediaActive = hasActiveMediaMusic(configs.orEmpty())
+            handler.post { updateScreenOffMediaPlayback(mediaActive) }
+        }
+    }
     private val monitorForegroundScene = object : Runnable {
         override fun run() {
             if (stopped) return
-            if (controlMode && ::sceneAssignments.isInitialized) {
+            if (controlMode && ::sceneAssignments.isInitialized && screenCameraPolicy.screenUsable) {
                 val service = ControlAccessibilityService.active
                 // Our own UI never becomes a foreground package, so it is tracked separately: the
                 // scene must fall back to GENERAL the moment the user opens MagicGesture itself.
@@ -248,7 +285,7 @@ class CameraProbeService : Service() {
         }
     }
     private val reopenCamera = Runnable {
-        if (!stopped && camera == null && !cameraOpening) openCamera()
+        if (!stopped && screenCameraPolicy.shouldRunCamera && camera == null && !cameraOpening) openCamera()
     }
     private val resumeAfterCooldown = object : Runnable {
         override fun run() {
@@ -262,6 +299,13 @@ class CameraProbeService : Service() {
         super.onCreate()
         worker.start(); handler = Handler(worker.looper)
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        audioManager = getSystemService(AudioManager::class.java)
+        powerManager = getSystemService(PowerManager::class.java)
+        keyguardManager = getSystemService(KeyguardManager::class.java)
+        screenCameraPolicy = ScreenCameraPolicy(
+            screenUsable = currentScreenUsable(),
+            mediaMusicActive = hasActiveMediaMusic(currentPlaybackConfigurations())
+        )
         baseFeatureConfig = GesturePreferences.effectiveFeatures(this)
         featureConfig = sceneDefinition.restrict(baseFeatureConfig)
         entitlement = GestureUnlockStore(this).entitlement()
@@ -348,6 +392,7 @@ class CameraProbeService : Service() {
             try { if (mediaActionSound == null) mediaActionSound = MediaActionSound() } catch (e: Exception) { Log.w("CameraProbe", "media action sound init failed", e) }
         }
         handler.post(monitorForegroundScene)
+        registerScreenAndPlaybackListeners()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
@@ -373,10 +418,16 @@ class CameraProbeService : Service() {
             if (pipeline == null) firstInferenceReady = false
             startupRequestedAt = SystemClock.uptimeMillis()
         }
-        val notification = notification("启动摄像头中")
+        val notification = notification(
+            if (screenCameraPolicy.shouldRunCamera) "启动摄像头中" else "息屏待机，解锁后恢复识别"
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) startForeground(7, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         else startForeground(7, notification)
         overlayIndicator.show()
+        if (!screenCameraPolicy.shouldRunCamera) {
+            suspendCameraForScreen("息屏待机，解锁后恢复识别")
+            return START_NOT_STICKY
+        }
         if (camera == null && reader == null) {
             val startedAt = SystemClock.uptimeMillis()
             if (controlMode && pipeline == null) {
@@ -392,6 +443,152 @@ class CameraProbeService : Service() {
         }
         return START_NOT_STICKY
     }
+
+    /** The camera may resume only after the display is interactive and the keyguard is gone. */
+    private fun currentScreenUsable(): Boolean =
+        powerManager.isInteractive && !keyguardManager.isKeyguardLocked
+
+    private fun currentPlaybackConfigurations(): List<AudioPlaybackConfiguration> = runCatching {
+        audioManager.activePlaybackConfigurations
+    }.onFailure {
+        Log.w("CameraProbe", "cannot inspect active playback; treating screen-off audio as non-music", it)
+    }.getOrDefault(emptyList())
+
+    /** Navigation guidance has its own usage and must never keep the camera alive as "music". */
+    private fun hasActiveMediaMusic(configs: List<AudioPlaybackConfiguration>): Boolean =
+        configs.any { config ->
+            ScreenCameraPolicy.isMediaMusicUsage(config.audioAttributes.usage)
+        }
+
+    private fun registerScreenAndPlaybackListeners() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(screenReceiver, filter)
+        }
+        screenReceiverRegistered = true
+        runCatching {
+            audioManager.registerAudioPlaybackCallback(audioPlaybackCallback, handler)
+            audioPlaybackCallbackRegistered = true
+        }.onFailure {
+            Log.w("CameraProbe", "audio playback callback unavailable", it)
+        }
+    }
+
+    private fun updateScreenAvailability(usable: Boolean) {
+        screenCameraPolicy.updateScreenUsable(usable)
+        handler.removeCallbacks(suspendAfterMusicStops)
+        handler.removeCallbacks(retryScreenSuspendAfterExclusiveWork)
+        if (usable) {
+            Log.d("CameraProbe", "screen usable; restoring foreground scene and camera")
+            foregroundStabilizer.reset()
+            requestScene(sceneAssignments.selection())
+            resumeCameraForScreen()
+            return
+        }
+
+        scenePromptController.dismiss()
+        sceneSwitchPrompt.dismiss()
+        foregroundStabilizer.reset()
+        if (favoriteFlowActive) favoriteController.dismiss()
+        // Do not tear Camera2 down in the middle of a JPEG or rolling-screenshot transaction. Both
+        // are bounded operations; re-evaluate as soon as their terminal callback has had time to run.
+        if (selfieInProgress || rollingScreenshotInProgress) {
+            handler.postDelayed(retryScreenSuspendAfterExclusiveWork, 500L)
+            return
+        }
+        val mediaActive = hasActiveMediaMusic(currentPlaybackConfigurations())
+        screenCameraPolicy.updateMediaMusicActive(mediaActive)
+        if (mediaActive) {
+            applyScreenOffMusicScene()
+            resumeCameraForScreen()
+        } else {
+            suspendCameraForScreen("息屏且没有音乐播放，摄像头已暂停")
+        }
+    }
+
+    private fun updateScreenOffMediaPlayback(mediaActive: Boolean) {
+        val wasActive = screenCameraPolicy.mediaMusicActive
+        screenCameraPolicy.updateMediaMusicActive(mediaActive)
+        if (screenCameraPolicy.screenUsable) return
+
+        if (mediaActive) {
+            handler.removeCallbacks(suspendAfterMusicStops)
+            applyScreenOffMusicScene()
+            resumeCameraForScreen()
+        } else if (wasActive) {
+            // Track changes and short buffers briefly report no active player. Close only when the
+            // silence remains stable, otherwise Camera2 would churn on every song boundary.
+            handler.removeCallbacks(suspendAfterMusicStops)
+            handler.postDelayed(suspendAfterMusicStops, SCREEN_OFF_MUSIC_STOP_GRACE_MS)
+        }
+    }
+
+    private fun applyScreenOffMusicScene() {
+        val currentPackage = sceneAssignments.currentPackage
+        requestScene(
+            GestureSceneSelection(
+                packageName = currentPackage,
+                scene = GestureScene.MUSIC,
+                needsAssociation = false,
+                isTemporary = true
+            )
+        )
+    }
+
+    private fun suspendCameraForScreen(message: String) {
+        if (cameraSuspendedForScreen || !controlMode) return
+        cameraSuspendedForScreen = true
+        isControlRunning = false
+        cameraSessionReady = false
+        firstInferenceReady = false
+        handler.removeCallbacks(reopenCamera)
+        handler.removeCallbacks(resumeAfterCooldown)
+        if (volumeHoldActive) {
+            volumeHoldActive = false
+            volumeHoldChanged = false
+        }
+        pipeline?.finishVolumeSession(waitForRelease = false)
+        pipeline?.pause()
+        globalCooldown.reset()
+        ControlAccessibilityService.active?.endDrag(0f, 0f)
+        ControlAccessibilityService.active?.hideCursor()
+        cameraGeneration++
+        session?.close(); session = null
+        camera?.close(); camera = null
+        reader?.close(); reader = null
+        selfieReader?.close(); selfieReader = null
+        cameraOpening = false
+        overlayIndicator.setState(OverlayIndicator.State.STARTING)
+        updateNotification(message)
+        Log.d("CameraProbe", "camera suspended for screen state")
+    }
+
+    private fun resumeCameraForScreen() {
+        if (!controlMode || !screenCameraPolicy.shouldRunCamera) return
+        if (!cameraSuspendedForScreen && (camera != null || cameraOpening)) return
+        cameraSuspendedForScreen = false
+        cameraSessionReady = false
+        firstInferenceReady = false
+        isControlRunning = false
+        pipeline?.resumeExclusive()
+        if (pipeline == null) startModelInitialization()
+        overlayIndicator.setState(OverlayIndicator.State.STARTING)
+        updateNotification("正在恢复摄像头识别")
+        handler.post {
+            if (!stopped && screenCameraPolicy.shouldRunCamera && camera == null && !cameraOpening) {
+                openCamera()
+            }
+        }
+        Log.d("CameraProbe", "camera resume requested for screen state")
+    }
+
     private fun startModelInitialization() {
         val generation = synchronized(modelInitLock) {
             if (stopped || pipeline != null || modelInitInProgress) return
@@ -504,6 +701,7 @@ class CameraProbeService : Service() {
         }, "model-init").start()
     }
     private fun openCamera() {
+        if (!screenCameraPolicy.shouldRunCamera) return
         try {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { fail("相机权限失效"); return }
             val id = cameraManager.cameraIdList.firstOrNull {
@@ -1567,6 +1765,16 @@ class CameraProbeService : Service() {
         recognitionLocked = false
         rollingScreenshotInProgress = false
         stopped = true
+        handler.removeCallbacks(suspendAfterMusicStops)
+        handler.removeCallbacks(retryScreenSuspendAfterExclusiveWork)
+        if (audioPlaybackCallbackRegistered) {
+            runCatching { audioManager.unregisterAudioPlaybackCallback(audioPlaybackCallback) }
+            audioPlaybackCallbackRegistered = false
+        }
+        if (screenReceiverRegistered) {
+            runCatching { unregisterReceiver(screenReceiver) }
+            screenReceiverRegistered = false
+        }
         val pipelineToClose = synchronized(modelInitLock) {
             modelInitGeneration++
             modelInitInProgress = false

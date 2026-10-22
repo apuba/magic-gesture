@@ -53,6 +53,9 @@ Camera frame -> Hand Landmarker -> Gesture detector/state machine
 - `CameraProbeService` 已接入前台包名轮询、500ms 稳定窗口、场景集合/临时映射和切换清场。系统覆盖层过滤复用无障碍服务现有逻辑，不读取第三方页面内容或控件树。
 - `SceneManagementActivity` 已提供自动切换、App 关联列表、首次关联选择、仅本次使用和设为默认入口；首页四宫格“场景模式”进入该页，“保持授权”移至右上角。UI 代码已完成但尚未真机视觉与交互验收。
 - 关闭自动切换时回退通用场景且不提示关联，但仍允许用户为当前 App 手动临时选择场景；临时选择只存在内存，真正离开该 App 后清除。
+- 息屏运行由 `ScreenCameraPolicy` 控制：屏幕可用（亮屏且已解锁）或存在活动 `USAGE_MEDIA` 播放时才需要摄像头。息屏音乐临时使用 `MUSIC`，导航播报 `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` 不算音乐；纯导航或无音乐时关闭 Camera2 资源但保留服务与模型。
+- 媒体音乐在息屏期间结束后使用 8 秒稳定宽限再关闭摄像头；解锁恢复时重置前台包名稳定器并重新应用 App 关联场景。息屏时不得根据锁屏、系统界面或导航播报切换普通 App 场景。
+- Camera暂停必须结束持续音量、拖动和冷却，暂停识别管线并隐藏光标；Camera恢复继续复用既有 generation guard、断开/错误恢复与首帧就绪边界。不得为了判断导航状态增加位置、通知读取或页面内容权限。
 
 ## 3. G01-G23 最终功能矩阵
 
