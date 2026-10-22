@@ -246,7 +246,11 @@ class GestureEngine(
     private val openPalmSettleMs = 160L
     // 整只手轻挑判定：手腕位移至少要达到掌心位移的这个比例。
     // 只有手指在空中挑动、手掌基本不动时，手腕位移会明显小于掌心位移，据此排除误触。
-    private val wholeHandWristRatio = .60f
+    // 原为 .60f，真机取证（2026-10-22，荣耀 ALP-AN00）显示自然"轻挑"是绕手腕的旋转，
+    // 掌心（掌指关节）位移必然明显大于手腕位移：连挥 8 帧实测 wdx/dx 稳定落在
+    // 0.42-0.51，位移（0.089-0.103 > 0.07）、方向（horiz=true）、时长（199-754ms）
+    // 三项全部达标却因本项恒为 false 而一次都触发不了。取 .38f 给实测下界留约 10% 余量。
+    private val wholeHandWristRatio = .38f
     // G29/G30 左右挥切歌的触发位移（按 movementScale 缩放）。比上下拉音量更宽松，
     // 真机上整只手轻挑的幅度本来就小，阈值过高会表现为挥了没反应。
     private var twoFingerHorizontalTrigger = .07f * movementScale

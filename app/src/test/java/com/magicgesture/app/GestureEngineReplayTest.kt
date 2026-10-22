@@ -1180,6 +1180,29 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
     }
 
+    /**
+     * 真机最常见的"绕手腕轻挑"：整只手以手腕为轴摆动，掌心（掌指关节）位移必然明显大于
+     * 手腕位移。2026-10-22 荣耀 ALP-AN00 连挥 8 帧实测 wdx/dx 稳定在 0.42-0.51，
+     * 而旧的比例门槛是 0.60，导致位移、方向、时长三项全达标却一次都触发不了。
+     */
+    private fun wristPivotTwoFingerHand(offsetX: Float = 0f): List<Point> =
+        twoFingerHand(offsetX).mapIndexed { i, p ->
+            if (i == 0) Point(p.x - offsetX * .55f, p.y) else p   // 手腕只走掌心的 45%
+        }
+
+    /** 绕手腕的轻挑也要能切歌：手腕位移只到掌心位移的 45%，正好落在实测区间内。 */
+    @Test fun wristPivotFlickSwitchesTracks() {
+        val r = Replay()
+        r.feed(4) { wristPivotTwoFingerHand() }
+        var dx = 0f
+        r.feed(6) { dx -= .016f; wristPivotTwoFingerHand(dx) }  // 0.096掌心位移，手腕 0.043
+        val swipes = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(1, swipes.size)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, swipes.single().direction)
+        // 摆动幅度不到上下拉的门槛，不能被读成调音量。
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerVolumeHold>().size)
+    }
+
     /** 带上下起伏的斜向轻挑（约 40°）也要能切歌：放宽前水平分量必须压过垂直分量 1.25 倍。 */
     @Test fun slantedWholeHandFlickStillSwitchesTracks() {
         val r = Replay()
