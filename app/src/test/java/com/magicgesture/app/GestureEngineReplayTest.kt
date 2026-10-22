@@ -1203,6 +1203,50 @@ class GestureEngineReplayTest {
         assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerVolumeHold>().size)
     }
 
+    /**
+     * 快挥的运动模糊会让 MediaPipe 偶尔评不出两指并拢姿势。真机（2026-10-22，荣耀
+     * ALP-AN00）实测这种丢失只持续 1-2 帧，原来一丢就整段作废。挥出位移后丢两帧
+     * （100ms）在 200ms 宽限内，补回姿势后仍要能切歌。
+     */
+    @Test fun briefPoseLossDuringWaveStillSwitchesTracks() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dx = 0f
+        r.feed(3) { dx -= .016f; twoFingerHand(dx) }   // 已挥出 0.048，超过半个触发阈值
+        r.feed(2) { blurredTwoFingerHand(dx) }         // 100ms 评不出并拢姿势，宽限内
+        r.feed(4) { dx -= .016f; twoFingerHand(dx) }
+        val swipes = r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>()
+        assertEquals(1, swipes.size)
+        assertEquals(GestureEvent.TwoFingerDirection.LEFT, swipes.single().direction)
+    }
+
+    /**
+     * 快挥模糊的模拟：手仍停在挥到的位置（掌心位移保留），只是中指关键点评到了分开的位置，
+     * 于是这一帧评不出"两指并拢"。
+     */
+    private fun blurredTwoFingerHand(offsetX: Float = 0f): List<Point> =
+        twoFingerHand(offsetX).withLandmark(12, Point(.57f + offsetX, .33f))
+
+    /** 手真的收走了（丢失 300ms，超过 200ms 宽限）：整段作废，不得继续累计到切歌。 */
+    @Test fun longPoseLossStillDiscardsTheWave() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        var dx = 0f
+        r.feed(3) { dx -= .016f; twoFingerHand(dx) }
+        r.feed(6) { blurredTwoFingerHand(dx) }         // 300ms 姿势丢失，超宽限
+        r.feed(4) { dx -= .016f; twoFingerHand(dx) }   // 新笔画只累计 0.048，不到 0.07
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
+
+    /** 原地摆姿势没挥就丢姿势（换成了别的姿势）：必须立刻放手，不得占住这台状态机。 */
+    @Test fun poseLossWithoutTravelReleasesImmediately() {
+        val r = Replay()
+        r.feed(4) { twoFingerHand() }
+        r.feed(2, ::vSign)                             // 没有位移，宽限不适用
+        r.feed(10) { twoFingerHand() }                 // 静止摆回：不得因此切歌
+        assertEquals(0, r.events.filterIsInstance<GestureEvent.TwoFingerSwipe>().size)
+    }
+
     /** 带上下起伏的斜向轻挑（约 40°）也要能切歌：放宽前水平分量必须压过垂直分量 1.25 倍。 */
     @Test fun slantedWholeHandFlickStillSwitchesTracks() {
         val r = Replay()

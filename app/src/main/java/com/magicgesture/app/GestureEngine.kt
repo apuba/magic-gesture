@@ -235,6 +235,14 @@ class GestureEngine(
     private var twoFingerStart: Point? = null
     private var twoFingerStartWrist: Point? = null
     private var twoFingerStageAt = 0L
+    /** 双指并拢姿势中途丢失的起始时刻：0 表示当前姿势正常。 */
+    private var twoFingerPoseLostAt = 0L
+    /**
+     * 挥动中允许姿势连续丢失多久而不作废整段。真机识别约 12fps（帧间隔 ~80ms），
+     * 快挥的模糊丢失实测只持续 1-2 帧，取 200ms 恰好覆盖两帧且不足以把"手已收回"
+     * 误当成抖动。
+     */
+    private val twoFingerPoseLostGraceMs = 200L
     private var lastVolumeTickAt = 0L
     private var twoFingerReleaseRequired = false
     private var twoFingerTapState = TwoFingerTapState.IDLE
@@ -1257,6 +1265,7 @@ class GestureEngine(
                 twoFingerStart = palm
                 twoFingerStartWrist = wrist
                 twoFingerStageAt = now
+                twoFingerPoseLostAt = 0L
                 // Stay quiet while the tap machine is mid double-tap or has just fired.
                 if (twoFingerTapState == TwoFingerTapState.IDLE ||
                     twoFingerTapState == TwoFingerTapState.HELD
@@ -1273,15 +1282,38 @@ class GestureEngine(
             }
             TwoFingerSwipeState.TRACKING -> {
                 if (!pose) {
-                    // Losing the pose mid-wave throws the whole stroke away. A fast wave is the
-                    // usual suspect, so say so: this is the line to look for when a quick wave
-                    // "does nothing".
-                    diag?.invoke("tf pose lost mid-wave el=${now - twoFingerStageAt}")
-                    twoFingerState = TwoFingerSwipeState.IDLE
-                    twoFingerStart = null
-                    twoFingerStartWrist = null
+                    // 快挥的运动模糊会让 MediaPipe 偶尔评不出两指并拢姿势。真机取证
+                    // （2026-10-22，荣耀 ALP-AN00）显示这种丢失只持续 1-2 帧，原来一丢就整段
+                    // 作废，是快挥"没反应"的次要原因。现在给一段宽限：期间只跳帧不判定，
+                    // 连续丢失超过宽限才真正作废。
+                    // 宽限只对"已经挥出位移"的笔画生效：原地摆姿势时丢姿势就是手真的收走或
+                    // 换成了别的姿势，必须立刻放手，否则会继续占住这台状态机、推迟 V（自拍）
+                    // 等其他手势接管。
+                    val travelled = twoFingerStart?.let { start ->
+                        abs(palm.x - start.x) >= twoFingerHorizontalTrigger * .5f ||
+                            abs(palm.y - start.y) >= .03f
+                    } ?: false
+                    if (!travelled) {
+                        diag?.invoke("tf pose lost before any travel el=${now - twoFingerStageAt}")
+                        twoFingerState = TwoFingerSwipeState.IDLE
+                        twoFingerStart = null
+                        twoFingerStartWrist = null
+                        twoFingerPoseLostAt = 0L
+                        return
+                    }
+                    if (twoFingerPoseLostAt == 0L) twoFingerPoseLostAt = now
+                    if (now - twoFingerPoseLostAt >= twoFingerPoseLostGraceMs) {
+                        diag?.invoke(
+                            "tf pose lost mid-wave el=${now - twoFingerStageAt} lost=${now - twoFingerPoseLostAt}"
+                        )
+                        twoFingerState = TwoFingerSwipeState.IDLE
+                        twoFingerStart = null
+                        twoFingerStartWrist = null
+                        twoFingerPoseLostAt = 0L
+                    }
                     return
                 }
+                twoFingerPoseLostAt = 0L
                 val start = twoFingerStart
                 val startWrist = twoFingerStartWrist
                 if (start != null && startWrist != null) {
@@ -1932,6 +1964,7 @@ class GestureEngine(
         twoFingerStart = null
         twoFingerStartWrist = null
         twoFingerStageAt = 0L
+        twoFingerPoseLostAt = 0L
         lastVolumeTickAt = 0L
         twoFingerTapState = TwoFingerTapState.IDLE
         twoFingerTapPoseAt = 0L
