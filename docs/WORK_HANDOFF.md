@@ -28,7 +28,7 @@
 - 关键依赖：MediaPipe Tasks Vision 0.10.21（模型随包：`app/src/main/assets/hand_landmarker.task`）
 - ABI：仅 `arm64-v8a` + `armeabi-v7a`（32 位 `x86` 已移除，以满足 64 位配对要求）
 - 上架状态：**已真实公开上架华为应用市场**（`https://appgallery.huawei.com/app/C119234419`）
-- 当前分支：`V1.0.0`（远端 `origin`=Gitee，`github`=GitHub，均已推送到 `045fa02`）
+- 当前分支：`V1.0.0`（远端 `origin`=Gitee，`github`=GitHub，均已推送到 `aa6df6d`）
 
 ### 手势编号现状
 
@@ -119,13 +119,21 @@ finally { if($ex){ Move-Item 'gradle\gradle-daemon-jvm.properties.cb.bak' $f -Fo
 
 ### 3.3 测试
 
-`testDebugUnitTest`，当前 **205/205 通过**（0 failure / 0 error / 0 skipped）。
+`testDebugUnitTest`，当前 **215/215 通过**（0 failure / 0 error / 0 skipped）。
 
 - 场景逻辑测试：`GestureSceneTest`（35 条）
+- 手势状态机回放测试：`GestureEngineReplayTest`（数量最多，手势阈值改动主要靠它防回退）
 - 页面预览：`ScenePagePreviewTest`（Robolectric，会渲染 PNG 到 `app/build/previews/`）
 - Robolectric 依赖已加，`testOptions { unitTests.isIncludeAndroidResources = true }`
 
 **改任何手势或场景逻辑后，必须跑完整测试**，并在提交前确认数量没有下降。
+
+> 用 XML 汇总真实通过数（Gradle 输出有时不打印总数）：
+> ```powershell
+> $x=Get-ChildItem app\build\test-results\testDebugUnitTest\*.xml; $t=0;$f=0;$e=0;$s=0
+> foreach($i in $x){ [xml]$d=Get-Content $i.FullName; $t+=[int]$d.testsuite.tests; $f+=[int]$d.testsuite.failures; $e+=[int]$d.testsuite.errors; $s+=[int]$d.testsuite.skipped }
+> "tests=$t failures=$f errors=$e skipped=$s"
+> ```
 
 ---
 
@@ -163,6 +171,24 @@ adb -s $s logcat -v time | Select-String -Pattern "CameraProbe"
 
 日志 tag 为 `CameraProbe`。
 
+#### 取证必须后台持续录制（**最容易踩的坑**）
+
+这台机器的系统日志洪水极大（实测 15 秒约 4.5 万行），`adb logcat -d` 取出来的缓冲区**一分钟内就会把本应用日志全部挤掉**，表现为"什么都没抓到"，极易误判成功能没触发。
+
+正确做法：**先起录制 → 再让用户操作 → 最后停录制并解析文件**：
+
+```powershell
+$f="$env:TEMP\mg_cap.txt"; $pidf="$env:TEMP\mg_cap.pid"
+$p = Start-Process -FilePath "adb" -ArgumentList "-s","$s","logcat","-v","time" `
+     -RedirectStandardOutput $f -NoNewWindow -PassThru
+Set-Content -Path $pidf -Value $p.Id -Encoding ascii      # 记下 pid
+# … 让用户在手机上操作 …
+Stop-Process -Id ([int](Get-Content $pidf -Encoding ascii)) -Force
+$out = Get-Content $f -Encoding UTF8                      # 必须显式 UTF8
+```
+
+> PowerShell 坑：`$PID` 是只读变量，变量名不要用；`Get-Content` / `Set-Content` 必须显式带 `-Encoding`（UTF8 / ascii），否则会被安全策略拦下。
+
 ### 4.4 常用取证命令
 
 ```powershell
@@ -192,24 +218,29 @@ adb -s $s shell settings get system haptic_feedback_enabled
 
 ### 5.1 已完成（代码完成 + 已推送）
 
-最近两个提交：
+最近四个提交（**均已在本地提交并推送**到 `origin`(Gitee) 与 `github`(GitHub)，远端无落后提交）：
 
-| Commit | 内容 |
-|---|---|
-| `37a1f2b` | 场景模式实现与悬浮球、前台判定修复（震动双脉冲、悬浮球位置持久化、抖音场景回退修复、提示条每应用一次、应用选择弹窗性能） |
-| `045fa02` | 双指滑动切歌：增加可关闭的诊断埋点 |
+| Commit | 内容 | 状态 |
+|---|---|---|
+| `f1222d8` | 息屏相机策略：息屏听歌保持音乐场景可切歌，无音乐时暂停相机省电 | 代码完成 + JVM 测试；**尚未真机验收** |
+| `c199610` | 修复场景切换面板「记住默认」无限递归崩溃（`SceneSwitchPromptController` 的 `onRememberDefault` 就近解析到自身 override，StackOverflowError） | **真机验收通过**（点击后正常落盘、无崩溃） |
+| `8a77ba3` | 下调整只手判定比例 `wholeHandWristRatio` 0.60→0.38，修复双指切歌快挥无反应 | **真机验收通过**（歌确实切了，单指横滑不受影响） |
+| `aa6df6d` | 双指挥动中姿势短暂丢失给 200ms 宽限（仅对已挥出位移的笔画生效） | 已装机；**产品负责人选择先观察两天**再决定是否继续调阈值 |
 
-已推送到 `origin`(Gitee) 与 `github`(GitHub)，远端无落后提交。
+已推送到 `origin`(Gitee) 与 `github`(GitHub)，均为 `f1222d8..aa6df6d`，远端无落后提交。
 
 ### 5.2 待办（按优先级）
 
 | # | 事项 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | **双指左右挥切歌：快速挥动不识别** | 诊断埋点已加，**未调参** | 见 §6.1，需真机取证后调参 |
-| 2 | 悬浮球位置持久化 | 代码完成，**待真机验收** | 需验：拖动后关 App、重启手机，位置都保持 |
-| 3 | 应用选择弹窗性能优化 | 代码完成，**待真机验收** | 需验：弹窗即时打开、列表随后填充、搜索可用 |
-| 4 | 提示条"每个应用只提示一次" | 修复完成，**待真机验收** | 需验：切走再切回同一 App 不再提示 |
-| 5 | `gradle-daemon-jvm.properties` 加入 `.gitignore` | 未做 | 建议做，避免误提交 |
+| 1 | **双指切歌：小幅度挥动仍未达触发阈值** | 两轮修复已验收，**观察两天中** | 见 §6.1；候选是把 `twoFingerHorizontalTrigger` 0.07→0.055，须复测 G33 与音量 |
+| 2 | **息屏相机策略**（`f1222d8`，最新功能） | 代码完成，**完全未真机验收** | 需验：放歌→息屏→仍能切歌；停歌→息屏相机暂停；导航语音不误判为音乐；亮屏解锁后恢复 |
+| 3 | 悬浮球位置持久化 | 代码完成，**待真机验收** | 需验：拖动后关 App、重启手机，位置都保持 |
+| 4 | 应用选择弹窗性能优化 | 代码完成，**待真机验收** | 需验：弹窗即时打开、列表随后填充、搜索可用 |
+| 5 | 提示条"每个应用只提示一次" | 修复完成，**待真机验收** | 需验：切走再切回同一 App 不再提示 |
+| 6 | `gradle-daemon-jvm.properties` 加入 `.gitignore` | 未做 | 建议做，避免误提交 |
+
+> 除第 1 项外，**第 2 项（息屏相机策略）是当前最大的验收缺口**——它是 HEAD 上最新的功能，代码与 JVM 测试都过了，但真机一次都没验。
 
 ### 5.3 状态层级的硬性纪律
 
@@ -221,33 +252,35 @@ adb -s $s shell settings get system haptic_feedback_enabled
 
 ## 6. 正在解决的问题（接手后最可能立刻碰到的）
 
-### 6.1 双指左右挥切歌（G29/G30）——快速挥动不识别
+### 6.1 双指左右挥切歌（G29/G30）——已修复并真机验收（**待观察两天**）
 
-**现象**：双指并拢竖起，左右挥动切换上/下一曲。必须**慢慢挥**才有效，稍快一点就没反应。
+**现象（已解决）**：双指并拢竖起左右挥切换上/下一曲，挥快一点就没反应。
 
-**已做的分析**：
+**真正的根因（真机取证确认，与最初的猜测都不同）**
 
-- 触发判定在 `GestureEngine.kt` 的 `advanceTwoFingerSwipe()`（`TwoFingerSwipeState.TRACKING` 分支）
-- 判定条件：`|dx| >= twoFingerHorizontalTrigger`（`0.07f * movementScale`）且 `horizontal`（`|dx| > |dy|`）且 `wholeHand`（手腕位移 ≥ 掌心位移的 60%）且 `elapsed <= 5000`
-- **结论：判定里没有速度下限**——`elapsed <= 5000` 只是上限。所以快挥理论**更容易**达阈值，真因不在阈值
-- 已排除：`palm` 用的是**未平滑**的原始关键点（平滑只作用于光标），不是滤波滞后
+触发判定在 `GestureEngine.kt` 的 `advanceTwoFingerSwipe()`（`TwoFingerSwipeState.TRACKING` 分支）。连挥 8 帧实测：
 
-**最可能的两个真因**：
+| 条件 | 阈值 | 实测 | 结果 |
+|---|---|---|---|
+| 位移 `\|dx\|` | `0.07 * movementScale` | 0.089–0.103 | ✅ |
+| `horizontal` | dx 主导 dy | 恒成立 | ✅ |
+| `elapsed` | ≤ 5000ms | 199–754ms | ✅ |
+| **`wholeHand`** | 手腕位移 ≥ 掌心位移 **60%** | **42%–51%** | ❌ 恒不成立 |
 
-1. **姿势中途丢失**——`TRACKING` 里 `if (!pose)` 直接把整段作废。快挥产生运动模糊，MediaPipe 关键点抖动 → 姿势判定丢失
-2. **方向分量不达标**——`horizontal` 要求 `|dx| > |dy|`。快挥常带上下起伏，`dy` 一大就不算"左右挥"
+自然「轻挑」是**绕手腕的旋转**，掌心（掌指关节）位移必然明显大于手腕位移，0.60 的门槛把真实挥法整体否掉了。最初怀疑的两项（方向分量不达标）已被实测排除；（姿势中途丢失）确实存在但是次要问题。
 
-**已埋的探针**（`GestureEngine.kt`，经 `diag` 回调输出，默认不启用、不影响识别）：
+**已做的两轮修复（各只动一个变量）**
 
-- `tf pose lost mid-wave el=…` → 姿势是否中途丢失
-- `tf dx=… dy=… wdx=… horiz=… whole=… el=…` → 各项判定实际值
+1. `wholeHandWristRatio` **0.60 → 0.38**（实测下界 0.42，留约 10% 余量）。真机：`whole` 16 帧全 true，`G29`×1、`G30`×2 触发，产品负责人确认歌曲确实切换、单指横滑不受影响。
+2. 挥动中姿势丢失宽限 **200ms**：丢失并拢姿势不再立刻整段作废，跳帧等待，连续丢失超 200ms 才作废；**只对已挥出位移的笔画生效**（否则这台状态机会占住，推迟 V 自拍接管——这一点由既有测试回归暴露后补上）。真机：`tf pose lost mid-wave` 由 4 次降到 2 次，无崩溃。
 
-**接手后怎么做**：
+**当前剩余瓶颈（未解决，等产品负责人观察两天后定）**
 
-1. 装包含探针的版本（注意：13:16:55 那次构建因 ADB 断连**未安装成功**，需重装）
-2. 让用户：双指并拢 → **慢慢**左右挥一次 → 停 2 秒 → **稍快**左右挥一次
-3. 抓日志对比两次的 `dx / horiz / whole / pose lost`
-4. 据此调参——**不要盲改阈值**，盲改容易引入误触切歌
+按笔画统计，5 段挥动里 3 段峰值位移未达 0.07（0.068 / 0.058 / 0.037），前两段是真实挥动。候选方案：把 `twoFingerHorizontalTrigger` 由 0.07 下调到 0.055；**必须同时复测 G33 两指双击播放暂停、上下拉音量是否被误判成切歌**。
+
+**探针仍在**（`diag` 回调，默认不影响识别）：`tf dx=… dy=… wdx=… horiz=… whole=… el=…`、`tf pose lost mid-wave el=… lost=…`、`tf pose lost before any travel el=…`。
+
+**调参铁律**：不要盲改阈值。先用 §4.3 的**后台录制**拿到真机数值，再按「一次只动一个变量」改，改完同步更新代码注释与 `REQUIREMENTS_CHANGELOG.md`。
 
 ### 6.2 各手势阈值的调参原则
 
@@ -272,6 +305,10 @@ adb -s $s shell settings get system haptic_feedback_enabled
 | 9 | **`gradle-daemon-jvm.properties` 要求 JDK 25** | 构建卡住 | 见 §3.2，构建时临时改名 |
 | 10 | **AOD 息屏时安装被拒** | `INSTALL_FAILED_ABORTED` | 先 `input keyevent 224` 唤醒 |
 | 11 | **编译失败却仍执行安装** | 装上旧包，误以为改动生效 | 先确认 `BUILD SUCCESSFUL` 再安装 |
+| 12 | **用 `logcat -d` 取证** | 应用日志被系统日志洪水挤掉，误判成"功能没触发" | 见 §4.3：必须后台持续录制到文件再解析 |
+| 13 | **装包后没让真机重新点「启动手势控制」就开始验收** | `CameraProbeService` 没起，日志空白 | 每次装包后先 `dumpsys` 确认服务，再取证 |
+| 14 | **回放测试里用 `restPose` 当"松手/姿势丢失"** | 它本身就是**两指并拢姿势**，会被 G29–G33 状态机接住，负例是假的 | 用 `fistPose` / `vSign`；模拟"运动模糊"要用**保留掌心位移、只把中指关键点评成分开**的手（`blurredTwoFingerHand`） |
+| 15 | **改状态机时序只看新测试** | 破坏了既有测试（`vSignHoldsForTwoSecondsThenFiresSelfieOnceUntilReleased`：宽限占住状态机，V 自拍推迟一拍） | 每次改时序后跑**全量**测试，数量不能降 |
 
 ---
 
@@ -292,8 +329,8 @@ adb -s $s shell settings get system haptic_feedback_enabled
 接手后按顺序做一遍，确认环境可用：
 
 - [ ] 读仓库根目录 `AGENTS.md`
-- [ ] 用 §3.2 的命令跑一次完整 `testDebugUnitTest assembleDebug`，确认 **205/205** 且 `BUILD SUCCESSFUL`
-- [ ] 连接无线 ADB（或 USB），`adb devices` 能看到设备
+- [ ] 用 §3.2 的命令跑一次完整 `testDebugUnitTest assembleDebug`，确认 **215/215** 且 `BUILD SUCCESSFUL`
+- [ ] 连接无线 ADB（或 USB），`adb devices` 能看到设备（无线掉线就用 USB，序列号形如 `AXYP6R4A30002818`）
 - [ ] 安装 APK 到手机（失败先 `input keyevent 224` 唤醒）
 - [ ] 在手机上点"启动手势控制"，`dumpsys` 确认 `CameraProbeService` 在运行
 - [ ] 抓一次全量 logcat 并 grep `CameraProbe`，确认能看到日志
@@ -303,16 +340,28 @@ adb -s $s shell settings get system haptic_feedback_enabled
 
 ---
 
-## 10. 交接时的仓库状态快照（2026-10-22）
+## 10. 交接时的仓库状态快照（2026-10-22 17:5x）
 
 | 项 | 值 |
 |---|---|
 | 分支 | `V1.0.0` |
-| HEAD | `045fa02` |
-| 已推送 | `origin`(Gitee) 与 `github`(GitHub)，均为 `6ef595c..045fa02` |
+| HEAD | `aa6df6d` 双指挥动中姿势短暂丢失给 200ms 宽限 |
+| 已推送 | `origin`(Gitee) 与 `github`(GitHub)，均为 `f1222d8..aa6df6d` |
 | 工作区 | 干净；仅 `gradle/gradle-daemon-jvm.properties` 未跟踪（环境生成物，建议加 `.gitignore`） |
-| 测试 | 205/205 通过 |
-| 最新 Debug APK | 62,474,268 bytes（2026-10-22 13:16:55，含双指诊断探针，**因 ADB 断连未安装成功**） |
-| 手机当前实际运行版本 | 62,474,167 bytes（2026-10-22 13:09:30 安装，应用选择弹窗性能优化版，**不含**双指诊断探针） |
+| 测试 | 215/215 通过 |
+| 最新 Debug APK | 62,480,050 bytes（2026-10-22 17:32:10，含两轮双指修复） |
+| 手机当前实际运行版本 | 同上，**已安装 Success**（17:32，覆盖安装未清数据） |
+| ADB 连接 | 无线已掉线，改用 **USB**，序列号 `AXYP6R4A30002818` |
 
-> 注意最后一行的差异：代码库 HEAD 比手机上跑的版本新。接手后如需做双指取证，**必须先重新安装**。
+## 11. 本轮（2026-10-22 下午）完整工作记录
+
+1. **装机与通道打通**：按 §3.2 构建（215/215）、安装、确认 `CameraProbeService` 与相机（`Camera ID: 1`）都在跑，日志通道打通。
+2. **发现并修复崩溃**：场景切换面板点「记住默认」必崩（`StackOverflowError`）。根因是匿名对象里 `onRememberDefault(scene)` 就近解析到自身 `override` 方法而非外层构造 lambda。改名 `onRememberScene` 后真机复验通过（17:09 落盘、无崩溃）。
+3. **双指切歌取证 + 两轮调参**：先据实测把 `wholeHandWristRatio` 0.60→0.38（真机确认歌切了），再给姿势丢失 200ms 宽限（mid-wave 丢失 4→2）。每次只动一个变量，均补回放测试。
+4. **文档与提交**：`REQUIREMENTS_CHANGELOG.md` 新增两条变更记录、`IDE_DEVELOPMENT_HANDOFF.md` 更新交接日志、本文档同步；三个功能提交已本地提交并推送。
+
+### 下次继续开发，先做这三件事
+
+1. 问产品负责人：**手机上的 17:32 版本这两天用下来，双指切歌还会不会"挥了没反应"、有没有误触？** 若仍有 → 走 §6.1 的候选方案（阈值 0.07→0.055），须复测 G33 与音量。
+2. 若切歌够用 → 转去验收 **息屏相机策略**（§5.2 第 2 项，最新功能、完全没验）。
+3. 无论哪项，取证前**先起后台录制**（§4.3），否则日志会被冲掉。
