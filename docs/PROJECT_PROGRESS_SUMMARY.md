@@ -2,6 +2,7 @@
 
 > 整理日期：2026-10-20
 > 用途：给产品负责人与接手开发者的一页式进度快照。细节以 `IDE_DEVELOPMENT_HANDOFF.md`（状态与验证）、`MAGIC_GESTURE_APP_FEATURE_LIST.md`（功能清单）、`GESTURE_ACTION_MAPPING_CHECKLIST.md`（手势↔动作唯一映射）、`store-submission-portals.md`（上架渠道）为准。
+> **新员工接手请先读 `WORK_HANDOFF.md`**：环境搭建、代码结构、真机调试方法、已踩过的坑与当前待办清单。
 > 状态层级严格区分：**代码完成 / JVM 测试通过 / 构建通过 / 已装机 / 真机验收通过 / 已真实上线**。前一级成功不能替代后一级。
 
 ---
