@@ -1269,6 +1269,10 @@ class GestureEngine(
             }
             TwoFingerSwipeState.TRACKING -> {
                 if (!pose) {
+                    // Losing the pose mid-wave throws the whole stroke away. A fast wave is the
+                    // usual suspect, so say so: this is the line to look for when a quick wave
+                    // "does nothing".
+                    diag?.invoke("tf pose lost mid-wave el=${now - twoFingerStageAt}")
                     twoFingerState = TwoFingerSwipeState.IDLE
                     twoFingerStart = null
                     twoFingerStartWrist = null
@@ -1300,6 +1304,14 @@ class GestureEngine(
                         twoFingerTapState == TwoFingerTapState.POSED_SECOND ||
                         twoFingerTapState == TwoFingerTapState.BENT_TWICE ||
                         twoFingerTapState == TwoFingerTapState.FIRED_WAIT
+                    // Diagnostics for the track wave. Logged only once the hand has travelled far
+                    // enough to matter, so a fast wave (a handful of frames) is still fully covered
+                    // while an idle pose stays quiet.
+                    if (abs(dx) >= twoFingerHorizontalTrigger * .5f || abs(dy) >= .03f) {
+                        diag?.invoke(
+                            "tf dx=$dx dy=$dy wdx=$wristDx horiz=$horizontal whole=$wholeHand el=$elapsed"
+                        )
+                    }
                     val fired = when {
                         // Landmark y grows downward, so a wave up produces negative dy.
                         dx <= -twoFingerHorizontalTrigger && horizontal && wholeHand &&
