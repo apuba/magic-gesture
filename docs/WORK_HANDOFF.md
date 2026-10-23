@@ -238,7 +238,7 @@ adb -s $s shell settings get system haptic_feedback_enabled
 | 3 | 悬浮球位置持久化 | 代码完成，**待真机验收** | 需验：拖动后关 App、重启手机，位置都保持 |
 | 4 | 应用选择弹窗性能优化 | 代码完成，**待真机验收** | 需验：弹窗即时打开、列表随后填充、搜索可用 |
 | 5 | 提示条"每个应用只提示一次" | 修复完成，**待真机验收** | 需验：切走再切回同一 App 不再提示 |
-| 6 | `gradle-daemon-jvm.properties` 加入 `.gitignore` | 未做 | 建议做，避免误提交 |
+| 6 | `gradle-daemon-jvm.properties` 加入 `.gitignore` | **已完成** | 该文件由 Gradle 每次同步自动生成，写着的 `toolchainVersion` 可能高于本机 JDK 17，纳入版本控制会让构建卡住 |
 
 > 除第 1 项外，**第 2 项（息屏相机策略）是当前最大的验收缺口**——它是 HEAD 上最新的功能，代码与 JVM 测试都过了，但真机一次都没验。
 

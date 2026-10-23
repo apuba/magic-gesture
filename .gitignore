@@ -13,6 +13,10 @@ out/
 # Local Android SDK configuration
 local.properties
 
+# Gradle 自动生成的 daemon JVM 配置：每次同步都会重新生成，里面写的
+# toolchainVersion 可能高于本机 JDK（本机只有 17），纳入版本控制会让构建卡住。
+gradle/gradle-daemon-jvm.properties
+
 # Signing keys and private release configuration
 *.jks
 *.keystore
